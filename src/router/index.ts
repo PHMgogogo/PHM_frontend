@@ -9,6 +9,11 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
     },
+    {
+      path: '/aircraft/:id',
+      name: 'aircraft-workspace',
+      component: () => import('@/views/AircraftWorkspace.vue'),
+    },
   ],
 })
 

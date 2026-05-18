@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import type { Aircraft } from '@/stores/aircraft'
 
-defineProps<{
+const props = defineProps<{
   aircraft: Aircraft
 }>()
+
+const router = useRouter()
 
 const typeColorMap: Record<string, string> = {
   固定翼: '#1a6cf0',
@@ -20,7 +23,7 @@ function getTypeColor(type: string) {
 </script>
 
 <template>
-  <div class="aircraft-card">
+  <div class="aircraft-card" @click="router.push(`/aircraft/${props.aircraft.id}`)">
     <div class="card-header">
       <span class="aircraft-name">{{ aircraft.name }}</span>
       <span class="type-badge" :style="{ background: getTypeColor(aircraft.type) }">
