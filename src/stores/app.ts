@@ -3,25 +3,25 @@ import { ref } from 'vue'
 
 export const useAppStore = defineStore('app', () => {
   // 当前选中的飞机/机队 ID
-  const selectedAircraftId = ref<string | null>(null)
+  const selectedaircraftNumber = ref<string | null>(null)
   const selectedFleetId = ref<string | null>(null)
 
   function selectAircraft(id: string) {
-    selectedAircraftId.value = id
+    selectedaircraftNumber.value = id
   }
 
   function selectFleet(id: string) {
     selectedFleetId.value = id
-    selectedAircraftId.value = null
+    selectedaircraftNumber.value = null
   }
 
   function clearSelection() {
-    selectedAircraftId.value = null
+    selectedaircraftNumber.value = null
     selectedFleetId.value = null
   }
 
   return {
-    selectedAircraftId,
+    selectedaircraftNumber,
     selectedFleetId,
     selectAircraft,
     selectFleet,

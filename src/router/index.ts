@@ -10,7 +10,7 @@ const router = createRouter({
       component: HomeView,
     },
     {
-      path: '/aircraft/:id',
+      path: '/aircraft/:aircraftNumber',
       name: 'aircraft-workspace',
       component: () => import('@/views/AircraftWorkspace.vue'),
     },

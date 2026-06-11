@@ -292,7 +292,7 @@ export const useChatStore = defineStore('chat', () => {
     if (partIdx === -1) return
     const oldPart = msg.parts[partIdx] as Record<string, unknown>
     const newPart = { ...oldPart, [field]: ((oldPart[field] as string) ?? '') + delta }
-    const newParts = msg.parts.map((p, i) => (i === partIdx ? (newPart as MessagePart) : p))
+    const newParts = msg.parts.map((p, i) => (i === partIdx ? (newPart as unknown as MessagePart) : p))
     const updated = [...messages.value]
     updated[msgIdx] = { ...msg, parts: newParts }
     messages.value = updated

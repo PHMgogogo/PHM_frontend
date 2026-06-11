@@ -1,0 +1,46 @@
+// ============================================================
+// CSV 数据管理 API
+// ============================================================
+
+import { createClient } from './client'
+import type { ApiResponse, CsvPreviewResult, ColumnAnalysis } from '@/types/entities'
+
+const client = createClient({ baseURL: '/api' })
+
+export function analyzeColumns(file: File) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return client.upload<ColumnAnalysis[]>('/csv/analyze-columns', fd)
+}
+
+export function previewCsv(file: File) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return client.upload<CsvPreviewResult>('/csv/preview', fd)
+}
+
+export function uploadCsv(
+  file: File,
+  tableName: string,
+  aircraftNumber: string,
+  parentItemId?: number,
+  dataType?: string,
+) {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('tableName', tableName)
+  fd.append('aircraftNumber', aircraftNumber)
+  if (parentItemId !== undefined) {
+    fd.append('parentItemId', String(parentItemId))
+  }
+  if (dataType) {
+    fd.append('dataType', dataType)
+  }
+  return client.upload<ApiResponse>('/csv/upload', fd)
+}
+
+// 查询已上传的 CSV 数据表列表（如果后端提供）
+export function getCsvTables(modelCode?: string) {
+  const params = modelCode ? { modelCode } : undefined
+  return client.get<unknown[]>('/csv/tables', params)
+}

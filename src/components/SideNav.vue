@@ -10,6 +10,7 @@ const emit = defineEmits<{
 const menus = [
   { key: 'aircraft', icon: '✈️', title: '飞行器管理' },
   { key: 'knowledge', icon: '📚', title: '知识库管理' },
+  { key: 'config', icon: '🔧', title: '构型管理' },
   { key: 'monitor', icon: '📡', title: '实时监控' },
 ]
 </script>

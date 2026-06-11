@@ -1,48 +1,50 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAircraftStore } from '@/stores/aircraft'
 import { useChatStore } from '@/stores/chat'
-import { useDataSourceStore } from '@/stores/dataSource'
-import { useAlgorithmStore } from '@/stores/algorithm'
+import { useConfigItemStore } from '@/stores/configItem'
+import { useDataMappingStore } from '@/stores/dataMapping'
 import MessageFeed from '@/components/MessageFeed.vue'
-import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
 import {
-  ArrowLeft, Refresh, VideoPause, Plus, Delete,
+  ArrowLeft, Refresh, VideoPause, Plus, Delete, Upload,
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import type { DataType } from '@/types/entities'
 
 const route = useRoute()
 const router = useRouter()
 const aircraftStore = useAircraftStore()
 const chatStore = useChatStore()
-const dsStore = useDataSourceStore()
-const algStore = useAlgorithmStore()
+const configItemStore = useConfigItemStore()
+const dataMappingStore = useDataMappingStore()
 
-const aircraftId = computed(() => route.params.id as string)
-const aircraft = computed(() => aircraftStore.aircrafts.find((a) => a.id === aircraftId.value))
-const config = computed(() =>
-  aircraft.value?.configId
-    ? aircraftStore.configs.find((c) => c.id === aircraft.value!.configId)
-    : undefined,
+const aircraftNumber = computed(() => route.params.aircraftNumber as string)
+const aircraft = computed(() =>
+  aircraftStore.aircrafts.find((a) => a.aircraftNumber === aircraftNumber.value),
 )
 
+onMounted(() => {
+  aircraftStore.fetchAircrafts()
+  chatStore.autoConnect()
+  if (aircraft.value?.modelCode) {
+    configItemStore.fetchAll(aircraft.value.modelCode)
+  }
+})
+
+onUnmounted(() => {
+  chatStore.dispose()
+})
+
+// ---- 导航 ----
 const activeMenu = ref('chat')
 const workspaceMenus = [
   { key: 'chat', icon: '💬', title: '对话入口' },
   { key: 'data', icon: '🗂️', title: '数据管理' },
-  { key: 'algorithm', icon: '🧠', title: '算法管理' },
 ]
 
-// ----  Chat ----
+// ----  Chat（保持不变） ----
 const inputText = ref('')
-
-onMounted(() => {
-  chatStore.autoConnect()
-})
-onUnmounted(() => {
-  chatStore.dispose()
-})
 
 function handleSendKey(e: KeyboardEvent) {
   if (e.ctrlKey && !chatStore.sessionBusy) {
@@ -52,108 +54,73 @@ function handleSendKey(e: KeyboardEvent) {
   }
 }
 
-function syncInput() {
-  chatStore.inputText = inputText.value
-}
-
 async function sendMessage() {
   chatStore.inputText = inputText.value
   inputText.value = ''
   await chatStore.handleSend()
 }
 
-// ---- 数据管理 ----
-const showConfigDialog = ref(false)
-const dsDialogVisible = ref(false)
-const dsForm = ref({ name: '', selectedFields: [] as string[] })
+// ---- 数据管理（CSV 上传 + 构型绑定） ----
+const csvFile = ref<File | null>(null)
+const csvTableName = ref('')
+const csvParentItemId = ref<number | undefined>(undefined)
+const csvDataType = ref<DataType>('RAW')
+const dataTypeOptions: { label: string; value: DataType }[] = [
+  { label: '诊断数据', value: 'DIAGNOSIS' },
+  { label: '评估数据', value: 'EVALUATION' },
+  { label: '预测数据', value: 'PREDICTION' },
+  { label: '原始数据', value: 'RAW' },
+]
 
-const aircraftDataSources = computed(() => dsStore.getByAircraft(aircraftId.value))
+const uploadRef = ref()
 
-const configFields = computed(() =>
-  config.value ? Object.keys(config.value.mappings) : [],
-)
-
-function openCreateDs() {
-  dsForm.value = { name: '', selectedFields: [] }
-  dsDialogVisible.value = true
+function handleFileChange(file: File) {
+  csvFile.value = file
 }
 
-function submitDs() {
-  if (!dsForm.value.name.trim()) {
-    ElMessage.warning('请输入数据源名称')
+async function analyzeFile() {
+  if (!csvFile.value) {
+    ElMessage.warning('请先选择文件')
     return
   }
-  if (dsForm.value.selectedFields.length === 0) {
-    ElMessage.warning('请至少选择一个字段')
-    return
-  }
-  dsStore.add({
-    aircraftId: aircraftId.value,
-    name: dsForm.value.name.trim(),
-    selectedFields: dsForm.value.selectedFields,
-  })
-  ElMessage.success('算法数据源已创建')
-  dsDialogVisible.value = false
-}
-
-async function deleteDs(id: string, name: string) {
   try {
-    await ElMessageBox.confirm(`确定要删除数据源"${name}"吗？`, '删除确认', {
-      confirmButtonText: '确认删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-    dsStore.remove(id)
-    // 同步删除使用该数据源的算法
-    algStore.algorithms
-      .filter((a) => a.dataSourceId === id)
-      .forEach((a) => algStore.remove(a.id))
-    ElMessage.success('数据源已删除')
-  } catch { /* cancelled */ }
+    const result = await dataMappingStore.previewCsv(csvFile.value)
+    if (result.errors && result.errors.length > 0) {
+      ElMessage.warning(`数据校验发现 ${result.errors.length} 个问题`)
+    } else {
+      ElMessage.success(`共 ${result.rowCount} 行，${result.columns.length} 列，校验通过`)
+    }
+  } catch (e) {
+    ElMessage.error('分析失败: ' + (e as Error).message)
+  }
 }
 
-// ---- 算法管理 ----
-const algDialogVisible = ref(false)
-const algForm = ref({ name: '', dataSourceId: '' })
-
-const aircraftAlgorithms = computed(() => algStore.getByAircraft(aircraftId.value))
-
-function openCreateAlg() {
-  algForm.value = { name: '', dataSourceId: '' }
-  algDialogVisible.value = true
-}
-
-function submitAlg() {
-  if (!algForm.value.name.trim()) {
-    ElMessage.warning('请输入算法名称')
+async function handleCsvUpload() {
+  if (!csvFile.value || !csvTableName.value.trim()) {
+    ElMessage.warning('请填写表名并选择文件')
     return
   }
-  if (!algForm.value.dataSourceId) {
-    ElMessage.warning('请选择算法数据源')
-    return
-  }
-  const ds = aircraftDataSources.value.find((d) => d.id === algForm.value.dataSourceId)
-  algStore.add({
-    aircraftId: aircraftId.value,
-    name: algForm.value.name.trim(),
-    dataSourceId: algForm.value.dataSourceId,
-    dataSourceName: ds?.name ?? '',
-  })
-  ElMessage.success('算法已创建')
-  algDialogVisible.value = false
-}
-
-async function deleteAlg(id: string, name: string) {
   try {
-    await ElMessageBox.confirm(`确定要删除算法"${name}"吗？`, '删除确认', {
-      confirmButtonText: '确认删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-    algStore.remove(id)
-    ElMessage.success('算法已删除')
-  } catch { /* cancelled */ }
+    await dataMappingStore.uploadCsv(
+      csvFile.value,
+      csvTableName.value.trim(),
+      aircraftNumber.value,
+      csvParentItemId.value,
+      csvDataType.value,
+    )
+    ElMessage.success(dataMappingStore.uploadResult?.message || '上传成功')
+    // 重置
+    csvFile.value = null
+    csvTableName.value = ''
+    csvParentItemId.value = undefined
+    csvDataType.value = 'RAW'
+    dataMappingStore.clearAnalysis()
+    uploadRef.value?.clearFiles()
+  } catch {
+    // 错误已在 store 中处理
+  }
 }
+
 </script>
 
 <template>
@@ -171,9 +138,12 @@ async function deleteAlg(id: string, name: string) {
       </div>
       <div class="ws-aircraft-name">
         <span class="ws-aircraft-icon">✈️</span>
-        <span class="ws-aircraft-title">{{ aircraft.name }}</span>
+        <span class="ws-aircraft-title">{{ aircraft.aircraftNumber }}</span>
       </div>
-      <div class="ws-aircraft-type">{{ aircraft.type }}</div>
+      <div class="ws-aircraft-meta">
+        <div>{{ aircraft.modelCode }}</div>
+        <div v-if="aircraft.airline">{{ aircraft.airline }}</div>
+      </div>
       <ul class="ws-menu-list">
         <li
           v-for="menu in workspaceMenus"
@@ -193,11 +163,9 @@ async function deleteAlg(id: string, name: string) {
       <!-- ========== 对话入口 ========== -->
       <template v-if="activeMenu === 'chat'">
         <div class="chat-layout">
-          <!-- 会话列表面板 -->
           <div class="session-panel">
             <div class="session-panel-header">会话管理</div>
 
-            <!-- 连接状态 -->
             <div v-if="chatStore.errorMsg" class="conn-error">
               <span>{{ chatStore.errorMsg }}</span>
               <el-button size="small" type="primary" plain @click="chatStore.retryConnect">
@@ -212,7 +180,6 @@ async function deleteAlg(id: string, name: string) {
               </span>
             </div>
 
-            <!-- 新建会话 -->
             <div class="new-session-row">
               <el-input
                 v-model="chatStore.newSessionTitle"
@@ -232,7 +199,6 @@ async function deleteAlg(id: string, name: string) {
               </el-button>
             </div>
 
-            <!-- 会话列表 -->
             <div class="session-list">
               <div
                 v-for="item in chatStore.sessions"
@@ -255,12 +221,10 @@ async function deleteAlg(id: string, name: string) {
             </div>
           </div>
 
-          <!-- 聊天主区域 -->
           <div class="chat-main">
             <div class="chat-main-header">
               <span class="chat-main-title">对话</span>
               <div class="chat-header-actions">
-                <!-- 模型选择 -->
                 <el-select
                   v-model="chatStore.selectedModel"
                   placeholder="选择模型"
@@ -293,7 +257,6 @@ async function deleteAlg(id: string, name: string) {
               </div>
             </div>
 
-            <!-- 消息流 -->
             <MessageFeed
               :messages="chatStore.messages"
               :session-busy="chatStore.sessionBusy"
@@ -303,7 +266,6 @@ async function deleteAlg(id: string, name: string) {
               @question-reject="chatStore.handleQuestionReject"
             />
 
-            <!-- 输入区 -->
             <div class="input-area">
               <el-input
                 v-model="inputText"
@@ -326,162 +288,133 @@ async function deleteAlg(id: string, name: string) {
         </div>
       </template>
 
-      <!-- ========== 数据管理 ========== -->
+      <!-- ========== 数据管理（CSV 上传 + 构型绑定） ========== -->
       <template v-else-if="activeMenu === 'data'">
         <div class="page-inner">
           <div class="page-inner-header">
             <h2 class="inner-title">数据管理</h2>
           </div>
 
-          <!-- 无构型提示 -->
-          <template v-if="!config">
-            <div class="gate-empty">
-              <div class="gate-icon">🗂️</div>
-              <p class="gate-msg">当前飞行器尚未配置构型，请先完成构型配置。</p>
-              <el-button type="primary" @click="showConfigDialog = true">编辑构型</el-button>
-            </div>
-          </template>
-
-          <!-- 已有构型 -->
-          <template v-else>
-            <div class="toolbar">
-              <div class="config-badge">
-                构型：<strong>{{ config.configName }}</strong>
+          <!-- CSV 上传区域 -->
+          <div class="upload-section">
+            <div class="section-title">CSV 数据上传</div>
+            <div class="upload-form">
+              <div class="form-row">
+                <el-form-item label="CSV 文件" label-width="80px">
+                  <el-upload
+                    ref="uploadRef"
+                    :auto-upload="false"
+                    :limit="1"
+                    accept=".csv"
+                    :on-change="(f: any) => handleFileChange(f.raw)"
+                    drag
+                  >
+                    <el-icon class="el-icon--upload"><Upload /></el-icon>
+                    <div class="el-upload__text">拖拽或点击上传 CSV 文件</div>
+                  </el-upload>
+                </el-form-item>
               </div>
-              <el-button type="primary" @click="openCreateDs">
-                <el-icon><Plus /></el-icon> 创建算法数据源
-              </el-button>
+
+              <div class="form-row inline-fields">
+                <el-form-item label="数据表名" label-width="80px">
+                  <el-input
+                    v-model="csvTableName"
+                    placeholder=""
+                    style="width: 200px"
+                  />
+                </el-form-item>
+
+                <el-form-item label="数据类型" label-width="80px">
+                  <el-select v-model="csvDataType" style="width: 160px">
+                    <el-option
+                      v-for="dt in dataTypeOptions"
+                      :key="dt.value"
+                      :label="dt.label"
+                      :value="dt.value"
+                    />
+                  </el-select>
+                </el-form-item>
+              </div>
+
+              <div class="form-row">
+                <el-form-item label="关联构型" label-width="80px">
+                  <el-select
+                    v-model="csvParentItemId"
+                    placeholder="选择构型项目（可选）"
+                    clearable
+                    style="width: 100%"
+                    filterable
+                  >
+                    <el-option
+                      v-for="item in configItemStore.selectList"
+                      :key="item.itemId"
+                      :label="item.label"
+                      :value="item.itemId"
+                    />
+                  </el-select>
+                </el-form-item>
+              </div>
+
+              <div class="form-actions">
+                <el-button @click="analyzeFile" :loading="dataMappingStore.analyzing">
+                  分析预览
+                </el-button>
+                <el-button
+                  type="primary"
+                  @click="handleCsvUpload"
+                  :loading="dataMappingStore.uploading"
+                  :disabled="!csvFile || !csvTableName.trim()"
+                >
+                  <el-icon><Upload /></el-icon> 上传
+                </el-button>
+              </div>
             </div>
 
-            <!-- 数据源列表 -->
-            <div v-if="aircraftDataSources.length === 0" class="inner-empty">
-              <p>暂无算法数据源，点击上方按钮创建</p>
+            <!-- 预览结果 -->
+            <div v-if="dataMappingStore.previewResult" class="preview-panel">
+              <div class="preview-header">
+                <span>分析结果：{{ dataMappingStore.previewResult.rowCount }} 行，{{ dataMappingStore.previewResult.columns.length }} 列</span>
+              </div>
+              <div v-if="dataMappingStore.previewResult.errors?.length" class="preview-errors">
+                <div
+                  v-for="(err, i) in dataMappingStore.previewResult.errors"
+                  :key="i"
+                  class="preview-error-item"
+                >
+                  ⚠ {{ err }}
+                </div>
+              </div>
+              <el-table
+                :data="dataMappingStore.previewResult.columns"
+                size="small"
+                max-height="200"
+              >
+                <el-table-column prop="columnName" label="列名" />
+                <el-table-column prop="columnType" label="列类型" />
+                <el-table-column prop="suggestedMapping" label="建议映射" />
+              </el-table>
             </div>
-            <el-table v-else :data="aircraftDataSources" class="entity-table">
-              <el-table-column prop="name" label="名称" min-width="160" />
-              <el-table-column label="所需数据" min-width="240">
-                <template #default="{ row }">
-                  <div class="field-tags">
-                    <el-tag
-                      v-for="f in row.selectedFields"
-                      :key="f"
-                      size="small"
-                      type="primary"
-                      effect="plain"
-                    >{{ f }}</el-tag>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="100" fixed="right">
-                <template #default="{ row }">
-                  <el-button type="danger" link size="small" @click="deleteDs(row.id, row.name)">
-                    删除
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </template>
-        </div>
-      </template>
-
-      <!-- ========== 算法管理 ========== -->
-      <template v-else-if="activeMenu === 'algorithm'">
-        <div class="page-inner">
-          <div class="page-inner-header">
-            <h2 class="inner-title">算法管理</h2>
           </div>
 
-          <!-- 无数据源提示 -->
-          <template v-if="aircraftDataSources.length === 0">
-            <div class="gate-empty">
-              <div class="gate-icon">🧠</div>
-              <p class="gate-msg">
-                请先在「数据管理」中创建算法数据源，才能创建算法。
-              </p>
-              <el-button type="primary" @click="activeMenu = 'data'">前往数据管理</el-button>
-            </div>
-          </template>
-
-          <!-- 已有数据源 -->
-          <template v-else>
-            <div class="toolbar">
-              <el-button type="primary" @click="openCreateAlg">
-                <el-icon><Plus /></el-icon> 创建算法
-              </el-button>
-            </div>
-
-            <div v-if="aircraftAlgorithms.length === 0" class="inner-empty">
-              <p>暂无算法，点击上方按钮创建</p>
-            </div>
-            <el-table v-else :data="aircraftAlgorithms" class="entity-table">
-              <el-table-column prop="name" label="名称" min-width="160" />
-              <el-table-column prop="dataSourceName" label="数据源" min-width="160" />
-              <el-table-column label="状态" width="110">
+          <!-- 已上传记录 -->
+          <div v-if="dataMappingStore.csvRecords.length > 0" class="records-section">
+            <div class="section-title">已上传数据</div>
+            <el-table :data="dataMappingStore.csvRecords" size="small">
+              <el-table-column prop="tableName" label="表名" />
+              <el-table-column prop="dataType" label="数据类型" width="100" />
+              <el-table-column prop="uploadedAt" label="上传时间" width="180">
                 <template #default="{ row }">
-                  <el-tag :type="algStore.STATUS_TYPES[row.status]" effect="plain" size="small">
-                    {{ algStore.STATUS_LABELS[row.status] }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="100" fixed="right">
-                <template #default="{ row }">
-                  <el-button type="danger" link size="small" @click="deleteAlg(row.id, row.name)">
-                    删除
-                  </el-button>
+                  {{ row.uploadedAt.slice(0, 19).replace('T', ' ') }}
                 </template>
               </el-table-column>
             </el-table>
-          </template>
+          </div>
         </div>
       </template>
+
     </main>
   </div>
 
-  <!-- 复用构型管理弹窗（编辑构型入口） -->
-  <AddAircraftDialog v-model:visible="showConfigDialog" />
-
-  <!-- 创建算法数据源弹窗 -->
-  <el-dialog v-model="dsDialogVisible" title="创建算法数据源" width="480px" :close-on-click-modal="false">
-    <el-form label-width="100px">
-      <el-form-item label="数据源名称" required>
-        <el-input v-model="dsForm.name" placeholder="例：发动机健康监测数据源" clearable />
-      </el-form-item>
-      <el-form-item label="选择字段" required>
-        <el-checkbox-group v-model="dsForm.selectedFields" class="field-checkbox-group">
-          <el-checkbox v-for="field in configFields" :key="field" :label="field">
-            {{ field }}
-          </el-checkbox>
-        </el-checkbox-group>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="dsDialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitDs">创建</el-button>
-    </template>
-  </el-dialog>
-
-  <!-- 创建算法弹窗 -->
-  <el-dialog v-model="algDialogVisible" title="创建算法" width="440px" :close-on-click-modal="false">
-    <el-form label-width="100px">
-      <el-form-item label="算法名称" required>
-        <el-input v-model="algForm.name" placeholder="例：发动机寿命预测算法" clearable />
-      </el-form-item>
-      <el-form-item label="算法数据源" required>
-        <el-select v-model="algForm.dataSourceId" placeholder="请选择数据源" style="width: 100%">
-          <el-option
-            v-for="ds in aircraftDataSources"
-            :key="ds.id"
-            :label="ds.name"
-            :value="ds.id"
-          />
-        </el-select>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="algDialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitAlg">创建</el-button>
-    </template>
-  </el-dialog>
 </template>
 
 <style scoped>
@@ -544,10 +477,11 @@ async function deleteAlg(id: string, name: string) {
   word-break: break-all;
 }
 
-.ws-aircraft-type {
-  padding: 0 20px 14px;
+.ws-aircraft-meta {
+  padding: 4px 20px 14px;
   font-size: 12px;
   color: #6888aa;
+  line-height: 1.6;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   margin-bottom: 10px;
 }
@@ -594,7 +528,6 @@ async function deleteAlg(id: string, name: string) {
   height: 100%;
 }
 
-/* 会话面板 */
 .session-panel {
   width: 220px;
   flex-shrink: 0;
@@ -706,7 +639,6 @@ async function deleteAlg(id: string, name: string) {
   padding: 12px 4px;
 }
 
-/* 聊天主区域 */
 .chat-main {
   flex: 1;
   display: flex;
@@ -752,7 +684,7 @@ async function deleteAlg(id: string, name: string) {
   resize: none;
 }
 
-/* ---- 数据管理 / 算法管理 ---- */
+/* ---- 数据管理 ---- */
 .page-inner {
   flex: 1;
   display: flex;
@@ -760,10 +692,14 @@ async function deleteAlg(id: string, name: string) {
   overflow: hidden;
   padding: 28px 32px;
   gap: 20px;
+  overflow-y: auto;
 }
 
 .page-inner-header {
   flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
 }
 
 .inner-title {
@@ -773,49 +709,80 @@ async function deleteAlg(id: string, name: string) {
   margin: 0;
 }
 
+.inner-subtitle {
+  font-size: 13px;
+  color: #8c9ab0;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3a4a5c;
+  margin-bottom: 12px;
+}
+
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-shrink: 0;
 }
 
-.config-badge {
-  font-size: 13px;
-  color: #3a4a5c;
+.upload-section {
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  border: 1px solid #e0e8f5;
 }
-.config-badge strong { color: #1a6cf0; }
 
-.entity-table {
-  flex: 1;
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-row {
+  width: 100%;
+}
+
+.inline-fields {
+  display: flex;
+  gap: 24px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.preview-panel {
+  margin-top: 16px;
+  border: 1px solid #d4e3fb;
   border-radius: 8px;
   overflow: hidden;
 }
 
-.field-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+.preview-header {
+  background: #f0f5ff;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a6cf0;
 }
 
-/* 无构型/无数据源 门控 */
-.gate-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
+.preview-errors {
+  padding: 8px 12px;
+  background: #fff8f0;
 }
 
-.gate-icon { font-size: 56px; opacity: 0.5; }
+.preview-error-item {
+  font-size: 12px;
+  color: #e6a23c;
+  line-height: 1.8;
+}
 
-.gate-msg {
-  font-size: 15px;
-  color: #8c9ab0;
-  margin: 0;
-  text-align: center;
-  max-width: 360px;
+.records-section {
+  margin-top: 8px;
 }
 
 .inner-empty {
@@ -823,11 +790,5 @@ async function deleteAlg(id: string, name: string) {
   font-size: 14px;
   text-align: center;
   padding: 40px 0;
-}
-
-.field-checkbox-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 </style>

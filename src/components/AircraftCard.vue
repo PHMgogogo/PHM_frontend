@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import type { Aircraft } from '@/stores/aircraft'
+import type { Aircraft } from '@/types/entities'
 
 const props = defineProps<{
   aircraft: Aircraft
@@ -8,36 +8,34 @@ const props = defineProps<{
 
 const router = useRouter()
 
-const typeColorMap: Record<string, string> = {
-  固定翼: '#1a6cf0',
-  旋翼机: '#0e9e6e',
-  无人机: '#8c56ff',
-  运输机: '#e6a23c',
-  战斗机: '#e63c3c',
-  侦察机: '#3c9ee6',
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  active: { label: '活跃', color: '#00c87a' },
+  retired: { label: '已退役', color: '#8c9ab0' },
+  maintenance: { label: '维护中', color: '#e6a23c' },
 }
 
-function getTypeColor(type: string) {
-  return typeColorMap[type] ?? '#6c7a8d'
+function statusInfo(status: string) {
+  return STATUS_MAP[status] ?? { label: status, color: '#8c9ab0' }
 }
 </script>
 
 <template>
-  <div class="aircraft-card" @click="router.push(`/aircraft/${props.aircraft.id}`)">
+  <div
+    class="aircraft-card"
+    @click="router.push(`/aircraft/${props.aircraft.aircraftNumber}`)"
+  >
     <div class="card-header">
-      <span class="aircraft-name">{{ aircraft.name }}</span>
-      <span class="type-badge" :style="{ background: getTypeColor(aircraft.type) }">
-        {{ aircraft.type }}
-      </span>
+      <span class="aircraft-name">{{ aircraft.aircraftNumber }}</span>
+      <span class="model-badge">{{ aircraft.modelCode }}</span>
     </div>
     <div class="card-body">
-      <div class="info-row" v-if="aircraft.configName">
-        <span class="info-label">构型</span>
-        <span class="info-value config-name">{{ aircraft.configName }}</span>
+      <div class="info-row" v-if="aircraft.airline">
+        <span class="info-label">航司</span>
+        <span class="info-value">{{ aircraft.airline }}</span>
       </div>
-      <div class="info-row" v-else>
-        <span class="info-label">构型</span>
-        <span class="info-value no-config">暂无构型</span>
+      <div class="info-row" v-if="aircraft.configVersion">
+        <span class="info-label">构型版本</span>
+        <span class="info-value config-version">{{ aircraft.configVersion }}</span>
       </div>
       <div class="info-row" v-if="aircraft.createdAt">
         <span class="info-label">创建时间</span>
@@ -45,8 +43,11 @@ function getTypeColor(type: string) {
       </div>
     </div>
     <div class="card-footer">
-      <span class="status-dot"></span>
-      <span class="status-text">状态正常</span>
+      <span
+        class="status-dot"
+        :style="{ background: statusInfo(aircraft.status).color }"
+      ></span>
+      <span class="status-text">{{ statusInfo(aircraft.status).label }}</span>
     </div>
   </div>
 </template>
@@ -83,9 +84,10 @@ function getTypeColor(type: string) {
   color: #0d1f3c;
 }
 
-.type-badge {
+.model-badge {
   font-size: 12px;
   color: #fff;
+  background: #1a6cf0;
   border-radius: 20px;
   padding: 2px 10px;
   font-weight: 500;
@@ -115,13 +117,8 @@ function getTypeColor(type: string) {
   font-weight: 500;
 }
 
-.config-name {
+.config-version {
   color: #1a6cf0;
-}
-
-.no-config {
-  color: #bcc5d0;
-  font-style: italic;
 }
 
 .card-footer {
@@ -136,7 +133,6 @@ function getTypeColor(type: string) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #00c87a;
   display: inline-block;
 }
 

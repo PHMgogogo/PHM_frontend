@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import SideNav from '@/components/SideNav.vue'
 import AircraftCard from '@/components/AircraftCard.vue'
 import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
+import MonitorView from '@/views/MonitorView.vue'
+import ConfigManagement from '@/views/ConfigManagement.vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { Search } from '@element-plus/icons-vue'
 
@@ -11,14 +13,18 @@ const activeMenu = ref('aircraft')
 const dialogVisible = ref(false)
 const searchQuery = ref('')
 
+onMounted(() => {
+  store.fetchAircrafts()
+})
+
 const filteredAircrafts = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return store.aircrafts
   return store.aircrafts.filter(
     (a) =>
-      a.name.toLowerCase().includes(q) ||
-      a.type.toLowerCase().includes(q) ||
-      (a.configName ?? '').toLowerCase().includes(q),
+      a.aircraftNumber.toLowerCase().includes(q) ||
+      a.modelCode.toLowerCase().includes(q) ||
+      (a.airline ?? '').toLowerCase().includes(q),
   )
 })
 </script>
@@ -59,7 +65,7 @@ const filteredAircrafts = computed(() => {
         <div class="card-grid">
           <AircraftCard
             v-for="aircraft in filteredAircrafts"
-            :key="aircraft.id"
+            :key="aircraft.aircraftNumber"
             :aircraft="aircraft"
           />
           <div v-if="filteredAircrafts.length === 0" class="empty-state">
@@ -78,13 +84,14 @@ const filteredAircrafts = computed(() => {
         </div>
       </template>
 
-      <!-- 实时监控（占位） -->
+      <!-- 构型管理 -->
+      <template v-else-if="activeMenu === 'config'">
+        <ConfigManagement />
+      </template>
+
+      <!-- 实时监控 -->
       <template v-else-if="activeMenu === 'monitor'">
-        <div class="placeholder-page">
-          <span class="placeholder-icon">📡</span>
-          <p class="placeholder-text">实时监控</p>
-          <p class="placeholder-sub">该功能正在开发中</p>
-        </div>
+        <MonitorView />
       </template>
     </main>
   </div>
