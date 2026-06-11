@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+工作规划.md
+数据接口.md
+文档接口.md
