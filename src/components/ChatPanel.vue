@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onBeforeMount, onMounted, onBeforeUpdate, onUpdated, onBeforeUnmount, onUnmounted, watch } from 'vue'
-import { Refresh, VideoPause } from '@element-plus/icons-vue'
+import { ref } from 'vue'
+import { VideoPause } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useTaskStore } from '@/stores/task'
 import MessageFeed from '@/components/MessageFeed.vue'

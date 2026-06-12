@@ -56,7 +56,7 @@ async function handleSubmit() {
         <el-input v-model="form.name" placeholder="请输入任务名称" clearable />
       </el-form-item>
 
-      <el-form-item label="描述">
+      <el-form-item label="任务描述">
         <el-input
           v-model="form.description"
           type="textarea"

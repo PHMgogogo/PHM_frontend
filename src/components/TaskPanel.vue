@@ -32,6 +32,8 @@ const filteredTasks = computed(() => {
   return list.filter((t) => t.name.toLowerCase().includes(kw))
 })
 
+const currentTask = computed(() => taskStore.getCurrentTask(props.aircraftNumber))
+
 function handleCreateTaskClick() {
   showTaskDialog.value = true
 }
@@ -105,9 +107,13 @@ function handleConfigTask(_task: Task) {
         v-for="task in filteredTasks"
         :key="task.id"
         class="task-item"
+        :class="{ current: currentTask?.id === task.id }"
       >
         <div class="task-info">
-          <div class="task-name">{{ truncate(task.name, 20) }}</div>
+          <div class="task-name">
+            <span class="task-name-text">{{ truncate(task.name, 20) }}</span>
+            <span v-if="currentTask?.id === task.id" class="current-tag">当前任务</span>
+          </div>
           <div class="task-desc">{{ task.description || '暂无描述' }}</div>
         </div>
         <div class="task-actions">
@@ -212,6 +218,16 @@ function handleConfigTask(_task: Task) {
   box-shadow: 0 2px 8px rgba(26, 108, 240, 0.06);
 }
 
+.task-item.current {
+  border-left: 3px solid #1a6cf0;
+}
+
+.task-item.current:hover {
+  border-color: #e0e8f5;
+  border-left: 3px solid #1a6cf0;
+  box-shadow: none;
+}
+
 .task-info {
   flex: 1;
   min-width: 0;
@@ -222,13 +238,33 @@ function handleConfigTask(_task: Task) {
 }
 
 .task-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 16px;
   font-weight: 700;
   color: #0d1f3c;
+  min-width: 0;
+}
+
+.task-name-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.current-tag {
+  font-size: 11px;
+  color: #fff;
+  background: #1a6cf0;
+  border-radius: 20px;
+  padding: 1px 8px;
+  font-weight: 500;
+  flex-shrink: 0;
+  white-space: nowrap;
+  line-height: 18px;
 }
 
 .task-desc {

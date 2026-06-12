@@ -48,7 +48,7 @@ watch(
         activeMenu.value = 'chat'
         chatStore.connectToSession(ct.sessionId, wd)
       } else {
-        
+
       }
     }
   },
@@ -57,7 +57,6 @@ watch(
 // ---- 飞行器切换时清理（SPA 内导航到其他飞行器） ----
 watch(aircraftNumber, async (newVal, oldVal) => {
   if (oldVal && newVal !== oldVal) {
-    const tSwitch2 = performance.now()
     chatStore.dispose()
     initialCheckDone = false
 
