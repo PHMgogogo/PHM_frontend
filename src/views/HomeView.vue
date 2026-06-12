@@ -10,6 +10,7 @@ import { Search } from '@element-plus/icons-vue'
 
 const store = useAircraftStore()
 const activeMenu = ref('aircraft')
+const sidebarCollapsed = ref(false)
 const dialogVisible = ref(false)
 const searchQuery = ref('')
 
@@ -32,8 +33,8 @@ const filteredAircrafts = computed(() => {
 <template>
   <div class="app-layout">
     <!-- 左侧导航 -->
-    <aside class="sidebar">
-      <SideNav v-model:activeMenu="activeMenu" />
+    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
+      <SideNav v-model:activeMenu="activeMenu" :collapsed="sidebarCollapsed" @toggle="sidebarCollapsed = !sidebarCollapsed" />
     </aside>
 
     <!-- 右侧内容 -->
@@ -115,6 +116,14 @@ const filteredAircrafts = computed(() => {
   max-width: 240px;
   flex-shrink: 0;
   height: 100%;
+  transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
 }
 
 .content {

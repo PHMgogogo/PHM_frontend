@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onBeforeMount, onMounted, onBeforeUpdate, onUpdated, onBeforeUnmount, onUnmounted } from 'vue'
 import type { ChatMessage, MessagePart } from '@/stores/chat'
 import { ArrowDown, ArrowUp, SetUp, Warning, QuestionFilled, MagicStick } from '@element-plus/icons-vue'
 
@@ -69,14 +69,22 @@ function formatJson(obj: unknown) {
 }
 
 // 简单 markdown 渲染（加粗、斜体、行内代码、换行）
+let _renderMdTotalChars = 0
+let _renderMdCallCount = 0
+let _renderMdTotalTime = 0
 function renderMd(text: string): string {
   if (!text) return ''
-  return text
+  const t0 = performance.now()
+  _renderMdCallCount++
+  _renderMdTotalChars += text.length
+  const result = text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/\n/g, '<br>')
+  _renderMdTotalTime += performance.now() - t0
+  return result
 }
 </script>
 
@@ -110,7 +118,8 @@ function renderMd(text: string): string {
                   <el-icon><MagicStick /></el-icon>
                   <span>思考过程</span>
                   <el-icon class="toggle-icon">
-                    <component :is="expandedReasoning.has(part.id || idx) ? ArrowUp : ArrowDown" />
+                    <ArrowUp v-if="expandedReasoning.has(part.id || idx)" />
+                    <ArrowDown v-else />
                   </el-icon>
                 </div>
                 <div v-if="expandedReasoning.has(part.id || idx)" class="reasoning-body">
@@ -130,7 +139,8 @@ function renderMd(text: string): string {
                     class="tool-status-tag"
                   >{{ toolStateLabel(part.state) }}</el-tag>
                   <el-icon class="toggle-icon">
-                    <component :is="expandedTools.has(part.id || idx) ? ArrowUp : ArrowDown" />
+                    <ArrowUp v-if="expandedTools.has(part.id || idx)" />
+                    <ArrowDown v-else />
                   </el-icon>
                 </div>
                 <div v-if="expandedTools.has(part.id || idx)" class="tool-body">

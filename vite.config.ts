@@ -9,6 +9,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  optimizeDeps: {
+    include: ['element-plus', '@element-plus/icons-vue'],
+  },
   server: {
     host: '0.0.0.0',
     proxy: {
@@ -17,11 +20,16 @@ export default defineConfig({
         changeOrigin: true,
         // rewrite: (path) => path.replace(/^\/api/, ''),
       },
-      '/document': {
-        target: 'http://<TBD>',
+      '/task': {
+        target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/document/, ''),
+        rewrite: (path) => path.replace(/^\/task/, '/api'),
       },
+      "/opencode":{
+        target: 'http://localhost:4096',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/opencode/, ''),
+      }
     },
   },
 })

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 defineProps<{
   activeMenu: string
+  collapsed?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:activeMenu', key: string): void
+  (e: 'toggle'): void
 }>()
 
 const menus = [
@@ -16,22 +18,28 @@ const menus = [
 </script>
 
 <template>
-  <nav class="side-nav">
+  <nav class="side-nav" :class="{ collapsed }">
     <div class="logo-area">
       <span class="logo-icon">🛩️</span>
-      <span class="logo-text">PHM 平台</span>
+      <span v-show="!collapsed" class="logo-text">PHM 平台</span>
     </div>
     <ul class="menu-list">
       <li
         v-for="menu in menus"
         :key="menu.key"
         :class="['menu-item', { active: activeMenu === menu.key }]"
+        :title="collapsed ? menu.title : ''"
         @click="emit('update:activeMenu', menu.key)"
       >
         <span class="menu-icon">{{ menu.icon }}</span>
-        <span class="menu-title">{{ menu.title }}</span>
+        <span v-show="!collapsed" class="menu-title">{{ menu.title }}</span>
       </li>
     </ul>
+    <div class="toggle-area" @click="emit('toggle')">
+      <el-icon :size="18">
+        <component :is="collapsed ? 'Expand' : 'Fold'" />
+      </el-icon>
+    </div>
   </nav>
 </template>
 
@@ -104,5 +112,34 @@ const menus = [
 
 .menu-title {
   white-space: nowrap;
+}
+
+/* ---- collapsed overrides ---- */
+.side-nav.collapsed .logo-area {
+  justify-content: center;
+  padding: 20px 8px 16px;
+  gap: 0;
+}
+
+.side-nav.collapsed .menu-item {
+  justify-content: center;
+  padding: 12px 8px;
+  gap: 0;
+}
+
+/* ---- bottom toggle ---- */
+.toggle-area {
+  margin-top: auto;
+  padding: 16px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  color: #6888aa;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  transition: color 0.2s;
+}
+.toggle-area:hover {
+  color: #ffffff;
 }
 </style>

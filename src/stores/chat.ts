@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { opencodeApi } from '@/lib/opencode-api'
+import type { ConnOpts } from '@/lib/opencode-api'
 
 // 默认连接配置（来自 ConnectionConfig.vue 默认填充值）
 const DEFAULT_OPTS = {
-  base: 'http://127.0.0.1:4096',
+  base: '/opencode',
   dir: "D:\\AA Lynx's Workspace\\user_project\\web_test",
   user: 'opencode',
   pass: '',
@@ -72,7 +73,71 @@ export const useChatStore = defineStore('chat', () => {
   // SSE
   let eventSource: EventSource | null = null
 
-  const opts = computed(() => DEFAULT_OPTS)
+  // 防止重复连接：记录正在连接的目标 sessionId
+  let connectingToSid = ''
+
+  const opts = ref<ConnOpts>({ ...DEFAULT_OPTS })
+
+  // ---- 连接到指定任务的 session ----
+  async function connectToSession(sessionId: string, workDir: string) {
+    // 如果已连接到同一 session，跳过
+    if (connected.value && currentSid.value === sessionId) return
+    // 如果正在连接同一 session，跳过（防止快速双击导致重复连接）
+    if (connecting.value && connectingToSid === sessionId) return
+
+    // 清理旧连接
+    dispose()
+    errorMsg.value = ''
+    connecting.value = true
+    connected.value = false
+    currentSid.value = ''
+    connectingToSid = sessionId
+    messages.value = []
+    sessionBusy.value = false
+    pendingQuestion.value = null
+
+    // 设置动态连接选项
+    opts.value = { base: '/opencode', dir: workDir, user: 'opencode', pass: '' }
+
+    try {
+      const [health, providersRes] = await Promise.all([
+        opencodeApi.health(opts.value),
+        opencodeApi.providers(opts.value),
+      ])
+      serverVersion.value = health.version || ''
+      connected.value = true
+      currentSid.value = sessionId
+
+      // 填充模型选项
+      const options: ModelOption[] = []
+      for (const provider of providersRes.all || []) {
+        for (const model of Object.values(provider.models || {})) {
+          options.push({
+            label: `${provider.id}/${model.id}`,
+            value: `${provider.id}/${model.id}`,
+            providerID: provider.id,
+            modelID: model.id,
+          })
+        }
+      }
+      modelOptions.value = options
+      if (!selectedModel.value) {
+        const preferred =
+          options.find((o) => o.providerID === 'deepseek' && o.modelID === 'deepseek-v4-pro') ||
+          options[0]
+        if (preferred) selectedModel.value = preferred.value
+      }
+      startEventSource()
+      await loadMessages(sessionId)
+    } catch (e: unknown) {
+      errorMsg.value = (e as Error).message || '连接失败，请确认 OpenCode 服务已启动'
+      connected.value = false
+      currentSid.value = ''
+    } finally {
+      connecting.value = false
+      connectingToSid = ''
+    }
+  }
 
   // ---- 自动连接 ----
   async function autoConnect() {
@@ -102,7 +167,7 @@ export const useChatStore = defineStore('chat', () => {
       modelOptions.value = options
       if (!selectedModel.value) {
         const preferred =
-          options.find((o) => o.providerID === 'alibaba-cn' && o.modelID.includes('qwen')) ||
+          options.find((o) => o.providerID === 'deepseek' && o.modelID === 'deepseek-v4-pro') ||
           options[0]
         if (preferred) selectedModel.value = preferred.value
       }
@@ -140,7 +205,9 @@ export const useChatStore = defineStore('chat', () => {
 
   async function loadMessages(sid: string) {
     try {
-      messages.value = (await opencodeApi.messages(opts.value, sid)) as ChatMessage[]
+      const prom = opencodeApi.messages(opts.value, sid)
+      const msgs = await prom
+      messages.value = msgs as ChatMessage[]
     } catch (e: unknown) {
       ElMessage.error('加载消息失败: ' + (e as Error).message)
     }
@@ -348,8 +415,8 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
       eventSource.onerror = () => stopEventSource()
-    } catch {
-      // ignore
+    } catch (e: unknown) {
+      console.error('[ChatStore] EventSource 创建失败:', e)
     }
   }
 
@@ -371,6 +438,7 @@ export const useChatStore = defineStore('chat', () => {
     messages, inputText, sending, sessionBusy,
     pendingQuestion,
     autoConnect, retryConnect,
+    connectToSession,
     handleOpenSession, handleCreateSession, handleDeleteSession,
     handleSend, handleAbort, handleRefresh,
     handleQuestionReply, handleQuestionReject,

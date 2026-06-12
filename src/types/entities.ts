@@ -80,3 +80,53 @@ export interface PaginatedData<T> {
   page: number
   size: number
 }
+
+// ---- 算法实例 ----
+
+export interface InstanceResponse {
+  instance_id: string
+  entrance: string
+  base_url: string
+  doc_url: string
+  index_url: string
+  file_path: string
+  help: string
+}
+
+// ---- 任务管理（后端 DTO） ----
+
+/** GET /api/tasks 返回的单条任务 */
+export interface TaskResponse {
+  task_id: number
+  name: string
+  description: string
+  session_id: string
+  instance_id: string
+  work_dir: string
+}
+
+/** POST /api/tasks 请求体 */
+export interface TaskCreateRequest {
+  name: string
+  description?: string
+  session_id: string
+  instance_id: string
+  work_dir?: string
+}
+
+/** POST /api/tasks 成功响应 */
+export interface TaskCreateResponse {
+  task_id: number
+}
+
+/** 前端任务实体（camelCase） */
+export interface Task {
+  id: number
+  name: string
+  description: string
+  sessionId: string
+  instanceId?: string
+  workDir: string
+  createdAt: string
+  updatedAt: string
+}
