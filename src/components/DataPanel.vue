@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useDataMappingStore } from '@/stores/dataMapping'
 import { useConfigItemStore } from '@/stores/configItem'
-import type { DataType } from '@/types/entities'
+import { getMappings } from '@/api/aircraft'
+import type { DataType, ConfigDataMapping } from '@/types/entities'
 
 const props = defineProps<{
   aircraftNumber: string
@@ -26,6 +27,38 @@ const dataTypeOptions: { label: string; value: DataType }[] = [
 
 const uploadRef = ref()
 
+// ---- 已上传映射记录 ----
+const mappings = ref<ConfigDataMapping[]>([])
+const mappingsLoading = ref(false)
+
+const dataTypeMeta: Record<string, { label: string; color: string }> = {
+  DIAGNOSIS:  { label: '诊断数据', color: '#e6a23c' },
+  EVALUATION: { label: '评估数据', color: '#409eff' },
+  PREDICTION: { label: '预测数据', color: '#67c23a' },
+  RAW:        { label: '原始数据', color: '#909399' },
+}
+
+function formatTime(ts: string) {
+  if (!ts) return '-'
+  // 后端返回格式 "2026-06-01 18:31:19.000000" 或 ISO
+  const s = ts.replace('T', ' ').replace('Z', '')
+  return s.length >= 19 ? s.slice(0, 19) : s
+}
+
+async function fetchMappings() {
+  if (!props.aircraftNumber) return
+  mappingsLoading.value = true
+  try {
+    mappings.value = await getMappings({ aircraftNumber: props.aircraftNumber })
+  } catch (e) {
+    ElMessage.error('获取数据映射失败: ' + (e as Error).message)
+  } finally {
+    mappingsLoading.value = false
+  }
+}
+
+watch(() => props.aircraftNumber, fetchMappings, { immediate: true })
+
 function handleFileChange(file: File) {
   csvFile.value = file
 }
@@ -37,10 +70,11 @@ async function analyzeFile() {
   }
   try {
     const result = await dataMappingStore.previewCsv(csvFile.value)
-    if (result.errors && result.errors.length > 0) {
-      ElMessage.warning(`数据校验发现 ${result.errors.length} 个问题`)
+    const v = result.validation
+    if (v.errors && v.errors.length > 0) {
+      ElMessage.warning(`数据校验发现 ${v.errors.length} 个问题`)
     } else {
-      ElMessage.success(`共 ${result.rowCount} 行，${result.columns.length} 列，校验通过`)
+      ElMessage.success(`共 ${v.totalRows} 行（有效 ${v.validRows} 行），${v.columns.length} 列，校验通过`)
     }
   } catch (e) {
     ElMessage.error('分析失败: ' + (e as Error).message)
@@ -68,6 +102,8 @@ async function handleCsvUpload() {
     csvDataType.value = 'RAW'
     dataMappingStore.clearAnalysis()
     uploadRef.value?.clearFiles()
+    // 上传成功后刷新映射列表
+    fetchMappings()
   } catch {
     // 错误已在 store 中处理
   }
@@ -158,11 +194,16 @@ async function handleCsvUpload() {
       <!-- 预览结果 -->
       <div v-if="dataMappingStore.previewResult" class="preview-panel">
         <div class="preview-header">
-          <span>分析结果：{{ dataMappingStore.previewResult.rowCount }} 行，{{ dataMappingStore.previewResult.columns.length }} 列</span>
+          <span>
+            共 {{ dataMappingStore.previewResult.validation.totalRows }} 行，
+            有效 {{ dataMappingStore.previewResult.validation.validRows }} 行，
+            共 {{ dataMappingStore.previewResult.validation.columns.length }} 列
+          </span>
+          <span v-if="!dataMappingStore.previewResult.validation.valid" class="preview-invalid-tag">校验未通过</span>
         </div>
-        <div v-if="dataMappingStore.previewResult.errors?.length" class="preview-errors">
+        <div v-if="dataMappingStore.previewResult.validation.errors?.length" class="preview-errors">
           <div
-            v-for="(err, i) in dataMappingStore.previewResult.errors"
+            v-for="(err, i) in dataMappingStore.previewResult.validation.errors"
             :key="i"
             class="preview-error-item"
           >
@@ -170,29 +211,74 @@ async function handleCsvUpload() {
           </div>
         </div>
         <el-table
-          :data="dataMappingStore.previewResult.columns"
+          :data="Object.entries(dataMappingStore.previewResult.analysis.columnTypes)"
           size="small"
           max-height="200"
         >
-          <el-table-column prop="columnName" label="列名" />
-          <el-table-column prop="columnType" label="列类型" />
-          <el-table-column prop="suggestedMapping" label="建议映射" />
+          <el-table-column prop="0" label="列名" />
+          <el-table-column prop="1" label="SQL 类型" />
         </el-table>
       </div>
     </div>
 
     <!-- 已上传记录 -->
-    <div v-if="dataMappingStore.csvRecords.length > 0" class="records-section">
-      <div class="section-title">已上传数据</div>
-      <el-table :data="dataMappingStore.csvRecords" size="small">
-        <el-table-column prop="tableName" label="表名" />
-        <el-table-column prop="dataType" label="数据类型" width="100" />
-        <el-table-column prop="uploadedAt" label="上传时间" width="180">
+    <div v-if="mappings.length > 0" class="records-section">
+      <div class="section-title">
+        数据上传记录
+        <span class="record-count">{{ mappings.length }} 条</span>
+      </div>
+      <el-table
+        :data="mappings"
+        size="small"
+        stripe
+        v-loading="mappingsLoading"
+        empty-text="暂无已上传数据"
+        row-class-name="mapping-row"
+      >
+        <el-table-column prop="csvTableName" label="数据表名">
           <template #default="{ row }">
-            {{ row.uploadedAt.slice(0, 19).replace('T', ' ') }}
+            <span class="table-name-cell">{{ row.csvTableName }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="dataType" label="数据类型" width="120" align="center">
+          <template #default="{ row }">
+            <span
+              class="data-type-tag"
+              :style="{ background: dataTypeMeta[row.dataType]?.color + '18', color: dataTypeMeta[row.dataType]?.color, borderColor: dataTypeMeta[row.dataType]?.color + '40' }"
+            >
+              {{ dataTypeMeta[row.dataType]?.label || row.dataType }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="dataTime" label="数据时间" width="180" align="center">
+          <template #default="{ row }">
+            <span class="time-text">{{ formatTime(row.dataTime) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="createdAt" label="上传时间" width="180" align="center">
+          <template #default="{ row }">
+            <span class="time-text">{{ formatTime(row.createdAt) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="执行操作" width="160" align="center">
+          <template #default>
+            <div class="action-btns">
+              <el-button type="primary" text size="small">去训练</el-button>
+              <el-button type="success" text size="small">去推理</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
+    </div>
+
+    <!-- 空状态 -->
+    <div v-else class="records-section empty-state">
+      <div class="section-title">数据上传记录</div>
+      <div class="empty-hint">
+        <div class="empty-icon">📋</div>
+        <p>暂无已上传的 CSV 数据</p>
+        <p class="empty-sub">上传 CSV 文件后，数据上传记录将在此展示</p>
+      </div>
     </div>
   </div>
 </template>
@@ -283,7 +369,84 @@ async function handleCsvUpload() {
   line-height: 1.8;
 }
 
+.preview-invalid-tag {
+  font-size: 12px;
+  color: #f56c6c;
+  background: #fef0f0;
+  border: 1px solid #fbc4c4;
+  border-radius: 4px;
+  padding: 1px 8px;
+  margin-left: 12px;
+}
+
 .records-section {
   margin-top: 8px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  border: 1px solid #e0e8f5;
+}
+
+.record-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: #909399;
+  margin-left: 8px;
+}
+
+.table-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-btns {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.data-type-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid;
+  line-height: 1.6;
+}
+
+.time-text {
+  font-size: 13px;
+  color: #606266;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-hint {
+  text-align: center;
+  padding: 32px 16px 20px;
+  color: #909399;
+}
+
+.empty-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+
+.empty-hint p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+
+.empty-sub {
+  font-size: 12px !important;
+  color: #c0c4cc;
 }
 </style>

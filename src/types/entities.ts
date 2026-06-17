@@ -52,17 +52,41 @@ export interface CsvUploadParams {
   dataType?: DataType
 }
 
-export interface ColumnAnalysis {
-  columnName: string
-  columnType: string
-  suggestedMapping?: string
+/** /csv/preview 接口返回的完整响应 */
+export interface CsvPreviewResponse {
+  validation: {
+    valid: boolean
+    totalRows: number
+    validRows: number
+    invalidRows: number
+    columns: string[]
+    warnings: string[]
+    errors: string[]
+    sampleData: string[][]
+  }
+  analysis: {
+    columns: string[]
+    originalColumns: string[]
+    timestampColumn: string
+    /** 列名 → SQL 数据类型映射，如 { "Altitude": "INT64", "Lat": "DOUBLE" } */
+    columnTypes: Record<string, string>
+    numericColumns: string[]
+    textColumns: string[]
+    totalRows: number
+    sampleData: Record<string, string>[]
+  }
 }
 
-export interface CsvPreviewResult {
-  columns: ColumnAnalysis[]
-  rowCount: number
-  sampleData: Record<string, string>[]
-  errors?: string[]
+// ---- 构型数据映射 ----
+
+export interface ConfigDataMapping {
+  mappingId: number
+  aircraftNumber: string
+  itemId: number
+  csvTableName: string
+  dataType: DataType
+  dataTime: string
+  createdAt: string
 }
 
 // ---- API 响应 ----
@@ -91,6 +115,73 @@ export interface InstanceResponse {
   index_url: string
   file_path: string
   help: string
+}
+
+// ---- Instance Worker API 类型 ----
+
+export type DatasetContentType = 'text_csv' | 'path_csv' | 'json_csv'
+
+export interface DatasetPayload {
+  content_type: DatasetContentType
+  content: string
+  data_cols: string[]
+  label_cols: string[] | null
+}
+
+export interface TrainArgs {
+  epoch: number
+  batch_size: number
+  learning_rate: number
+  device: 'cpu' | 'cuda'
+  progress: boolean
+  mode: 'train'
+  shuffle: boolean
+}
+
+export interface InferArgs {
+  batch_size: number
+  device: 'cpu' | 'cuda'
+  progress: boolean
+  mode: 'eval'
+  shuffle: boolean
+}
+
+export interface TrainRequest {
+  dataset: DatasetPayload
+  args: TrainArgs
+  detach: boolean
+}
+
+export interface InferRequest {
+  dataset: DatasetPayload
+  args: InferArgs
+  detach: boolean
+}
+
+export interface LoadRequest {
+  path: string | null
+}
+
+export interface SaveRequest {
+  path: string
+}
+
+export interface ModelResult {
+  loss: number
+  outputs: number[][]
+  ids: number[]
+}
+
+export interface ProgressCounter {
+  n: number
+  total: number
+}
+
+export interface StateResponse {
+  state: 'UNLOADED' | 'LOADED' | 'TRAINING' | 'INFERRING'
+  epoch_progress?: ProgressCounter
+  batch_progress?: ProgressCounter
+  result?: ModelResult[]
 }
 
 // ---- 任务管理（后端 DTO） ----

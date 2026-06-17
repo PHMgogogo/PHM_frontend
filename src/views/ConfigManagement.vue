@@ -2,89 +2,146 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { useConfigItemStore } from '@/stores/configItem'
-import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ConfigItemType } from '@/types/entities'
 
 const aircraftStore = useAircraftStore()
 const configItemStore = useConfigItemStore()
 
-onMounted(() => {
-  aircraftStore.fetchAircrafts()
+onMounted(async () => {
+  await aircraftStore.fetchModels()
+  if (aircraftStore.models.length > 0 && !selectedModelCode.value) {
+    selectedModelCode.value = aircraftStore.models[0].modelCode
+    configItemStore.fetchAll(selectedModelCode.value)
+  }
 })
 
-// ---- 飞行器/机型选择 ----
-const selectedAircraftNumber = ref('')
+// ---- 机型选择 ----
+const selectedModelCode = ref('')
 
-const aircraftOptions = computed(() =>
-  aircraftStore.aircrafts.map((a) => ({
-    value: a.aircraftNumber,
-    label: `${a.aircraftNumber}（${a.modelCode}）`,
-    modelCode: a.modelCode,
+const modelOptions = computed(() =>
+  aircraftStore.models.map((m) => ({
+    value: m.modelCode,
+    label: `${m.modelCode}` + (m.description ? ` (${m.description})` : ''),
   })),
 )
 
-const selectedModelCode = computed(() => {
-  const a = aircraftStore.aircrafts.find(
-    (ac) => ac.aircraftNumber === selectedAircraftNumber.value,
-  )
-  return a?.modelCode ?? ''
-})
-
-// 切换飞机时重新加载构型数据
-function onAircraftChange(val: string) {
-  const a = aircraftStore.aircrafts.find((ac) => ac.aircraftNumber === val)
-  if (a?.modelCode) {
-    configItemStore.fetchAll(a.modelCode)
+function onModelChange(modelCode: string) {
+  if (modelCode) {
+    configItemStore.fetchAll(modelCode)
   }
 }
 
 // ---- 新建构型项目弹窗 ----
 const configDialogVisible = ref(false)
+const parentContext = ref<{
+  itemId: number
+  itemType: ConfigItemType
+  systemName?: string
+} | null>(null)
+const itemName = ref('')
 const configForm = ref({
   parentItemId: null as number | null,
   ataChapter: '',
-  systemName: '',
-  subSystemName: '' as string | null,
-  equipmentName: '' as string | null,
   partNumber: '' as string | null,
   itemType: 'SYSTEM' as ConfigItemType,
 })
 
-function openCreateConfig(parentId?: number) {
-  configForm.value = {
-    parentItemId: parentId ?? null,
-    ataChapter: '',
-    systemName: '',
-    subSystemName: null,
-    equipmentName: null,
-    partNumber: null,
-    itemType: parentId ? 'SUBSYSTEM' : 'SYSTEM',
+function openCreateConfig(parentId?: number, parentType?: ConfigItemType, parentSystemName?: string) {
+  if (parentId && parentType) {
+    parentContext.value = { itemId: parentId, itemType: parentType, systemName: parentSystemName }
+    configForm.value.parentItemId = parentId
+    // 根据父节点类型设置默认 itemType
+    if (parentType === 'SYSTEM') {
+      configForm.value.itemType = 'SUBSYSTEM'
+    } else if (parentType === 'SUBSYSTEM') {
+      configForm.value.itemType = 'EQUIPMENT'
+    }
+  } else {
+    parentContext.value = null
+    configForm.value.parentItemId = null
+    configForm.value.itemType = 'SYSTEM'
   }
+  itemName.value = ''
+  configForm.value.ataChapter = ''
+  configForm.value.partNumber = null
   configDialogVisible.value = true
 }
 
+// 根据父节点上下文决定可选的项目类型
+const allowedItemTypes = computed(() => {
+  if (!parentContext.value) {
+    // 工具栏"添加项目"：全部类型可选
+    return configItemStore.itemTypeOptions
+  }
+  if (parentContext.value.itemType === 'SYSTEM') {
+    return configItemStore.itemTypeOptions.filter(
+      (opt) => opt.value === 'SUBSYSTEM' || opt.value === 'EQUIPMENT' || opt.value === 'LRU',
+    )
+  }
+  if (parentContext.value.itemType === 'SUBSYSTEM') {
+    return configItemStore.itemTypeOptions.filter(
+      (opt) => opt.value === 'EQUIPMENT' || opt.value === 'LRU',
+    )
+  }
+  return []
+})
+
 async function submitConfig() {
+  if (!itemName.value.trim()) {
+    ElMessage.warning('请输入项目名称')
+    return
+  }
   if (!configForm.value.ataChapter.trim()) {
     ElMessage.warning('请输入 ATA 章节号')
     return
   }
-  if (configForm.value.itemType === 'SYSTEM' && !configForm.value.systemName.trim()) {
-    ElMessage.warning('请输入系统名称')
-    return
+
+  const type = configForm.value.itemType
+
+  let systemName = ''
+  let subSystemName: string | null = null
+  let equipmentName: string | null = null
+
+  if (type === 'SYSTEM') {
+    systemName = itemName.value.trim()
+  } else if (type === 'SUBSYSTEM') {
+    systemName = parentContext.value?.systemName || ''
+    subSystemName = itemName.value.trim()
+  } else {
+    // EQUIPMENT / LRU
+    equipmentName = itemName.value.trim()
   }
+
   await configItemStore.createItem({
     modelCode: selectedModelCode.value,
     parentItemId: configForm.value.parentItemId,
     ataChapter: configForm.value.ataChapter.trim(),
-    systemName: configForm.value.systemName.trim(),
-    subSystemName: configForm.value.subSystemName || null,
-    equipmentName: configForm.value.equipmentName || null,
-    partNumber: configForm.value.partNumber || null,
-    itemType: configForm.value.itemType,
+    systemName,
+    subSystemName,
+    equipmentName,
+    partNumber: configForm.value.partNumber?.trim() || null,
+    itemType: type,
   })
   ElMessage.success('构型项目已创建')
   configDialogVisible.value = false
+}
+
+async function handleDeleteCurrentModel() {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除机型"${selectedModelCode.value}"及其所有构型项目吗？此操作不可撤销。`,
+      '删除机型确认',
+      { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
+    )
+    await aircraftStore.deleteModel(selectedModelCode.value)
+    ElMessage.success('机型已删除')
+    selectedModelCode.value = ''
+    if (aircraftStore.models.length > 0) {
+      selectedModelCode.value = aircraftStore.models[0].modelCode
+      configItemStore.fetchAll(selectedModelCode.value)
+    }
+  } catch { /* cancelled */ }
 }
 
 async function handleDeleteConfigItem(itemId: number, label: string) {
@@ -99,17 +156,6 @@ async function handleDeleteConfigItem(itemId: number, label: string) {
   } catch { /* cancelled */ }
 }
 
-// 获取可选的父节点（根据当前 itemType）
-const availableParents = computed(() => {
-  const t = configForm.value.itemType
-  if (t === 'SYSTEM') return []
-  if (t === 'SUBSYSTEM') return configItemStore.selectList.filter((i) => i.itemType === 'SYSTEM')
-  return configItemStore.selectList.filter(
-    (i) => i.itemType === 'SYSTEM' || i.itemType === 'SUBSYSTEM',
-  )
-})
-
-// 树节点渲染
 const treeProps = {
   children: 'children',
   label: 'systemName',
@@ -122,17 +168,17 @@ const treeProps = {
       <h2 class="page-title">构型管理</h2>
     </div>
 
-    <!-- 飞行器选择器 -->
+    <!-- 机型选择器 -->
     <div class="aircraft-selector">
       <el-select
-        v-model="selectedAircraftNumber"
-        placeholder="请选择飞行器 / 机型"
+        v-model="selectedModelCode"
+        placeholder="请选择机型"
         style="width: 320px"
         filterable
-        @change="onAircraftChange"
+        @change="onModelChange"
       >
         <el-option
-          v-for="opt in aircraftOptions"
+          v-for="opt in modelOptions"
           :key="opt.value"
           :label="opt.label"
           :value="opt.value"
@@ -140,19 +186,24 @@ const treeProps = {
       </el-select>
     </div>
 
-    <!-- 未选择飞行器时的提示 -->
-    <div v-if="!selectedAircraftNumber" class="empty-hint">
+    <!-- 未选择机型时的提示 -->
+    <div v-if="!selectedModelCode" class="empty-hint">
       <span class="empty-icon">🔧</span>
-      <p>请先选择飞行器，查看和管理其构型项目</p>
+      <p>请先选择机型，查看和管理其构型项目</p>
     </div>
 
-    <!-- 已选择飞行器后的构型管理 -->
+    <!-- 已选择机型后的构型管理 -->
     <template v-else>
       <div class="toolbar">
         <span class="current-model">当前机型：{{ selectedModelCode }}</span>
-        <el-button type="primary" @click="openCreateConfig()">
-          <el-icon><Plus /></el-icon> 添加系统
-        </el-button>
+        <div class="toolbar-actions">
+          <el-button type="danger" @click="handleDeleteCurrentModel">
+            删除当前构型
+          </el-button>
+          <el-button type="primary" @click="openCreateConfig()">
+            + 添加项目
+          </el-button>
+        </div>
       </div>
 
       <!-- 加载中 -->
@@ -190,7 +241,6 @@ const treeProps = {
                 <span class="tree-node-equip">{{ data.equipmentName }}</span>
               </template>
               <el-tag
-                size="small"
                 :type="data.itemType === 'SYSTEM' ? '' : data.itemType === 'SUBSYSTEM' ? 'success' : 'info'"
                 class="tree-type-tag"
               >
@@ -202,15 +252,15 @@ const treeProps = {
                 <el-button
                   v-if="data.itemType !== 'LRU'"
                   type="primary"
-                  link
+                  text
                   size="small"
-                  @click.stop="openCreateConfig(data.itemId)"
+                  @click.stop="openCreateConfig(data.itemId, data.itemType, data.systemName)"
                 >
                   添加子项
                 </el-button>
                 <el-button
                   type="danger"
-                  link
+                  text
                   size="small"
                   @click.stop="handleDeleteConfigItem(
                     data.itemId,
@@ -234,10 +284,14 @@ const treeProps = {
       :close-on-click-modal="false"
     >
       <el-form label-width="100px">
+        <el-form-item label="项目名称" required>
+          <el-input v-model="itemName" placeholder="请输入项目名称" />
+        </el-form-item>
+
         <el-form-item label="项目类型" required>
           <el-select v-model="configForm.itemType" style="width: 100%">
             <el-option
-              v-for="opt in configItemStore.itemTypeOptions"
+              v-for="opt in allowedItemTypes"
               :key="opt.value"
               :label="opt.label"
               :value="opt.value"
@@ -245,43 +299,8 @@ const treeProps = {
           </el-select>
         </el-form-item>
 
-        <el-form-item v-if="configForm.itemType !== 'SYSTEM'" label="父节点">
-          <el-select
-            v-model="configForm.parentItemId"
-            placeholder="请选择父节点"
-            style="width: 100%"
-            filterable
-            clearable
-          >
-            <el-option
-              v-for="p in availableParents"
-              :key="p.itemId"
-              :label="p.label"
-              :value="p.itemId"
-            />
-          </el-select>
-        </el-form-item>
-
         <el-form-item label="ATA 章节号" required>
           <el-input v-model="configForm.ataChapter" placeholder="例：72-00" />
-        </el-form-item>
-
-        <el-form-item label="系统名称" required>
-          <el-input v-model="configForm.systemName" placeholder="例：发动机" />
-        </el-form-item>
-
-        <el-form-item
-          v-if="configForm.itemType === 'SUBSYSTEM' || configForm.itemType === 'EQUIPMENT' || configForm.itemType === 'LRU'"
-          label="子系统名称"
-        >
-          <el-input v-model="configForm.subSystemName" placeholder="例：燃油系统" />
-        </el-form-item>
-
-        <el-form-item
-          v-if="configForm.itemType === 'EQUIPMENT' || configForm.itemType === 'LRU'"
-          label="设备名称"
-        >
-          <el-input v-model="configForm.equipmentName" placeholder="例：高压油泵" />
         </el-form-item>
 
         <el-form-item
@@ -353,9 +372,15 @@ const treeProps = {
   flex-shrink: 0;
 }
 
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .current-model {
-  font-size: 13px;
-  color: #8c9ab0;
+  font-size: 14px;
+  color: #6a7a90;
+  font-weight: 500;
 }
 
 .tree-container {
@@ -364,17 +389,28 @@ const treeProps = {
   margin: 0 32px 32px;
   background: #fff;
   border-radius: 10px;
-  padding: 16px;
+  padding: 20px;
   border: 1px solid #e0e8f5;
+}
+
+/* 穿透 el-tree 内部高度限制 */
+.tree-container :deep(.el-tree-node__content) {
+  height: auto !important;
+  min-height: unset;
+}
+
+.tree-container :deep(.el-tree-node) {
+  margin: 2px 0;
 }
 
 .tree-node-content {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 20px;
   flex: 1;
-  font-size: 13px;
-  padding: 2px 0;
+  font-size: 20px;
+  height: 40px;
+  padding: 0 4px;
   min-width: 0;
 }
 
@@ -407,7 +443,7 @@ const treeProps = {
 }
 
 .tree-pn {
-  font-size: 11px;
+  font-size: 12px;
   color: #8c9ab0;
   background: #f0f3f8;
   padding: 1px 6px;
@@ -422,6 +458,10 @@ const treeProps = {
   flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s;
+}
+
+.tree-actions :deep(.el-button) {
+  font-size: 16px;
 }
 
 .tree-node-content:hover .tree-actions {

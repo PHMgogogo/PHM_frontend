@@ -17,4 +17,9 @@ export const instanceApi = {
   remove(instanceIdOrPrefix: string) {
     return client.del<void>(`/highlevel/${instanceIdOrPrefix}`)
   },
+
+  /** 重启算法实例（OpenAPI 规范为 GET） */
+  restart(instanceId: string) {
+    return client.get<InstanceResponse>(`/highlevel/${instanceId}/restart`)
+  },
 }

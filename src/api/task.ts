@@ -27,4 +27,9 @@ export const taskApi = {
   search(keyword: string) {
     return client.get<TaskResponse[]>('/tasks/search', { keyword })
   },
+
+  /** 更新任务信息 */
+  update(taskId: number, data: { name: string; description?: string }) {
+    return client.put<TaskResponse>(`/tasks/${taskId}`, data)
+  },
 }

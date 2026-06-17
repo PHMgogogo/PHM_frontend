@@ -4,7 +4,7 @@
 
 import { createClient } from './client'
 
-const client = createClient({ baseURL: '/document' })
+const client = createClient({ baseURL: '/api' })
 
 // ---- 类型 ----
 

@@ -4,7 +4,7 @@ import * as aircraftApi from '@/api/aircraft'
 import type { AircraftModel, Aircraft } from '@/types/entities'
 
 export const useAircraftStore = defineStore('aircraft', () => {
-  // ---- 机型 ----
+  // ---- 飞机构型 ----
   const models = ref<AircraftModel[]>([])
   const modelsLoading = ref(false)
 
@@ -29,7 +29,7 @@ export const useAircraftStore = defineStore('aircraft', () => {
     await fetchModels()
   }
 
-  // ---- 飞机构型 ----
+  // ---- 飞机单机 ----
   const aircrafts = ref<Aircraft[]>([])
   const aircraftsLoading = ref(false)
   const aircraftNumbers = ref<string[]>([])

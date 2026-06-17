@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as csvApi from '@/api/csv'
-import type { CsvPreviewResult } from '@/types/entities'
+import type { CsvPreviewResponse } from '@/types/entities'
 
 export const useDataMappingStore = defineStore('dataMapping', () => {
   // CSV 上传流程状态
@@ -10,8 +10,8 @@ export const useDataMappingStore = defineStore('dataMapping', () => {
   const uploadResult = ref<{ success: boolean; message?: string } | null>(null)
 
   // 列分析结果
-  const columnAnalysis = ref<{ columnName: string; columnType: string }[]>([])
-  const previewResult = ref<CsvPreviewResult | null>(null)
+  const columnAnalysis = ref<Record<string, string>>({})
+  const previewResult = ref<CsvPreviewResponse | null>(null)
 
   // 已上传的 CSV 记录（当前单机的）
   const csvRecords = ref<Array<{
@@ -71,7 +71,7 @@ export const useDataMappingStore = defineStore('dataMapping', () => {
   }
 
   function clearAnalysis() {
-    columnAnalysis.value = []
+    columnAnalysis.value = {}
     previewResult.value = null
   }
 

@@ -21,7 +21,7 @@ const inputText = ref('')
 
 // ========== 方法 ==========
 function handleSendKey(e: KeyboardEvent) {
-  if (e.ctrlKey && !chatStore.sessionBusy) {
+  if (e.ctrlKey && e.key === 'Enter' && !chatStore.sessionBusy) {
     chatStore.inputText = inputText.value
     inputText.value = ''
     chatStore.handleSend()
@@ -39,9 +39,9 @@ async function sendMessage() {
   <!-- 无 currentTask 时的空状态 -->
   <div v-if="!taskStore.getCurrentTask(props.aircraftNumber)" class="chat-empty-state">
     <div class="chat-empty-icon">💬</div>
-    <p>{{ taskStore.tasks.length === 0 ? '暂无任务，请先创建任务再开始对话。' : '请先在任务管理中选择一个任务开始对话。' }}</p>
+    <p>{{ taskStore.tasks.length === 0 ? '暂无算法，请先创建算法再开始对话。' : '请先在算法管理中选择一个算法开始对话。' }}</p>
     <el-button type="primary" @click="emit('navigate-to-tasks')">
-      {{ taskStore.tasks.length === 0 ? '去创建任务' : '去任务管理' }}
+      {{ taskStore.tasks.length === 0 ? '去创建算法' : '去算法管理' }}
     </el-button>
   </div>
 
@@ -75,7 +75,7 @@ async function sendMessage() {
         <el-button v-if="chatStore.sessionBusy" size="small" type="warning" :icon="VideoPause" @click="chatStore.handleAbort">
           中止
         </el-button>
-        <span class="current-task-label">任务：{{ taskStore.getCurrentTask(props.aircraftNumber)?.name }}</span>
+        <span class="current-task-label">算法：{{ taskStore.getCurrentTask(props.aircraftNumber)?.name }}</span>
       </div>
     </div>
 

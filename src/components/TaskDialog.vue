@@ -19,7 +19,7 @@ const form = reactive({
 })
 
 const rules: FormRules = {
-  name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入算法名称', trigger: 'blur' }],
 }
 
 function handleClose() {
@@ -46,22 +46,22 @@ async function handleSubmit() {
 <template>
   <el-dialog
     :model-value="visible"
-    title="创建任务"
+    title="创建算法"
     width="520px"
     :close-on-click-modal="false"
     @update:model-value="handleClose"
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
-      <el-form-item label="任务名称" prop="name">
-        <el-input v-model="form.name" placeholder="请输入任务名称" clearable />
+      <el-form-item label="算法名称" prop="name">
+        <el-input v-model="form.name" placeholder="请输入算法名称" clearable />
       </el-form-item>
 
-      <el-form-item label="任务描述">
+      <el-form-item label="算法描述">
         <el-input
           v-model="form.description"
           type="textarea"
           :rows="4"
-          placeholder="请输入任务描述（可选）"
+          placeholder="请输入算法描述（可选）"
           resize="none"
         />
       </el-form-item>

@@ -3,20 +3,20 @@
 // ============================================================
 
 import { createClient } from './client'
-import type { ApiResponse, CsvPreviewResult, ColumnAnalysis } from '@/types/entities'
+import type { ApiResponse, CsvPreviewResponse } from '@/types/entities'
 
 const client = createClient({ baseURL: '/api' })
 
 export function analyzeColumns(file: File) {
   const fd = new FormData()
   fd.append('file', file)
-  return client.upload<ColumnAnalysis[]>('/csv/analyze-columns', fd)
+  return client.upload<CsvPreviewResponse['analysis']['columnTypes']>('/csv/analyze-columns', fd)
 }
 
 export function previewCsv(file: File) {
   const fd = new FormData()
   fd.append('file', file)
-  return client.upload<CsvPreviewResult>('/csv/preview', fd)
+  return client.upload<CsvPreviewResponse>('/csv/preview', fd)
 }
 
 export function uploadCsv(

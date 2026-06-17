@@ -5,6 +5,7 @@ import AircraftCard from '@/components/AircraftCard.vue'
 import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
 import MonitorView from '@/views/MonitorView.vue'
 import ConfigManagement from '@/views/ConfigManagement.vue'
+import DocumentView from '@/views/DocumentView.vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { Search } from '@element-plus/icons-vue'
 
@@ -76,13 +77,9 @@ const filteredAircrafts = computed(() => {
         </div>
       </template>
 
-      <!-- 知识库管理（占位） -->
+      <!-- 知识库管理 -->
       <template v-else-if="activeMenu === 'knowledge'">
-        <div class="placeholder-page">
-          <span class="placeholder-icon">📚</span>
-          <p class="placeholder-text">知识库管理</p>
-          <p class="placeholder-sub">该功能正在开发中</p>
-        </div>
+        <DocumentView />
       </template>
 
       <!-- 构型管理 -->
@@ -194,31 +191,4 @@ const filteredAircrafts = computed(() => {
   margin: 0;
 }
 
-.placeholder-page {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #bcc5d0;
-  gap: 12px;
-}
-
-.placeholder-icon {
-  font-size: 60px;
-  opacity: 0.5;
-}
-
-.placeholder-text {
-  font-size: 20px;
-  font-weight: 600;
-  color: #8c9ab0;
-  margin: 0;
-}
-
-.placeholder-sub {
-  font-size: 14px;
-  color: #bcc5d0;
-  margin: 0;
-}
 </style>

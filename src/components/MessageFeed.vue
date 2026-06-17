@@ -2,6 +2,7 @@
 import { ref, watch, nextTick } from 'vue'
 import type { ChatMessage, MessagePart } from '@/stores/chat'
 import { ArrowDown, ArrowUp, SetUp, Warning, QuestionFilled, MagicStick } from '@element-plus/icons-vue'
+import { renderMarkdown } from '@/utils/useMarkdown'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -68,24 +69,6 @@ function formatJson(obj: unknown) {
   try { return JSON.stringify(obj, null, 2) } catch { return String(obj) }
 }
 
-// 简单 markdown 渲染（加粗、斜体、行内代码、换行）
-let _renderMdTotalChars = 0
-let _renderMdCallCount = 0
-let _renderMdTotalTime = 0
-function renderMd(text: string): string {
-  if (!text) return ''
-  const t0 = performance.now()
-  _renderMdCallCount++
-  _renderMdTotalChars += text.length
-  const result = text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br>')
-  _renderMdTotalTime += performance.now() - t0
-  return result
-}
 </script>
 
 <template>
@@ -108,8 +91,8 @@ function renderMd(text: string): string {
               <!-- 文本 / 流式文本 -->
               <div
                 v-if="part.type === 'text' && part.text"
-                class="bubble-text"
-                v-html="renderMd(part.text)"
+                class="bubble-text markdown-body"
+                v-html="renderMarkdown(part.text)"
               />
 
               <!-- 思考过程 -->
@@ -170,12 +153,12 @@ function renderMd(text: string): string {
         </div>
 
         <!-- 生成中占位 -->
-        <div v-if="sessionBusy" class="bubble bubble-bot">
+        <!-- <div v-if="sessionBusy" class="bubble bubble-bot">
           <div class="bubble-role">助手</div>
           <div class="bubble-body generating">
             <span class="typing-dot" /><span class="typing-dot" /><span class="typing-dot" />
           </div>
-        </div>
+        </div> -->
       </template>
 
       <div v-else class="empty-hint">正在初始化会话，请稍候…</div>
@@ -271,8 +254,36 @@ function renderMd(text: string): string {
 
 .bubble-text {
   margin: 0;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+/* markdown 渲染输出块级元素间距 */
+.bubble-text :deep(p) {
+  margin: 0 0 0.5em;
+}
+.bubble-text :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+/* 表格样式 — 框线与字体同色 */
+.bubble-text :deep(table) {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  width: 100%;
+}
+.bubble-text :deep(th),
+.bubble-text :deep(td) {
+  border: 1px solid currentColor;
+  padding: 6px 12px;
+  text-align: left;
+}
+.bubble-text :deep(th) {
+  font-weight: 600;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.markdown-body :deep(ol),
+.markdown-body :deep(ul) {
+  padding-left: revert;
 }
 
 .bubble-text :deep(code) {

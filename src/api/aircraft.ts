@@ -3,7 +3,7 @@
 // ============================================================
 
 import { createClient } from './client'
-import type { AircraftModel, Aircraft, ConfigItem, ApiResponse } from '@/types/entities'
+import type { AircraftModel, Aircraft, ConfigItem, ConfigDataMapping, ApiResponse } from '@/types/entities'
 
 const client = createClient({ baseURL: '/api' })
 
@@ -60,4 +60,10 @@ export function createConfigItem(data: Omit<ConfigItem, 'itemId' | 'children'>) 
 
 export function deleteConfigItem(itemId: number) {
   return client.del<ApiResponse>(`/aircraft/config-items/${itemId}`)
+}
+
+// ---- 构型数据映射 ----
+
+export function getMappings(params: { aircraftNumber?: string; itemId?: string }) {
+  return client.get<ConfigDataMapping[]>('/aircraft/mappings', params as Record<string, string>)
 }

@@ -72,6 +72,10 @@ export const useChatStore = defineStore('chat', () => {
 
   // SSE
   let eventSource: EventSource | null = null
+  let sseRetryCount = 0
+  let sseRetryTimer: ReturnType<typeof setTimeout> | null = null
+  const SSE_RETRY_BASE_MS = 3000   // 初始重试间隔 3s
+  const SSE_RETRY_MAX_MS = 30000   // 最大重试间隔 30s
 
   // 防止重复连接：记录正在连接的目标 sessionId
   let connectingToSid = ''
@@ -332,6 +336,17 @@ export const useChatStore = defineStore('chat', () => {
       const updated = [...messages.value]
       updated[idx] = { ...updated[idx], info }
       messages.value = updated
+    } else if (info.role === 'user') {
+      // 收到服务端 user 消息但未匹配到已有 ID：检查是否存在乐观更新的 user 消息
+      // （ID 以 "optimistic-" 开头），有则原地替换，避免出现两条相同内容
+      const optIdx = messages.value.findIndex((m) => m.info.id.startsWith('optimistic-') && m.info.role === 'user')
+      if (optIdx !== -1) {
+        const updated = [...messages.value]
+        updated[optIdx] = { info, parts: [] }
+        messages.value = updated
+      } else {
+        messages.value = [...messages.value, { info, parts: [] }]
+      }
     } else {
       messages.value = [...messages.value, { info, parts: [] }]
     }
@@ -366,10 +381,24 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // ---- SSE ----
+  function scheduleReconnect() {
+    if (sseRetryTimer) return
+    const delay = Math.min(SSE_RETRY_BASE_MS * Math.pow(2, sseRetryCount), SSE_RETRY_MAX_MS)
+    sseRetryCount++
+    console.log(`[ChatStore] SSE 将在 ${(delay / 1000).toFixed(1)}s 后重连 (第 ${sseRetryCount} 次)`)
+    sseRetryTimer = setTimeout(() => {
+      sseRetryTimer = null
+      startEventSource()
+    }, delay)
+  }
+
   function startEventSource() {
     stopEventSource()
     try {
       eventSource = opencodeApi.event(opts.value)
+      eventSource.onopen = () => {
+        sseRetryCount = 0
+      }
       eventSource.onmessage = async (e: MessageEvent) => {
         let event: { type: string; properties?: Record<string, unknown> }
         try {
@@ -414,13 +443,25 @@ export const useChatStore = defineStore('chat', () => {
             break
         }
       }
-      eventSource.onerror = () => stopEventSource()
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close()
+          eventSource = null
+        }
+        scheduleReconnect()
+      }
     } catch (e: unknown) {
       console.error('[ChatStore] EventSource 创建失败:', e)
+      scheduleReconnect()
     }
   }
 
   function stopEventSource() {
+    if (sseRetryTimer) {
+      clearTimeout(sseRetryTimer)
+      sseRetryTimer = null
+    }
+    sseRetryCount = 0
     if (eventSource) {
       eventSource.close()
       eventSource = null

@@ -86,7 +86,7 @@ const activeMenu = ref('task')
 const initializing = ref(true)
 const sidebarCollapsed = ref(false)
 const workspaceMenus = [
-  { key: 'task', icon: '📋', title: '任务管理' },
+  { key: 'task', icon: '📋', title: '算法管理' },
   { key: 'data', icon: '🗂️', title: '数据管理' },
   { key: 'chat', icon: '💬', title: '对话入口' },
 ]

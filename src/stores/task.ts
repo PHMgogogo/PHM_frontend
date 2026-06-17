@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/task'
 import { instanceApi } from '@/api/instance'
+import { clearWorkerClient } from '@/api/instance-worker'
 import { opencodeApi } from '@/lib/opencode-api'
 import { useChatStore } from '@/stores/chat'
 import type { Task } from '@/types/entities'
@@ -45,6 +46,7 @@ export const useTaskStore = defineStore('task', () => {
   const loading = ref(false)
   const creating = ref(false)
   const createStep = ref('')
+  const updating = ref(false)
 
   /** 每个飞行器当前正在对话的任务 ID（session cookie 持久化，关浏览器后清除） */
   const currentTaskByAircraft = ref<Record<string, number>>({})
@@ -110,7 +112,7 @@ export const useTaskStore = defineStore('task', () => {
         updatedAt: '',
       }))
     } catch (e) {
-      ElMessage.error('加载任务列表失败: ' + friendlyError(e))
+      ElMessage.error('加载算法列表失败: ' + friendlyError(e))
     } finally {
       loading.value = false
     }
@@ -144,7 +146,7 @@ export const useTaskStore = defineStore('task', () => {
       sessionId = session.id
 
       // Step 4: 保存任务到本地后端
-      createStep.value = '正在保存任务...'
+      createStep.value = '正在保存算法...'
       await taskApi.create({
         name: data.name,
         description: data.description || '',
@@ -155,11 +157,11 @@ export const useTaskStore = defineStore('task', () => {
 
       // Step 5: 刷新列表
       await fetchTasks()
-      ElMessage.success('任务创建成功')
+      ElMessage.success('算法创建成功')
 
       return tasks.value.find((t) => t.sessionId === sessionId) ?? null
     } catch (e) {
-      ElMessage.error(`任务创建失败 (${createStep.value}): ${friendlyError(e)}`)
+      ElMessage.error(`算法创建失败 (${createStep.value}): ${friendlyError(e)}`)
       return null
     } finally {
       creating.value = false
@@ -172,7 +174,7 @@ export const useTaskStore = defineStore('task', () => {
   async function deleteTask(taskId: number) {
     const task = tasks.value.find((t) => t.id === taskId)
     if (!task) {
-      ElMessage.error('任务不存在')
+      ElMessage.error('算法不存在')
       return
     }
 
@@ -210,13 +212,15 @@ export const useTaskStore = defineStore('task', () => {
         console.warn('删除算法实例失败（可能已不存在）:', (e as Error).message)
         // 继续执行后续步骤
       }
+      // 无论远程删除是否成功，清理本地 client 缓存
+      clearWorkerClient(task.instanceId)
     }
 
     // Step 4: 删除后端任务记录（必须成功）
     try {
       await taskApi.remove(taskId)
     } catch (e) {
-      ElMessage.error('删除任务失败: ' + friendlyError(e))
+      ElMessage.error('删除算法失败: ' + friendlyError(e))
       return
     }
 
@@ -233,7 +237,22 @@ export const useTaskStore = defineStore('task', () => {
     currentTaskByAircraft.value = nextCurrent
     syncCurrentTaskCookie()
 
-    ElMessage.success('任务已删除')
+    ElMessage.success('算法已删除')
+  }
+
+  // ---- 更新任务信息 ----
+
+  async function updateTask(taskId: number, data: { name: string; description: string }) {
+    updating.value = true
+    try {
+      await taskApi.update(taskId, data)
+      await fetchTasks()
+      ElMessage.success('算法信息已保存')
+    } catch (e) {
+      ElMessage.error('保存失败: ' + friendlyError(e))
+    } finally {
+      updating.value = false
+    }
   }
 
   // ---- 初始化入口 ----
@@ -248,6 +267,7 @@ export const useTaskStore = defineStore('task', () => {
     loading,
     creating,
     createStep,
+    updating,
     currentTaskByAircraft,
     getCurrentTask,
     setCurrentTask,
@@ -255,6 +275,7 @@ export const useTaskStore = defineStore('task', () => {
     fetchTasks,
     createTask,
     deleteTask,
+    updateTask,
     init,
   }
 })
