@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Fold, Expand } from '@element-plus/icons-vue'
+
 defineProps<{
   activeMenu: string
   collapsed?: boolean
@@ -37,7 +39,8 @@ const menus = [
     </ul>
     <div class="toggle-area" @click="emit('toggle')">
       <el-icon :size="18">
-        <component :is="collapsed ? 'Expand' : 'Fold'" />
+        <Expand v-if="collapsed" />
+        <Fold v-else />
       </el-icon>
     </div>
   </nav>

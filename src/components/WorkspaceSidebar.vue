@@ -44,7 +44,8 @@ const emit = defineEmits<{
     </ul>
     <div class="ws-toggle-area" @click="emit('update:collapsed', !collapsed)">
       <el-icon :size="18">
-        <component :is="collapsed ? 'Expand' : 'Fold'" />
+        <Expand v-if="collapsed" />
+        <Fold v-else />
       </el-icon>
     </div>
   </aside>

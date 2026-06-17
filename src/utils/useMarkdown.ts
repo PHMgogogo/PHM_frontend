@@ -1,5 +1,5 @@
 import MarkdownIt from 'markdown-it'
-import katex from 'katex'
+import { renderToString } from 'katex'
 
 const md = new MarkdownIt({
   html: true,
@@ -40,7 +40,7 @@ export function renderMarkdown(text: string): string {
     const info = mathBlocks.get(id)
     if (!info) return ''
     try {
-      return katex.renderToString(info.math, {
+      return renderToString(info.math, {
         displayMode: info.display,
         throwOnError: false,
         strict: false,

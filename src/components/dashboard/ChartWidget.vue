@@ -1,7 +1,22 @@
 <!-- 图表组件 -->
 <script setup>
 import { onMounted, ref, watch, onUnmounted, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import { init, use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts'
+import {
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+} from 'echarts/components'
+
+// 注册 ECharts 按需模块（全局副作用，仅执行一次）
+use([
+  CanvasRenderer,
+  BarChart, LineChart, PieChart, ScatterChart,
+  TitleComponent, TooltipComponent, LegendComponent, GridComponent,
+])
 
 const props = defineProps({
   id: {
@@ -68,7 +83,7 @@ const initChart = async () => {
         myChart.dispose()
         myChart = null
       }
-      myChart = echarts.init(chartRef.value, props.theme === 'default' ? null : props.theme)
+      myChart = init(chartRef.value, props.theme === 'default' ? null : props.theme)
       myChart.setOption(props.option)
       if (props.enableInteraction) {
         myChart.on('click', handleChartClick)

@@ -30,9 +30,6 @@
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import 'element-plus/dist/index.css'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import App from './App.vue'
 import router from './router'
@@ -41,13 +38,11 @@ import 'katex/dist/katex.min.css'
 
 const app = createApp(App)
 
-// 注册 Element Plus 全局图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
+// Element Plus 组件和 CSS 由 unplugin-vue-components / unplugin-auto-import 按需导入
+// 设置中文语言包
+app.config.globalProperties.$ELEMENT = { locale: zhCn }
 
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
 
 app.mount('#app')

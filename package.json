@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "build:check": "vue-tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
@@ -13,6 +15,8 @@
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.7.0",
     "typescript": "~6.0.2",
+    "unplugin-auto-import": "^21.0.0",
+    "unplugin-vue-components": "^32.1.0",
     "vite": "^8.0.12",
     "vue-tsc": "^3.2.9"
   },
