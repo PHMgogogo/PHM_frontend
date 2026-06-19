@@ -36,6 +36,13 @@ import router from './router'
 import './style.css'
 import 'katex/dist/katex.min.css'
 
+// Element Plus 命令式组件（ElMessage / ElMessageBox / ElNotification / ElLoading）
+// 不在模板中，unplugin 按需导入不会为其注入样式，需手动全局导入
+import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/notification/style/css'
+import 'element-plus/es/components/loading/style/css'
+
 const app = createApp(App)
 
 // Element Plus 组件和 CSS 由 unplugin-vue-components / unplugin-auto-import 按需导入

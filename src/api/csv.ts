@@ -24,7 +24,6 @@ export function uploadCsv(
   tableName: string,
   aircraftNumber: string,
   parentItemId?: number,
-  dataType?: string,
 ) {
   const fd = new FormData()
   fd.append('file', file)
@@ -32,9 +31,6 @@ export function uploadCsv(
   fd.append('aircraftNumber', aircraftNumber)
   if (parentItemId !== undefined) {
     fd.append('parentItemId', String(parentItemId))
-  }
-  if (dataType) {
-    fd.append('dataType', dataType)
   }
   return client.upload<ApiResponse>('/csv/upload', fd)
 }

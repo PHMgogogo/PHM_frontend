@@ -8,8 +8,6 @@ export type AircraftStatus = 'active' | 'retired' | 'maintenance'
 
 export type ConfigItemType = 'SYSTEM' | 'SUBSYSTEM' | 'EQUIPMENT' | 'LRU'
 
-export type DataType = 'DIAGNOSIS' | 'EVALUATION' | 'PREDICTION' | 'RAW'
-
 // ---- 实体 ----
 
 export interface AircraftModel {
@@ -49,7 +47,6 @@ export interface CsvUploadParams {
   tableName: string
   aircraftNumber: string
   parentItemId?: number
-  dataType?: DataType
 }
 
 /** /csv/preview 接口返回的完整响应 */
@@ -84,7 +81,6 @@ export interface ConfigDataMapping {
   aircraftNumber: string
   itemId: number
   csvTableName: string
-  dataType: DataType
   dataTime: string
   createdAt: string
 }
@@ -192,8 +188,18 @@ export interface TaskResponse {
   name: string
   description: string
   session_id: string
+  aircraft_id: string
   instance_id: string
   work_dir: string
+  is_global: boolean
+  default: boolean
+}
+
+/** GET /api/tasks/aircraft/{aircraft_id} 响应体 */
+export interface AircraftTaskListResponse {
+  /** 该飞机是否仍需初始化（无任何专属任务时为 true，与 tasks 是否含全局任务无关） */
+  initialization_required: boolean
+  tasks: TaskResponse[]
 }
 
 /** POST /api/tasks 请求体 */
@@ -203,6 +209,10 @@ export interface TaskCreateRequest {
   session_id: string
   instance_id: string
   work_dir?: string
+  // 注：aircraft_id 显式传入时不得为空字符串（后端 min_length=1），省略则用默认 ""
+  aircraft_id?: string
+  is_global?: boolean
+  default?: boolean
 }
 
 /** POST /api/tasks 成功响应 */
@@ -218,6 +228,10 @@ export interface Task {
   sessionId: string
   instanceId?: string
   workDir: string
+  aircraftId: string
+  isGlobal: boolean
+  /** 是否为对应飞机的默认任务 */
+  isDefault: boolean
   createdAt: string
   updatedAt: string
 }

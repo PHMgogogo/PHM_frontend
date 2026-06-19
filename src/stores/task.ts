@@ -51,6 +51,9 @@ export const useTaskStore = defineStore('task', () => {
   /** 每个飞行器当前正在对话的任务 ID（session cookie 持久化，关浏览器后清除） */
   const currentTaskByAircraft = ref<Record<string, number>>({})
 
+  /** 当前工作区所属飞机标识（即后端 aircraft_id），由 init() 设置，供 loadTasks/createTask 复用 */
+  const currentAircraftId = ref('')
+
   // ---- Cookie 同步 ----
 
   function syncCurrentTaskCookie() {
@@ -97,20 +100,33 @@ export const useTaskStore = defineStore('task', () => {
 
   // ---- 任务列表 ----
 
+  /**
+   * 加载并映射当前飞机的任务列表（不切换 loading，供 init/createTask 等在外壳内复用）。
+   * 返回 initialization_required：该飞机是否仍需初始化（无任何专属任务时为 true）。
+   */
+  async function loadTasks(): Promise<boolean> {
+    const res = await taskApi.listByAircraft(currentAircraftId.value)
+    tasks.value = res.tasks.map((r) => ({
+      id: r.task_id,
+      name: r.name,
+      description: r.description,
+      sessionId: r.session_id,
+      instanceId: r.instance_id || '',
+      workDir: r.work_dir || '',
+      aircraftId: r.aircraft_id || '',
+      isGlobal: r.is_global ?? false,
+      isDefault: r.default ?? false,
+      createdAt: '',
+      updatedAt: '',
+    }))
+    return res.initialization_required
+  }
+
+  /** 重新拉取当前飞机的任务列表（带 loading 态，供需要 loading 指示的路径调用） */
   async function fetchTasks() {
     loading.value = true
     try {
-      const res = await taskApi.list()
-      tasks.value = res.map((r) => ({
-        id: r.task_id,
-        name: r.name,
-        description: r.description,
-        sessionId: r.session_id,
-        instanceId: r.instance_id || '',
-        workDir: r.work_dir || '',
-        createdAt: '',
-        updatedAt: '',
-      }))
+      await loadTasks()
     } catch (e) {
       ElMessage.error('加载算法列表失败: ' + friendlyError(e))
     } finally {
@@ -120,7 +136,10 @@ export const useTaskStore = defineStore('task', () => {
 
   // ---- 创建任务（多步编排） ----
 
-  async function createTask(data: { name: string; description: string }): Promise<Task | null> {
+  async function createTask(
+    data: { name: string; description: string },
+    opts?: { isDefault?: boolean; isGlobal?: boolean },
+  ): Promise<Task | null> {
     creating.value = true
     let instanceId = ''
     let sessionId = ''
@@ -134,7 +153,7 @@ export const useTaskStore = defineStore('task', () => {
       // Step 2: 处理工作目录路径
       createStep.value = '正在连接工作区...'
       const workDir = convertPath(inst.file_path)
-      const opts = {
+      const sessionOpts = {
         base: '/opencode',
         dir: workDir,
         user: 'opencode',
@@ -142,10 +161,10 @@ export const useTaskStore = defineStore('task', () => {
 
       // Step 3: 创建 OpenCode 会话
       createStep.value = '正在创建会话...'
-      const session = await opencodeApi.create(opts, data.name)
+      const session = await opencodeApi.create(sessionOpts, data.name)
       sessionId = session.id
 
-      // Step 4: 保存任务到本地后端
+      // Step 4: 保存任务到本地后端（携带当前飞机标识与默认/全局标记）
       createStep.value = '正在保存算法...'
       await taskApi.create({
         name: data.name,
@@ -153,10 +172,13 @@ export const useTaskStore = defineStore('task', () => {
         session_id: sessionId,
         instance_id: instanceId,
         work_dir: workDir,
+        aircraft_id: currentAircraftId.value,
+        default: opts?.isDefault ?? false,
+        is_global: opts?.isGlobal ?? false,
       })
 
-      // Step 5: 刷新列表
-      await fetchTasks()
+      // Step 5: 刷新列表（不切换 loading，避免在外壳内反复 toggle）
+      await loadTasks()
       ElMessage.success('算法创建成功')
 
       return tasks.value.find((t) => t.sessionId === sessionId) ?? null
@@ -242,11 +264,18 @@ export const useTaskStore = defineStore('task', () => {
 
   // ---- 更新任务信息 ----
 
-  async function updateTask(taskId: number, data: { name: string; description: string }) {
+  async function updateTask(
+    taskId: number,
+    data: { name: string; description: string; isGlobal?: boolean },
+  ) {
     updating.value = true
     try {
-      await taskApi.update(taskId, data)
-      await fetchTasks()
+      await taskApi.update(taskId, {
+        name: data.name,
+        description: data.description,
+        is_global: data.isGlobal,
+      })
+      await loadTasks()
       ElMessage.success('算法信息已保存')
     } catch (e) {
       ElMessage.error('保存失败: ' + friendlyError(e))
@@ -257,9 +286,29 @@ export const useTaskStore = defineStore('task', () => {
 
   // ---- 初始化入口 ----
 
-  function init() {
+  /**
+   * 初始化指定飞机的任务上下文：
+   * 1. 记录当前飞机标识（作为后端 aircraft_id）
+   * 2. 按飞机拉取任务列表
+   * 3. 若 initialization_required=true（该飞机无任何专属任务），静默自动创建一条默认算法（default=true）
+   *    注意：tasks 可能含全局任务导致 length>0，故只看 initialization_required，不看 tasks.length。
+   * 整个流程包在单个 loading 外壳内，对外只产生一次 loading true→false 跳变。
+   */
+  async function init(aircraftId: string) {
+    currentAircraftId.value = aircraftId
     loadFromCookies()
-    fetchTasks()
+    loading.value = true
+    try {
+      const initializationRequired = await loadTasks()
+      if (initializationRequired) {
+        await createTask({ name: '默认算法', description: '' }, { isDefault: true })
+        await loadTasks()
+      }
+    } catch (e) {
+      ElMessage.error('加载算法列表失败: ' + friendlyError(e))
+    } finally {
+      loading.value = false
+    }
   }
 
   return {
@@ -269,6 +318,7 @@ export const useTaskStore = defineStore('task', () => {
     createStep,
     updating,
     currentTaskByAircraft,
+    currentAircraftId,
     getCurrentTask,
     setCurrentTask,
     clearCurrentTask,

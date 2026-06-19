@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import SideNav from '@/components/SideNav.vue'
 import AircraftCard from '@/components/AircraftCard.vue'
 import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
@@ -14,9 +14,23 @@ const activeMenu = ref('aircraft')
 const sidebarCollapsed = ref(false)
 const dialogVisible = ref(false)
 const searchQuery = ref('')
+const selectedModel = ref('')
 
 onMounted(() => {
   store.fetchAircrafts()
+  store.fetchModels()
+})
+
+// 按机型筛选：切换机型时重新请求该机型下的单机列表
+watch(selectedModel, (modelCode) => {
+  searchQuery.value = ''
+  if (modelCode) {
+    store.fetchAircrafts(modelCode)
+    store.fetchaircraftNumbers(modelCode)
+  } else {
+    store.fetchAircrafts()
+    store.aircraftNumbers = []
+  }
 })
 
 const filteredAircrafts = computed(() => {
@@ -48,6 +62,19 @@ const filteredAircrafts = computed(() => {
 
         <!-- 顶部功能区 -->
         <div class="toolbar">
+          <el-select
+            v-model="selectedModel"
+            placeholder="按机型筛选"
+            clearable
+            class="model-filter"
+          >
+            <el-option
+              v-for="m in store.models"
+              :key="m.modelCode"
+              :label="`${m.modelCode}${m.manufacturer ? ' — ' + m.manufacturer : ''}`"
+              :value="m.modelCode"
+            />
+          </el-select>
           <el-input
             v-model="searchQuery"
             placeholder="搜索飞行器名称、属性或构型..."
@@ -153,6 +180,11 @@ const filteredAircrafts = computed(() => {
 .search-input {
   flex: 1;
   max-width: 400px;
+}
+
+.model-filter {
+  width: 220px;
+  flex-shrink: 0;
 }
 
 .add-btn {

@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { useDataMappingStore } from '@/stores/dataMapping'
 import { useConfigItemStore } from '@/stores/configItem'
 import { getMappings } from '@/api/aircraft'
-import type { DataType, ConfigDataMapping } from '@/types/entities'
+import type { ConfigDataMapping } from '@/types/entities'
 
 const props = defineProps<{
   aircraftNumber: string
@@ -17,26 +17,11 @@ const configItemStore = useConfigItemStore()
 const csvFile = ref<File | null>(null)
 const csvTableName = ref('')
 const csvParentItemId = ref<number | undefined>(undefined)
-const csvDataType = ref<DataType>('RAW')
-const dataTypeOptions: { label: string; value: DataType }[] = [
-  { label: '诊断数据', value: 'DIAGNOSIS' },
-  { label: '评估数据', value: 'EVALUATION' },
-  { label: '预测数据', value: 'PREDICTION' },
-  { label: '原始数据', value: 'RAW' },
-]
-
 const uploadRef = ref()
 
 // ---- 已上传映射记录 ----
 const mappings = ref<ConfigDataMapping[]>([])
 const mappingsLoading = ref(false)
-
-const dataTypeMeta: Record<string, { label: string; color: string }> = {
-  DIAGNOSIS:  { label: '诊断数据', color: '#e6a23c' },
-  EVALUATION: { label: '评估数据', color: '#409eff' },
-  PREDICTION: { label: '预测数据', color: '#67c23a' },
-  RAW:        { label: '原始数据', color: '#909399' },
-}
 
 function formatTime(ts: string) {
   if (!ts) return '-'
@@ -92,14 +77,12 @@ async function handleCsvUpload() {
       csvTableName.value.trim(),
       props.aircraftNumber,
       csvParentItemId.value,
-      csvDataType.value,
     )
     ElMessage.success(dataMappingStore.uploadResult?.message || '上传成功')
     // 重置
     csvFile.value = null
     csvTableName.value = ''
     csvParentItemId.value = undefined
-    csvDataType.value = 'RAW'
     dataMappingStore.clearAnalysis()
     uploadRef.value?.clearFiles()
     // 上传成功后刷新映射列表
@@ -136,24 +119,13 @@ async function handleCsvUpload() {
           </el-form-item>
         </div>
 
-        <div class="form-row inline-fields">
+        <div class="form-row">
           <el-form-item label="数据表名" label-width="80px">
             <el-input
               v-model="csvTableName"
               placeholder=""
               style="width: 200px"
             />
-          </el-form-item>
-
-          <el-form-item label="数据类型" label-width="80px">
-            <el-select v-model="csvDataType" style="width: 160px">
-              <el-option
-                v-for="dt in dataTypeOptions"
-                :key="dt.value"
-                :label="dt.label"
-                :value="dt.value"
-              />
-            </el-select>
           </el-form-item>
         </div>
 
@@ -240,16 +212,6 @@ async function handleCsvUpload() {
             <span class="table-name-cell">{{ row.csvTableName }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="dataType" label="数据类型" width="120" align="center">
-          <template #default="{ row }">
-            <span
-              class="data-type-tag"
-              :style="{ background: dataTypeMeta[row.dataType]?.color + '18', color: dataTypeMeta[row.dataType]?.color, borderColor: dataTypeMeta[row.dataType]?.color + '40' }"
-            >
-              {{ dataTypeMeta[row.dataType]?.label || row.dataType }}
-            </span>
-          </template>
-        </el-table-column>
         <el-table-column prop="dataTime" label="数据时间" width="180" align="center">
           <template #default="{ row }">
             <span class="time-text">{{ formatTime(row.dataTime) }}</span>
@@ -332,11 +294,6 @@ async function handleCsvUpload() {
   width: 100%;
 }
 
-.inline-fields {
-  display: flex;
-  gap: 24px;
-}
-
 .form-actions {
   display: flex;
   gap: 10px;
@@ -404,16 +361,6 @@ async function handleCsvUpload() {
   display: flex;
   gap: 4px;
   justify-content: center;
-}
-
-.data-type-tag {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid;
-  line-height: 1.6;
 }
 
 .time-text {

@@ -50,8 +50,8 @@ const basicInfoFormRef = ref<FormInstance>()
 function setBasicInfoFormRef(el: any) {
   basicInfoFormRef.value = el
 }
-const basicInfoForm = reactive({ name: '', description: '' })
-const originalBasicInfo = reactive({ name: '', description: '' })
+const basicInfoForm = reactive({ name: '', description: '', isGlobal: false })
+const originalBasicInfo = reactive({ name: '', description: '', isGlobal: false })
 const basicInfoDirty = ref(false)
 const basicInfoSaving = ref(false)
 const basicInfoRules: FormRules = {
@@ -114,11 +114,12 @@ const deviceOptions = [
 
 // ---- dirty 追踪 ----
 watch(
-  () => [basicInfoForm.name, basicInfoForm.description],
+  () => [basicInfoForm.name, basicInfoForm.description, basicInfoForm.isGlobal],
   () => {
     basicInfoDirty.value =
       basicInfoForm.name !== originalBasicInfo.name ||
-      basicInfoForm.description !== originalBasicInfo.description
+      basicInfoForm.description !== originalBasicInfo.description ||
+      basicInfoForm.isGlobal !== originalBasicInfo.isGlobal
   },
 )
 
@@ -160,8 +161,10 @@ function openConfigPanel(task: Task) {
   // 填充 Section A
   basicInfoForm.name = task.name
   basicInfoForm.description = task.description
+  basicInfoForm.isGlobal = task.isGlobal
   originalBasicInfo.name = task.name
   originalBasicInfo.description = task.description
+  originalBasicInfo.isGlobal = task.isGlobal
   basicInfoDirty.value = false
 
   // 重置 Section B 共用
@@ -206,9 +209,11 @@ async function handleSaveBasicInfo() {
     await taskStore.updateTask(taskId, {
       name: basicInfoForm.name.trim(),
       description: basicInfoForm.description.trim(),
+      isGlobal: basicInfoForm.isGlobal,
     })
     originalBasicInfo.name = basicInfoForm.name
     originalBasicInfo.description = basicInfoForm.description
+    originalBasicInfo.isGlobal = basicInfoForm.isGlobal
     basicInfoDirty.value = false
   } finally {
     basicInfoSaving.value = false
@@ -402,8 +407,11 @@ function handleCreateTaskClick() {
   showTaskDialog.value = true
 }
 
-async function onTaskConfirm(data: { name: string; description: string }) {
-  const result = await taskStore.createTask(data)
+async function onTaskConfirm(data: { name: string; description: string; isGlobal: boolean }) {
+  const result = await taskStore.createTask(
+    { name: data.name, description: data.description },
+    { isGlobal: data.isGlobal },
+  )
   if (result) showTaskDialog.value = false
 }
 
@@ -533,6 +541,10 @@ function handleEditTask(task: Task) {
                       placeholder="请输入算法描述（可选）"
                       resize="none"
                     />
+                  </el-form-item>
+                  <el-form-item label="算法可见性">
+                    <el-switch v-model="basicInfoForm.isGlobal" />
+                    <span class="visibility-hint">{{ basicInfoForm.isGlobal ? '全局可见' : '当前任务可见' }}</span>
                   </el-form-item>
                   <el-form-item>
                     <el-button
@@ -1005,6 +1017,14 @@ function handleEditTask(task: Task) {
 .config-panel :deep(.el-form-item__label) {
   font-size: 13px;
   color: #3a4a5c;
+  white-space: nowrap;
+}
+
+/* 让输入框与文本域的 placeholder / 文本字体保持一致 */
+.config-panel :deep(.el-input__inner),
+.config-panel :deep(.el-textarea__inner) {
+  font-size: 13px;
+  font-family: inherit;
 }
 
 .collapse-title {
@@ -1019,6 +1039,12 @@ function handleEditTask(task: Task) {
   padding: 1px 8px;
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.visibility-hint {
+  margin-left: 10px;
+  font-size: 13px;
+  color: #8c9ab0;
 }
 
 .no-instance-tip {

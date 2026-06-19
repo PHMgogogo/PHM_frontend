@@ -18,7 +18,6 @@ export const useDataMappingStore = defineStore('dataMapping', () => {
     tableName: string
     aircraftNumber: string
     parentItemId?: number
-    dataType?: string
     uploadedAt: string
   }>>([])
 
@@ -47,18 +46,16 @@ export const useDataMappingStore = defineStore('dataMapping', () => {
     tableName: string,
     aircraftNumber: string,
     parentItemId?: number,
-    dataType?: string,
   ) {
     uploading.value = true
     uploadResult.value = null
     try {
-      const res = await csvApi.uploadCsv(file, tableName, aircraftNumber, parentItemId, dataType)
+      const res = await csvApi.uploadCsv(file, tableName, aircraftNumber, parentItemId)
       uploadResult.value = { success: true, message: res.message || '上传成功' }
       csvRecords.value.push({
         tableName,
         aircraftNumber,
         parentItemId,
-        dataType,
         uploadedAt: new Date().toISOString(),
       })
       return res

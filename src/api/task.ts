@@ -3,7 +3,12 @@
 // ============================================================
 
 import { createClient } from './client'
-import type { TaskResponse, TaskCreateRequest, TaskCreateResponse } from '@/types/entities'
+import type {
+  TaskResponse,
+  TaskCreateRequest,
+  TaskCreateResponse,
+  AircraftTaskListResponse,
+} from '@/types/entities'
 
 const client = createClient({ baseURL: '/task' })
 
@@ -11,6 +16,11 @@ export const taskApi = {
   /** 获取全部任务 */
   list() {
     return client.get<TaskResponse[]>('/tasks/')
+  },
+
+  /** 按飞机查询任务（GET /api/tasks/aircraft/{aircraft_id}，精确匹配） */
+  listByAircraft(aircraftId: string) {
+    return client.get<AircraftTaskListResponse>(`/tasks/aircraft/${aircraftId}`)
   },
 
   /** 创建任务 */
@@ -29,7 +39,7 @@ export const taskApi = {
   },
 
   /** 更新任务信息 */
-  update(taskId: number, data: { name: string; description?: string }) {
+  update(taskId: number, data: { name: string; description?: string; is_global?: boolean }) {
     return client.put<TaskResponse>(`/tasks/${taskId}`, data)
   },
 }

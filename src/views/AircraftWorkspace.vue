@@ -22,66 +22,7 @@ const aircraft = computed(() =>
   aircraftStore.aircrafts.find((a) => a.aircraftNumber === aircraftNumber.value),
 )
 
-onMounted(() => {
-  aircraftStore.fetchAircrafts()
-  if (aircraft.value?.modelCode) {
-    configItemStore.fetchAll(aircraft.value.modelCode)
-  }
-  taskStore.init()
-})
-
-onUnmounted(() => {
-  chatStore.dispose()
-})
-
-// ---- 任务加载完成后，若该飞行器有 currentTask 且 workDir 可用，自动进入对话 ----
-let initialCheckDone = false
-watch(
-  () => taskStore.loading,
-  (loading, wasLoading) => {
-    if (wasLoading && !loading && !initialCheckDone) {
-      initialCheckDone = true
-      initializing.value = false
-      const ct = taskStore.getCurrentTask(aircraftNumber.value)
-      const wd = ct ? ct.workDir : undefined
-      if (ct && wd) {
-        activeMenu.value = 'chat'
-        chatStore.connectToSession(ct.sessionId, wd)
-      } else {
-
-      }
-    }
-  },
-)
-
-// ---- 飞行器切换时清理（SPA 内导航到其他飞行器） ----
-watch(aircraftNumber, async (newVal, oldVal) => {
-  if (oldVal && newVal !== oldVal) {
-    chatStore.dispose()
-    initialCheckDone = false
-
-    // 先确定默认 tab 并渲染 UI，再初始化会话
-    const menu = resolveDefaultMenu()
-    activeMenu.value = menu
-
-    if (menu === 'chat') {
-      await nextTick()
-      const ct = taskStore.getCurrentTask(newVal)
-      if (ct && ct.workDir) {
-        chatStore.connectToSession(ct.sessionId, ct.workDir)
-      }
-    }
-  }
-})
-
-// ---- 导航 ----
-function resolveDefaultMenu(): string {
-  const ct = taskStore.getCurrentTask(aircraftNumber.value)
-  if (ct && ct.workDir) return 'chat'
-  return 'task'
-}
-// 初始化为安全默认值。任务加载完成后由 watch(taskStore.loading) 根据
-// currentTask 是否存在 workDir 自动决定是否切换到 'chat'
+// ---- UI 状态 ----
 const activeMenu = ref('task')
 const initializing = ref(true)
 const sidebarCollapsed = ref(false)
@@ -90,6 +31,45 @@ const workspaceMenus = [
   { key: 'data', icon: '🗂️', title: '数据管理' },
   { key: 'chat', icon: '💬', title: '对话入口' },
 ]
+
+// ---- 初始化指定飞机的任务上下文：拉取列表，空列表则静默自动创建默认算法 ----
+async function bootstrapFor(id: string) {
+  initializing.value = true
+  try {
+    await taskStore.init(id)
+  } finally {
+    initializing.value = false
+  }
+  // 任务上下文就绪后，若该飞机有 currentTask 且 workDir 可用，自动进入对话；否则停在算法管理
+  const ct = taskStore.getCurrentTask(id)
+  if (ct && ct.workDir) {
+    activeMenu.value = 'chat'
+    await nextTick()
+    chatStore.connectToSession(ct.sessionId, ct.workDir)
+  } else {
+    activeMenu.value = 'task'
+  }
+}
+
+onMounted(() => {
+  aircraftStore.fetchAircrafts()
+  if (aircraft.value?.modelCode) {
+    configItemStore.fetchAll(aircraft.value.modelCode)
+  }
+  bootstrapFor(aircraftNumber.value)
+})
+
+onUnmounted(() => {
+  chatStore.dispose()
+})
+
+// ---- 飞行器切换时清理并重新初始化（SPA 内导航到其他飞行器） ----
+watch(aircraftNumber, async (newVal, oldVal) => {
+  if (oldVal && newVal !== oldVal) {
+    chatStore.dispose()
+    await bootstrapFor(newVal)
+  }
+})
 
 // ---- 子组件事件处理 ----
 function onEnterChat() {
