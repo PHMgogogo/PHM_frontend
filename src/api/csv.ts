@@ -40,3 +40,13 @@ export function getCsvTables(modelCode?: string) {
   const params = modelCode ? { modelCode } : undefined
   return client.get<unknown[]>('/csv/tables', params)
 }
+
+/**
+ * GET /csv/overview —— 按构型数据映射（mappingId）查询对应 CSV 表的数据列名。
+ * 后端返回字段较多，前端只关心 dataColumns（数据列名列表）。
+ */
+export function getCsvOverview(mappingId: number) {
+  return client.get<{ dataColumns: string[] }>('/csv/overview', {
+    mappingId: String(mappingId),
+  })
+}

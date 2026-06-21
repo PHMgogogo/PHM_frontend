@@ -118,6 +118,7 @@ function onNavigateToTasks() {
         <DataPanel
           v-else-if="activeMenu === 'data'"
           :aircraft-number="aircraftNumber"
+          @navigate-to-tasks="onNavigateToTasks"
         />
       </template>
     </main>

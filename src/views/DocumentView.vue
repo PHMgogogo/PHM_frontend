@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Search, Delete } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
@@ -9,8 +9,30 @@ import type { DocumentItem } from '@/api/document'
 const store = useKnowledgeStore()
 const searchQuery = ref('')
 
+// ---- 轮询文档列表 ----
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let polling = false
+
+async function pollDocuments() {
+  if (polling) return
+  polling = true
+  try {
+    await store.fetchDocuments()
+  } finally {
+    polling = false
+  }
+}
+
 onMounted(() => {
   store.init()
+  pollTimer = setInterval(pollDocuments, 3000)
+})
+
+onUnmounted(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 
 const filteredDocuments = computed(() => {

@@ -220,6 +220,32 @@ export interface TaskCreateResponse {
   task_id: number
 }
 
+// ---- 数据管理 → 训练接口 ----
+
+/** POST /api/tasks/train 请求体 */
+export interface TrainTaskRequest {
+  table_name: string
+  data_cols: string[]
+  label_cols: string[]
+  instance_id: string
+  batch_size?: number
+  epoch?: number
+  learning_rate?: number
+  detach?: boolean
+  device?: 'cpu' | 'cuda'
+}
+
+/** POST /api/tasks/infer 请求体 — 比 TrainRequest 少 epoch 和 learning_rate */
+export interface InferTaskRequest {
+  table_name: string
+  data_cols: string[]
+  label_cols: string[]
+  instance_id: string
+  batch_size?: number
+  detach?: boolean
+  device?: 'cpu' | 'cuda'
+}
+
 /** 前端任务实体（camelCase） */
 export interface Task {
   id: number

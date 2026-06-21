@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Search, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -24,6 +24,71 @@ const chatStore = useChatStore()
 
 const searchKeyword = ref('')
 const showTaskDialog = ref(false)
+
+// ---- 状态轮询 ----
+
+const STATE_LABELS: Record<string, string> = {
+  UNLOADED: '未加载',
+  LOADED: '已加载',
+  TRAINING: '训练中',
+  INFERRING: '推理中',
+}
+
+const taskStates = reactive<Record<number, string>>({})
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let polling = false
+
+async function pollTaskStates() {
+  // 防止上一轮请求未完成时重叠发起新一轮
+  if (polling) return
+  polling = true
+  try {
+    const tasks = taskStore.tasks
+    // 并发请求所有任务的状态，避免串行阻塞
+    await Promise.allSettled(
+      tasks
+        .filter((t) => t.instanceId)
+        .map(async (task) => {
+          try {
+            const response = await workerApi.getState(task.instanceId!, 1)
+            taskStates[task.id] = response.state
+          } catch {
+            // 单个任务轮询失败静默忽略
+          }
+        }),
+    )
+    // 清理已删除任务的状态缓存
+    const currentIds = new Set(tasks.map((t) => t.id))
+    for (const id of Object.keys(taskStates)) {
+      if (!currentIds.has(Number(id))) {
+        delete taskStates[Number(id)]
+      }
+    }
+  } finally {
+    polling = false
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollTaskStates()
+  pollTimer = setInterval(pollTaskStates, 3000)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+onMounted(() => {
+  startPolling()
+})
+
+onUnmounted(() => {
+  stopPolling()
+})
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max) + '…' : str
@@ -416,6 +481,10 @@ async function onTaskConfirm(data: { name: string; description: string; isGlobal
 }
 
 function handleDeleteTask(task: Task) {
+  if (task.isDefault) {
+    ElMessage.warning('默认算法不可删除')
+    return
+  }
   ElMessageBox.confirm(
     `确认删除算法「${task.name}」？删除后将同时清理关联的会话与算法实例，此操作不可恢复。`,
     '删除算法',
@@ -478,18 +547,24 @@ function handleEditTask(task: Task) {
         <!-- 任务行 -->
         <div
           class="task-item"
-          :class="{ current: currentTask?.id === task.id }"
+          :class="{ current: currentTask?.id === task.id, 'is-default': task.isDefault }"
         >
           <div class="task-info">
             <div class="task-name">
               <span class="task-name-text">{{ truncate(task.name, 20) }}</span>
+              <span
+                v-if="taskStates[task.id]"
+                :class="['status-tag', `status-${taskStates[task.id].toLowerCase()}`]"
+              >
+                {{ STATE_LABELS[taskStates[task.id]] || taskStates[task.id] }}
+              </span>
               <span v-if="currentTask?.id === task.id" class="current-tag">当前算法</span>
             </div>
-            <div class="task-desc">{{ task.description || '暂无描述' }}</div>
+            <div v-if="!task.isDefault" class="task-desc">{{ task.description || '暂无描述' }}</div>
           </div>
           <div class="task-actions">
             <el-button type="primary" size="small" @click="handleEditTask(task)">
-              编辑
+              对话
             </el-button>
             <el-button
               type="primary"
@@ -502,7 +577,7 @@ function handleEditTask(task: Task) {
             <el-button type="primary" plain size="small" :loading="queryLoading" @click="handleQueryTask(task)">
               查询
             </el-button>
-            <el-button type="danger" size="small" @click="handleDeleteTask(task)">
+            <el-button type="danger" size="small" :disabled="task.isDefault" @click="handleDeleteTask(task)">
               删除
             </el-button>
           </div>
@@ -519,7 +594,13 @@ function handleEditTask(task: Task) {
                   <span v-if="basicInfoDirty" class="dirty-tag">已修改</span>
                 </template>
 
+                <!-- 默认算法：只读提示 -->
+                <div v-if="task.isDefault" class="default-notice">
+                  默认算法的基础信息不可编辑
+                </div>
+                <!-- 普通算法：可编辑表单 -->
                 <el-form
+                  v-else
                   :ref="setBasicInfoFormRef"
                   :model="basicInfoForm"
                   :rules="basicInfoRules"
@@ -894,6 +975,16 @@ function handleEditTask(task: Task) {
   box-shadow: none;
 }
 
+.task-item.is-default.current {
+  border-left: 3px solid #e6a23c;
+}
+
+.task-item.is-default.current:hover {
+  border-color: #e0e8f5;
+  border-left: 3px solid #e6a23c;
+  box-shadow: none;
+}
+
 .task-info {
   flex: 1;
   min-width: 0;
@@ -907,7 +998,7 @@ function handleEditTask(task: Task) {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   color: #0d1f3c;
   min-width: 0;
@@ -931,6 +1022,47 @@ function handleEditTask(task: Task) {
   flex-shrink: 0;
   white-space: nowrap;
   line-height: 18px;
+}
+
+.status-tag {
+  font-size: 11px;
+  border-radius: 20px;
+  padding: 1px 8px 1px 6px;
+  font-weight: 500;
+  flex-shrink: 0;
+  white-space: nowrap;
+  line-height: 18px;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  color: #606266;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-tag::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-unloaded::before {
+  background: #8c9ab0;
+}
+
+.status-loaded::before {
+  background: #67c23a;
+}
+
+.status-training::before {
+  background: #e6a23c;
+}
+
+.status-inferring::before {
+  background: #409eff;
 }
 
 .task-desc {
@@ -1045,6 +1177,16 @@ function handleEditTask(task: Task) {
   margin-left: 10px;
   font-size: 13px;
   color: #8c9ab0;
+}
+
+.default-notice {
+  font-size: 13px;
+  color: #8c9ab0;
+  background: #fafbfd;
+  border: 1px dashed #dcdfe6;
+  border-radius: 8px;
+  padding: 12px 16px;
+  text-align: center;
 }
 
 .no-instance-tip {

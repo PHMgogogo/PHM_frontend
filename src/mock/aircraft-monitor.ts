@@ -15,8 +15,6 @@ const COLOR_DANGER = '#f56c6c'
 const COLOR_PURPLE = '#8b5cf6'
 const COLOR_MUTED = '#bcc5d0'
 
-const CHART_COLORS = [COLOR_PRIMARY, COLOR_TEAL, COLOR_AMBER, COLOR_DANGER, COLOR_PURPLE]
-
 // ─── 1. 发动机转速趋势（折线图，多飞行器） ───
 const engineRpmOption = {
   animation: true,

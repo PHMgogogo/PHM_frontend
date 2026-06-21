@@ -5,10 +5,16 @@ import { ElMessage } from 'element-plus'
 import { useDataMappingStore } from '@/stores/dataMapping'
 import { useConfigItemStore } from '@/stores/configItem'
 import { getMappings } from '@/api/aircraft'
+import TrainingDialog from '@/components/TrainingDialog.vue'
+import InferingDialog from '@/components/InferingDialog.vue'
 import type { ConfigDataMapping } from '@/types/entities'
 
 const props = defineProps<{
   aircraftNumber: string
+}>()
+
+const emit = defineEmits<{
+  (e: 'navigate-to-tasks'): void
 }>()
 
 const dataMappingStore = useDataMappingStore()
@@ -90,6 +96,34 @@ async function handleCsvUpload() {
   } catch {
     // 错误已在 store 中处理
   }
+}
+
+// ---- 去训练对话框 ----
+const trainingDialogVisible = ref(false)
+const trainingMapping = ref<ConfigDataMapping | null>(null)
+
+function handleGoToTraining(row: ConfigDataMapping) {
+  trainingMapping.value = row
+  trainingDialogVisible.value = true
+}
+
+function onTrainingSuccess() {
+  trainingDialogVisible.value = false
+  emit('navigate-to-tasks')
+}
+
+// ---- 去推理对话框 ----
+const inferingDialogVisible = ref(false)
+const inferingMapping = ref<ConfigDataMapping | null>(null)
+
+function handleGoToInfering(row: ConfigDataMapping) {
+  inferingMapping.value = row
+  inferingDialogVisible.value = true
+}
+
+function onInferingSuccess() {
+  inferingDialogVisible.value = false
+  emit('navigate-to-tasks')
 }
 </script>
 
@@ -223,10 +257,12 @@ async function handleCsvUpload() {
           </template>
         </el-table-column>
         <el-table-column label="执行操作" width="160" align="center">
-          <template #default>
+          <template #default="{ row }">
             <div class="action-btns">
-              <el-button type="primary" text size="small">去训练</el-button>
-              <el-button type="success" text size="small">去推理</el-button>
+              <el-button type="primary" text size="small" @click="handleGoToTraining(row)">
+                去训练
+              </el-button>
+              <el-button type="success" text size="small" @click="handleGoToInfering(row)">去推理</el-button>
             </div>
           </template>
         </el-table-column>
@@ -242,6 +278,24 @@ async function handleCsvUpload() {
         <p class="empty-sub">上传 CSV 文件后，数据上传记录将在此展示</p>
       </div>
     </div>
+
+    <!-- 去训练对话框 -->
+    <TrainingDialog
+      v-model="trainingDialogVisible"
+      :mapping="trainingMapping"
+      :aircraft-number="aircraftNumber"
+      @success="onTrainingSuccess"
+      @navigate-to-tasks="emit('navigate-to-tasks')"
+    />
+
+    <!-- 去推理对话框 -->
+    <InferingDialog
+      v-model="inferingDialogVisible"
+      :mapping="inferingMapping"
+      :aircraft-number="aircraftNumber"
+      @success="onInferingSuccess"
+      @navigate-to-tasks="emit('navigate-to-tasks')"
+    />
   </div>
 </template>
 

@@ -37,12 +37,14 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTree: typeof import('element-plus/es')['ElTree']
     ElUpload: typeof import('element-plus/es')['ElUpload']
+    InferingDialog: typeof import('./src/components/InferingDialog.vue')['default']
     MessageFeed: typeof import('./src/components/MessageFeed.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SideNav: typeof import('./src/components/SideNav.vue')['default']
     TaskDialog: typeof import('./src/components/TaskDialog.vue')['default']
     TaskPanel: typeof import('./src/components/TaskPanel.vue')['default']
+    TrainingDialog: typeof import('./src/components/TrainingDialog.vue')['default']
     WorkspaceSidebar: typeof import('./src/components/WorkspaceSidebar.vue')['default']
   }
   export interface GlobalDirectives {

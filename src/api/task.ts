@@ -8,6 +8,9 @@ import type {
   TaskCreateRequest,
   TaskCreateResponse,
   AircraftTaskListResponse,
+  TrainTaskRequest,
+  InferTaskRequest,
+  ApiResponse,
 } from '@/types/entities'
 
 const client = createClient({ baseURL: '/task' })
@@ -18,7 +21,7 @@ export const taskApi = {
     return client.get<TaskResponse[]>('/tasks/')
   },
 
-  /** 按飞机查询任务（GET /api/tasks/aircraft/{aircraft_id}，精确匹配） */
+  /** 按飞机查询任务 */
   listByAircraft(aircraftId: string) {
     return client.get<AircraftTaskListResponse>(`/tasks/aircraft/${aircraftId}`)
   },
@@ -42,4 +45,15 @@ export const taskApi = {
   update(taskId: number, data: { name: string; description?: string; is_global?: boolean }) {
     return client.put<TaskResponse>(`/tasks/${taskId}`, data)
   },
+
+  /** 通过已上传的 CSV 数据启动训练 */
+  trainWithCsv(data: TrainTaskRequest) {
+    return client.post<ApiResponse>('/tasks/train', data)
+  },
+
+  /** 通过已上传的 CSV 数据启动推理 */
+  inferWithCsv(data: InferTaskRequest) {
+    return client.post<ApiResponse>('/tasks/infer', data)
+  }
 }
+
