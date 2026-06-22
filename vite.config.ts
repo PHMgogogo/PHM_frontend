@@ -36,7 +36,12 @@ export default defineConfig({
           if (id.includes('node_modules/element-plus/')) return 'element-plus'
           if (id.includes('node_modules/@element-plus/icons-vue')) return 'element-plus-icons'
           if (id.includes('node_modules/echarts/')) return 'echarts'
-          if (id.includes('node_modules/markdown-it') || id.includes('node_modules/katex')) return 'vendor-utils'
+          if (
+            id.includes('node_modules/markdown-it') ||
+            id.includes('node_modules/katex') ||
+            id.includes('node_modules/highlight.js')
+          )
+            return 'vendor-utils'
         },
       },
       onwarn(warning, warn) {

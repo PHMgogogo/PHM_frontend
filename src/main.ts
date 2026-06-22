@@ -35,6 +35,7 @@ import App from './App.vue'
 import router from './router'
 import './style.css'
 import 'katex/dist/katex.min.css'
+import 'highlight.js/styles/github.css'
 
 // Element Plus 命令式组件（ElMessage / ElMessageBox / ElNotification / ElLoading）
 // 不在模板中，unplugin 按需导入不会为其注入样式，需手动全局导入

@@ -77,6 +77,10 @@ export const useChatStore = defineStore('chat', () => {
   const SSE_RETRY_BASE_MS = 3000   // 初始重试间隔 3s
   const SSE_RETRY_MAX_MS = 30000   // 最大重试间隔 30s
 
+  // 流式 delta 合并缓冲：rAF 节流，避免逐 token 触发整数组替换 + 全量重渲染
+  let pendingDeltas = new Map<string, { messageID: string; partID: string; field: string; text: string }>()
+  let deltaRafId: number | null = null
+
   // 防止重复连接：记录正在连接的目标 sessionId
   let connectingToSid = ''
 
@@ -366,18 +370,41 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = updated
   }
 
+  // 将同帧内的多次 delta 合并为一次响应式更新（每帧最多一次，避免逐 token 全量重渲染）
+  function flushDeltas() {
+    deltaRafId = null
+    if (!pendingDeltas.size) return
+    const deltas = Array.from(pendingDeltas.values())
+    pendingDeltas.clear()
+    // 按 messageID 聚合，减少数组替换次数
+    const byMsg = new Map<string, typeof deltas>()
+    for (const d of deltas) {
+      if (!byMsg.has(d.messageID)) byMsg.set(d.messageID, [])
+      byMsg.get(d.messageID)!.push(d)
+    }
+    for (const [messageID, list] of byMsg) {
+      const msgIdx = messages.value.findIndex((m) => m.info.id === messageID)
+      if (msgIdx === -1) continue
+      const msg = messages.value[msgIdx]
+      const newParts = msg.parts.map((p) => {
+        const matched = list.filter((d) => d.partID === p.id)
+        if (!matched.length) return p
+        const merged = { ...p } as Record<string, unknown>
+        for (const d of matched) merged[d.field] = ((merged[d.field] as string) ?? '') + d.text
+        return merged as MessagePart
+      })
+      const updated = [...messages.value]
+      updated[msgIdx] = { ...msg, parts: newParts }
+      messages.value = updated
+    }
+  }
+
   function patchPartDelta(messageID: string, partID: string, field: string, delta: string) {
-    const msgIdx = messages.value.findIndex((m) => m.info.id === messageID)
-    if (msgIdx === -1) return
-    const msg = messages.value[msgIdx]
-    const partIdx = msg.parts.findIndex((p) => p.id === partID)
-    if (partIdx === -1) return
-    const oldPart = msg.parts[partIdx] as Record<string, unknown>
-    const newPart = { ...oldPart, [field]: ((oldPart[field] as string) ?? '') + delta }
-    const newParts = msg.parts.map((p, i) => (i === partIdx ? (newPart as unknown as MessagePart) : p))
-    const updated = [...messages.value]
-    updated[msgIdx] = { ...msg, parts: newParts }
-    messages.value = updated
+    const key = `${messageID}::${partID}::${field}`
+    const prev = pendingDeltas.get(key)
+    if (prev) prev.text += delta
+    else pendingDeltas.set(key, { messageID, partID, field, text: delta })
+    if (deltaRafId === null) deltaRafId = requestAnimationFrame(flushDeltas)
   }
 
   // ---- SSE ----
@@ -413,6 +440,11 @@ export const useChatStore = defineStore('chat', () => {
           case 'session.status':
             if (props.sessionID === sid) {
               const isIdle = (props.status as { type?: string })?.type === 'idle'
+              if (isIdle && deltaRafId !== null) {
+                // 收尾 flush：idle 前确保最后一个 token 已渲染
+                cancelAnimationFrame(deltaRafId)
+                flushDeltas()
+              }
               sessionBusy.value = !isIdle
               if (isIdle) await loadMessages(sid)
             }
@@ -470,6 +502,11 @@ export const useChatStore = defineStore('chat', () => {
 
   function dispose() {
     stopEventSource()
+    if (deltaRafId !== null) {
+      cancelAnimationFrame(deltaRafId)
+      deltaRafId = null
+    }
+    pendingDeltas.clear()
   }
 
   return {

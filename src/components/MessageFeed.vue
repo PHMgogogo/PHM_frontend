@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import type { ChatMessage, MessagePart } from '@/stores/chat'
 import { ArrowDown, ArrowUp, SetUp, Warning, QuestionFilled, MagicStick } from '@element-plus/icons-vue'
-import { renderMarkdown } from '@/utils/useMarkdown'
+import { renderMarkdown, renderMarkdownStreaming } from '@/utils/useMarkdown'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -23,11 +23,17 @@ const feedRef = ref<HTMLElement | null>(null)
 const expandedReasoning = ref(new Set<string | number>())
 const expandedTools = ref(new Set<string | number>())
 
+// ===== 滚动控制 =====
+const SCROLL_THRESHOLD = 40 // 距底部小于该值视为"在底部"
+const isPinnedToBottom = ref(true)
+
 watch(
   () => props.currentSid,
   () => {
     expandedReasoning.value = new Set()
     expandedTools.value = new Set()
+    isPinnedToBottom.value = true
+    nextTick(() => scrollToBottom(false))
   },
 )
 
@@ -35,10 +41,74 @@ watch(
   () => props.messages,
   async () => {
     await nextTick()
-    if (feedRef.value) feedRef.value.scrollTop = feedRef.value.scrollHeight
+    // 仅在用户已处于底部时自动跟随；流式期间用 auto 避免 smooth 追尾抖动
+    if (isPinnedToBottom.value) scrollToBottom(false)
   },
   { deep: false },
 )
+
+function onFeedScroll() {
+  const el = feedRef.value
+  if (!el) return
+  isPinnedToBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD
+}
+
+function scrollToBottom(smooth = true) {
+  const el = feedRef.value
+  if (!el) return
+  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  isPinnedToBottom.value = true
+}
+
+// 判断某 part 是否为"正在流式输出的最后一条助手 text part"
+function isStreamingPart(msgIdx: number, partIdx: number): boolean {
+  if (!props.sessionBusy) return false
+  if (msgIdx !== props.messages.length - 1) return false
+  const msg = props.messages[msgIdx]
+  if (!msg || msg.info.role !== 'assistant') return false
+  let lastTextPartIdx = -1
+  for (let i = msg.parts.length - 1; i >= 0; i--) {
+    if (msg.parts[i].type === 'text') {
+      lastTextPartIdx = i
+      break
+    }
+  }
+  return partIdx === lastTextPartIdx && partIdx !== -1
+}
+
+// ===== 代码块复制按钮（事件委托）=====
+function onFeedClick(e: MouseEvent) {
+  const target = (e.target as HTMLElement)?.closest?.('.code-copy-btn') as HTMLElement | null
+  if (!target) return
+  const pre = target.closest('.code-block') as HTMLElement | null
+  const codeEl = pre?.querySelector('code') as HTMLElement | null
+  if (!codeEl) return
+  const text = codeEl.innerText
+  const revert = () => {
+    target.textContent = '复制'
+    target.classList.remove('copied')
+  }
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      target.textContent = '已复制'
+      target.classList.add('copied')
+      setTimeout(revert, 1500)
+    })
+    .catch(() => {
+      target.textContent = '复制失败'
+      setTimeout(revert, 1500)
+    })
+}
+
+onMounted(() => {
+  feedRef.value?.addEventListener('click', onFeedClick)
+  feedRef.value?.addEventListener('scroll', onFeedScroll, { passive: true })
+})
+onBeforeUnmount(() => {
+  feedRef.value?.removeEventListener('click', onFeedClick)
+  feedRef.value?.removeEventListener('scroll', onFeedScroll)
+})
 
 function toggleReasoning(id: string | number) {
   const s = new Set(expandedReasoning.value)
@@ -80,7 +150,7 @@ function formatJson(obj: unknown) {
         </div>
 
         <div
-          v-for="msg in messages"
+          v-for="(msg, msgIdx) in messages"
           :key="msg.info.id"
           class="bubble"
           :class="msg.info.role === 'user' ? 'bubble-user' : 'bubble-bot'"
@@ -92,7 +162,8 @@ function formatJson(obj: unknown) {
               <div
                 v-if="part.type === 'text' && part.text"
                 class="bubble-text markdown-body"
-                v-html="renderMarkdown(part.text)"
+                :class="{ 'is-streaming': isStreamingPart(msgIdx, idx) }"
+                v-html="isStreamingPart(msgIdx, idx) ? renderMarkdownStreaming(part.text) : renderMarkdown(part.text)"
               />
 
               <!-- 思考过程 -->
@@ -164,6 +235,19 @@ function formatJson(obj: unknown) {
       <div v-else class="empty-hint">正在初始化会话，请稍候…</div>
     </div>
 
+    <!-- 回到底部悬浮按钮 -->
+    <transition name="fade-scale">
+      <button
+        v-show="!isPinnedToBottom"
+        class="scroll-bottom-btn"
+        type="button"
+        aria-label="回到底部"
+        @click="scrollToBottom(true)"
+      >
+        <el-icon><ArrowDown /></el-icon>
+      </button>
+    </transition>
+
     <!-- AI 主动提问面板 -->
     <div v-if="pendingQuestion" class="question-panel">
       <div class="question-text">
@@ -192,6 +276,7 @@ function formatJson(obj: unknown) {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  position: relative;
 }
 
 .feed {
@@ -286,6 +371,7 @@ function formatJson(obj: unknown) {
   padding-left: revert;
 }
 
+/* 行内 code — 浅色胶囊 */
 .bubble-text :deep(code) {
   background: rgba(26, 108, 240, 0.1);
   padding: 1px 4px;
@@ -296,6 +382,89 @@ function formatJson(obj: unknown) {
 
 .bubble-user .bubble-text :deep(code) {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* 围栏代码块 — 工具栏 + 高亮 */
+.bubble-text :deep(.code-block) {
+  position: relative;
+  margin: 0.5em 0;
+  border: 1px solid #d8e2f0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f6f8fa;
+}
+.bubble-text :deep(.code-header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: #eef2f7;
+  border-bottom: 1px solid #d8e2f0;
+  font-size: 12px;
+  color: #5a6b85;
+  user-select: none;
+}
+.bubble-text :deep(.code-lang) {
+  font-family: monospace;
+}
+.bubble-text :deep(.code-copy-btn) {
+  border: none;
+  background: transparent;
+  color: #1a6cf0;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.bubble-text :deep(.code-copy-btn:hover) {
+  background: rgba(26, 108, 240, 0.1);
+}
+.bubble-text :deep(.code-copy-btn.copied) {
+  color: #27ae60;
+}
+.bubble-text :deep(.code-block code) {
+  display: block;
+  padding: 10px 12px;
+  background: transparent;
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+/* 用户气泡里的代码块改为半透明深底浅字 */
+.bubble-user .bubble-text :deep(.code-block) {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.15);
+}
+.bubble-user .bubble-text :deep(.code-header) {
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.85);
+}
+.bubble-user .bubble-text :deep(.code-copy-btn) {
+  color: #fff;
+}
+.bubble-user .bubble-text :deep(.code-copy-btn:hover) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* 打字机光标（仅流式输出中的最后一条助手 text part） */
+.bubble-text :deep(.typing-cursor) {
+  display: inline-block;
+  width: 7px;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #1a6cf0;
+  animation: cursor-blink 1s step-end infinite;
+}
+.bubble-user .bubble-text :deep(.typing-cursor) {
+  background: #fff;
+}
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
 }
 
 /* 思考过程 - 米黄色系 */
@@ -429,6 +598,42 @@ function formatJson(obj: unknown) {
 @keyframes bounce {
   0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
   40% { transform: scale(1); opacity: 1; }
+}
+
+/* 回到底部悬浮按钮 */
+.scroll-bottom-btn {
+  position: absolute;
+  right: 24px;
+  bottom: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #d4e3fb;
+  background: #fff;
+  color: #1a6cf0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(26, 108, 240, 0.2);
+  z-index: 10;
+  transition: background 0.15s;
+}
+.scroll-bottom-btn:hover {
+  background: #f0f6ff;
+}
+.scroll-bottom-btn .el-icon {
+  font-size: 18px;
+}
+
+.fade-scale-enter-active,
+.fade-scale-leave-active {
+  transition: opacity 0.18s, transform 0.18s;
+}
+.fade-scale-enter-from,
+.fade-scale-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.9);
 }
 
 /* Question 面板 */
