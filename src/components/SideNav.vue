@@ -16,6 +16,12 @@ const menus = [
   { key: 'knowledge', icon: '📚', title: '知识库管理' },
   { key: 'config', icon: '🔧', title: '构型管理' },
   { key: 'monitor', icon: '📡', title: '实时监控' },
+  { key: 'monitor-old', icon: '📡', title: '实时监控（旧）' },
+  { key: 'diagnosis', icon: '🔍', title: '增强诊断' },
+  { key: 'health', icon: '💚', title: '健康评估' },
+  { key: 'trend', icon: '📈', title: '趋势分析' },
+  { key: 'prediction', icon: '⚠️', title: '故障预测' },
+  { key: 'maintenance', icon: '🛠️', title: '维修建议' },
 ]
 </script>
 

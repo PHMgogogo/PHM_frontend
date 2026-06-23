@@ -1,18 +1,35 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { ApiReference } from '@scalar/api-reference'
 import '@scalar/api-reference/style.css'
 
 const route = useRoute()
-const instanceId = computed(() => String(route.params.instanceId))
-// 沿用 /instance 前缀，开发期由 Vite 代理转发到后端
-const specUrl = computed(() => `/instance/${instanceId.value}/openapi.json`)
+const instanceId = String(route.params.instanceId)
+const specContent = ref<Record<string, unknown> | null>(null)
+
+// 实际调试用的后端地址
+const API_BASE = 'http://192.168.31.13:8001'
+
+// 自行拉取 OpenAPI 规范，注入正确的 server 地址后再交给 Scalar 渲染
+watchEffect(async () => {
+  const resp = await fetch(`/instance/${instanceId}/openapi.json`)
+  const raw = await resp.json()
+  // 替换 servers 列表，让 Scalar 的服务器选择器可用
+  raw.servers = [
+    { url: API_BASE + '/' + instanceId, description: '调试后端 (192.168.31.13:8001)' },
+    { url: '/instance/' + instanceId, description: 'Vite 代理 (相对路径)' },
+  ]
+  specContent.value = raw
+})
 </script>
 
 <template>
   <div class="api-docs-root">
-    <ApiReference :configuration="{ url: specUrl }" />
+    <ApiReference
+      v-if="specContent"
+      :configuration="{ spec: { content: specContent } }"
+    />
   </div>
 </template>
 
@@ -22,6 +39,6 @@ const specUrl = computed(() => `/instance/${instanceId.value}/openapi.json`)
   inset: 0;
   width: 100vw;
   height: 100vh;
-  overflow: hidden;
+  overflow-y: auto;
 }
 </style>
