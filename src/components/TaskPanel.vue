@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Search, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -9,7 +10,7 @@ import { instanceApi } from '@/api/instance'
 import { workerApi } from '@/api/instance-worker'
 import TaskDialog from '@/components/TaskDialog.vue'
 import CsvPreview from '@/components/CsvPreview.vue'
-import type { Task, TrainRequest, InferRequest, StateResponse } from '@/types/entities'
+import type { Task, TrainRequest, InferRequest } from '@/types/entities'
 
 const props = defineProps<{
   aircraftNumber: string
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 
 const taskStore = useTaskStore()
 const chatStore = useChatStore()
+const router = useRouter()
 
 const searchKeyword = ref('')
 const showTaskDialog = ref(false)
@@ -165,11 +167,6 @@ const inferenceApplying = ref(false)
 
 // ---- 实例操作 ----
 const restarting = ref(false)
-
-// ---- 查询推理结果 ----
-const queryDialogVisible = ref(false)
-const queryResult = ref<StateResponse | null>(null)
-const queryLoading = ref(false)
 
 // ---- 下拉选项 ----
 const deviceOptions = [
@@ -444,27 +441,17 @@ watch(
   },
 )
 
-// ---- 查询推理结果 ----
-async function handleQueryTask(task: Task) {
+// ---- 查询算法实例接口文档 ----
+function handleQueryTask(task: Task) {
   if (!task.instanceId) {
     ElMessage.warning('该算法没有关联的算法实例')
     return
   }
-  queryLoading.value = true
-  queryResult.value = null
-  try {
-    const response = await workerApi.getState(task.instanceId, 1)
-    if (response.state === 'LOADED') {
-      queryResult.value = response
-      queryDialogVisible.value = true
-    } else {
-      ElMessage.warning('算法执行中')
-    }
-  } catch (e) {
-    ElMessage.error('查询失败: ' + (e as Error).message)
-  } finally {
-    queryLoading.value = false
-  }
+  const { href } = router.resolve({
+    name: 'algo-docs',
+    params: { instanceId: task.instanceId },
+  })
+  window.open(href, '_blank')
 }
 
 // ---- 现有函数 ----
@@ -574,7 +561,7 @@ function handleEditTask(task: Task) {
             >
               {{ expandedTaskId === task.id ? '收起配置' : '配置' }}
             </el-button>
-            <el-button type="primary" plain size="small" :loading="queryLoading" @click="handleQueryTask(task)">
+            <el-button type="primary" plain size="small" @click="handleQueryTask(task)">
               查询
             </el-button>
             <el-button type="danger" size="small" :disabled="task.isDefault" @click="handleDeleteTask(task)">
@@ -860,25 +847,6 @@ function handleEditTask(task: Task) {
       </div>
     </div>
   </div>
-
-  <!-- 推理结果查询弹窗 -->
-  <el-dialog
-    v-model="queryDialogVisible"
-    title="推理结果"
-    width="640px"
-    :close-on-click-modal="false"
-    destroy-on-close
-  >
-    <div v-if="queryResult?.result?.length">
-      <pre class="query-result-json">{{ JSON.stringify(queryResult.result, null, 2) }}</pre>
-    </div>
-    <div v-else class="query-result-empty">
-      暂无推理结果数据
-    </div>
-    <template #footer>
-      <el-button @click="queryDialogVisible = false">关闭</el-button>
-    </template>
-  </el-dialog>
 
   <!-- 任务创建弹窗 -->
   <TaskDialog
@@ -1259,28 +1227,5 @@ function handleEditTask(task: Task) {
   justify-content: flex-end;
   padding-top: 6px;
   border-top: 1px solid #f0f3f8;
-}
-
-/* ---- 推理结果弹窗 ---- */
-.query-result-json {
-  background: #f6f8fb;
-  border: 1px solid #e0e8f5;
-  border-radius: 8px;
-  padding: 16px;
-  max-height: 400px;
-  overflow: auto;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #2c3e50;
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin: 0;
-}
-
-.query-result-empty {
-  text-align: center;
-  color: #8c9ab0;
-  font-size: 14px;
-  padding: 32px 0;
 }
 </style>
