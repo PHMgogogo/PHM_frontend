@@ -7,7 +7,7 @@ import type { AircraftModel, Aircraft, ConfigItem, ConfigDataMapping, ApiRespons
 
 const client = createClient({ baseURL: '/api' })
 
-// ---- 机型 ----
+// ---- 构型 ----
 
 export function getModels() {
   return client.get<AircraftModel[]>('/aircraft/models')

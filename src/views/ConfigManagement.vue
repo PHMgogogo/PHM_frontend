@@ -16,7 +16,7 @@ onMounted(async () => {
   }
 })
 
-// ---- 机型选择 ----
+// ---- 构型选择 ----
 const selectedModelCode = ref('')
 
 const modelOptions = computed(() =>
@@ -130,12 +130,12 @@ async function submitConfig() {
 async function handleDeleteCurrentModel() {
   try {
     await ElMessageBox.confirm(
-      `确定要删除机型"${selectedModelCode.value}"及其所有构型项目吗？此操作不可撤销。`,
-      '删除机型确认',
+      `确定要删除构型"${selectedModelCode.value}"及其所有构型项目吗？此操作不可撤销。`,
+      '删除构型确认',
       { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
     )
     await aircraftStore.deleteModel(selectedModelCode.value)
-    ElMessage.success('机型已删除')
+    ElMessage.success('构型已删除')
     selectedModelCode.value = ''
     if (aircraftStore.models.length > 0) {
       selectedModelCode.value = aircraftStore.models[0].modelCode
@@ -168,11 +168,11 @@ const treeProps = {
       <h2 class="page-title">构型管理</h2>
     </div>
 
-    <!-- 机型选择器 -->
+    <!-- 构型选择器 -->
     <div class="aircraft-selector">
       <el-select
         v-model="selectedModelCode"
-        placeholder="请选择机型"
+        placeholder="请选择构型"
         style="width: 320px"
         filterable
         @change="onModelChange"
@@ -186,16 +186,16 @@ const treeProps = {
       </el-select>
     </div>
 
-    <!-- 未选择机型时的提示 -->
+    <!-- 未选择构型时的提示 -->
     <div v-if="!selectedModelCode" class="empty-hint">
       <span class="empty-icon">🔧</span>
-      <p>请先选择机型，查看和管理其构型项目</p>
+      <p>请先选择构型，查看和管理其构型项目</p>
     </div>
 
-    <!-- 已选择机型后的构型管理 -->
+    <!-- 已选择构型后的构型管理 -->
     <template v-else>
       <div class="toolbar">
-        <span class="current-model">当前机型：{{ selectedModelCode }}</span>
+        <span class="current-model">当前构型：{{ selectedModelCode }}</span>
         <div class="toolbar-actions">
           <el-button type="danger" @click="handleDeleteCurrentModel">
             删除当前构型
@@ -216,7 +216,7 @@ const treeProps = {
 
       <!-- 空状态 -->
       <div v-else-if="configItemStore.treeData.length === 0" class="inner-empty">
-        <p>该机型暂无构型项目，点击上方按钮开始构建</p>
+        <p>该构型暂无构型项目，点击上方按钮开始构建</p>
       </div>
 
       <!-- 构型树 -->

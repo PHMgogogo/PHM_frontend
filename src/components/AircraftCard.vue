@@ -17,6 +17,19 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 function statusInfo(status: string) {
   return STATUS_MAP[status] ?? { label: status, color: '#8c9ab0' }
 }
+
+function formatTime(dateStr: string) {
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
 </script>
 
 <template>
@@ -39,7 +52,7 @@ function statusInfo(status: string) {
       </div>
       <div class="info-row" v-if="aircraft.createdAt">
         <span class="info-label">创建时间</span>
-        <span class="info-value">{{ aircraft.createdAt }}</span>
+        <span class="info-value">{{ formatTime(aircraft.createdAt) }}</span>
       </div>
     </div>
     <div class="card-footer">

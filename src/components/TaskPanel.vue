@@ -122,7 +122,7 @@ const originalBasicInfo = reactive({ name: '', description: '', isGlobal: false 
 const basicInfoDirty = ref(false)
 const basicInfoSaving = ref(false)
 const basicInfoRules: FormRules = {
-  name: [{ required: true, message: '请输入算法名称', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入会话名称', trigger: 'blur' }],
 }
 
 // ---- Section B — tab 切换 ----
@@ -389,7 +389,7 @@ async function handleRestartInstance(task: Task) {
   if (!task.instanceId) return
   try {
     await ElMessageBox.confirm(
-      '重启实例将中断当前正在运行的算法，确定继续？',
+      '重启实例将中断当前正在运行的会话，确定继续？',
       '重启实例',
       { confirmButtonText: '确定重启', cancelButtonText: '取消', type: 'warning' },
     )
@@ -441,10 +441,10 @@ watch(
   },
 )
 
-// ---- 查询算法实例接口文档 ----
+// ---- 查询实例接口文档 ----
 function handleQueryTask(task: Task) {
   if (!task.instanceId) {
-    ElMessage.warning('该算法没有关联的算法实例')
+    ElMessage.warning('该会话没有关联的实例')
     return
   }
   const { href } = router.resolve({
@@ -469,12 +469,12 @@ async function onTaskConfirm(data: { name: string; description: string; isGlobal
 
 function handleDeleteTask(task: Task) {
   if (task.isDefault) {
-    ElMessage.warning('默认算法不可删除')
+    ElMessage.warning('默认会话不可删除')
     return
   }
   ElMessageBox.confirm(
-    `确认删除算法「${task.name}」？删除后将同时清理关联的会话与算法实例，此操作不可恢复。`,
-    '删除算法',
+    `确认删除会话「${task.name}」？删除后将同时清理关联的会话与实例，此操作不可恢复。`,
+    '删除会话',
     { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
   )
     .then(() => {
@@ -488,7 +488,7 @@ function handleDeleteTask(task: Task) {
 function handleEditTask(task: Task) {
   const workDir = task.workDir
   if (!workDir) {
-    ElMessage.warning('工作目录信息不可用。请重新创建算法。')
+    ElMessage.warning('工作目录信息不可用。请重新创建会话。')
     return
   }
   taskStore.setCurrentTask(props.aircraftNumber, task.id)
@@ -500,14 +500,14 @@ function handleEditTask(task: Task) {
 <template>
   <div class="page-inner">
     <div class="page-header">
-      <h2 class="page-title">算法管理</h2>
+      <h2 class="page-title">会话管理</h2>
     </div>
 
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <el-input
         v-model="searchKeyword"
-        placeholder="搜索算法名称..."
+        placeholder="搜索会话名称..."
         clearable
         class="search-input"
       >
@@ -520,7 +520,7 @@ function handleEditTask(task: Task) {
         class="add-btn"
         @click="handleCreateTaskClick"
       >
-        + 创建算法
+        + 创建会话
       </el-button>
     </div>
 
@@ -545,13 +545,13 @@ function handleEditTask(task: Task) {
               >
                 {{ STATE_LABELS[taskStates[task.id]] || taskStates[task.id] }}
               </span>
-              <span v-if="currentTask?.id === task.id" class="current-tag">当前算法</span>
+              <span v-if="currentTask?.id === task.id" class="current-tag">当前会话</span>
             </div>
             <div v-if="!task.isDefault" class="task-desc">{{ task.description || '暂无描述' }}</div>
           </div>
           <div class="task-actions">
             <el-button type="primary" size="small" @click="handleEditTask(task)">
-              对话
+              进入对话
             </el-button>
             <el-button
               type="primary"
@@ -559,13 +559,13 @@ function handleEditTask(task: Task) {
               size="small"
               @click="toggleConfigPanel(task)"
             >
-              {{ expandedTaskId === task.id ? '收起配置' : '配置' }}
+              {{ expandedTaskId === task.id ? '收起配置' : '数据配置' }}
             </el-button>
             <el-button type="primary" plain size="small" @click="handleQueryTask(task)">
-              查询
+              接口查询
             </el-button>
             <el-button type="danger" size="small" :disabled="task.isDefault" @click="handleDeleteTask(task)">
-              删除
+              会话删除
             </el-button>
           </div>
         </div>
@@ -574,18 +574,18 @@ function handleEditTask(task: Task) {
         <Transition name="config-slide">
           <div v-if="expandedTaskId === task.id" class="config-panel">
             <el-collapse :model-value="['basic', 'algo']">
-              <!-- ============ 区域一：算法信息 ============ -->
-              <el-collapse-item title="算法信息" name="basic">
+              <!-- ============ 区域一：会话信息 ============ -->
+              <el-collapse-item title="会话信息" name="basic">
                 <template #title>
-                  <span class="collapse-title">算法信息</span>
+                  <span class="collapse-title">会话信息</span>
                   <span v-if="basicInfoDirty" class="dirty-tag">已修改</span>
                 </template>
 
-                <!-- 默认算法：只读提示 -->
+                <!-- 默认会话：只读提示 -->
                 <div v-if="task.isDefault" class="default-notice">
-                  默认算法的基础信息不可编辑
+                  默认会话的基础信息不可编辑
                 </div>
-                <!-- 普通算法：可编辑表单 -->
+                <!-- 普通会话：可编辑表单 -->
                 <el-form
                   v-else
                   :ref="setBasicInfoFormRef"
@@ -594,25 +594,25 @@ function handleEditTask(task: Task) {
                   label-width="80px"
                   class="config-form"
                 >
-                  <el-form-item label="算法名称" prop="name">
+                  <el-form-item label="会话名称" prop="name">
                     <el-input
                       v-model="basicInfoForm.name"
-                      placeholder="请输入算法名称"
+                      placeholder="请输入会话名称"
                       clearable
                     />
                   </el-form-item>
-                  <el-form-item label="算法描述">
+                  <el-form-item label="会话描述">
                     <el-input
                       v-model="basicInfoForm.description"
                       type="textarea"
                       :rows="3"
-                      placeholder="请输入算法描述（可选）"
+                      placeholder="请输入会话描述（可选）"
                       resize="none"
                     />
                   </el-form-item>
-                  <el-form-item label="算法可见性">
+                  <el-form-item label="会话可见性">
                     <el-switch v-model="basicInfoForm.isGlobal" />
-                    <span class="visibility-hint">{{ basicInfoForm.isGlobal ? '全局可见' : '当前任务可见' }}</span>
+                    <span class="visibility-hint">{{ basicInfoForm.isGlobal ? '全局可见' : '当前单机可见' }}</span>
                   </el-form-item>
                   <el-form-item>
                     <el-button
@@ -627,10 +627,10 @@ function handleEditTask(task: Task) {
                 </el-form>
               </el-collapse-item>
 
-              <!-- ============ 区域二：算法配置 ============ -->
+              <!-- ============ 区域二：会话配置 ============ -->
               <el-collapse-item name="algo">
                 <template #title>
-                  <span class="collapse-title">算法配置</span>
+                  <span class="collapse-title">会话配置</span>
                   <span v-if="!task.instanceId" class="no-instance-tip">无关联实例</span>
                   <span v-else-if="activeMode === 'train' && trainingDirty" class="dirty-tag">已修改</span>
                   <span v-else-if="activeMode === 'inference' && inferenceDirty" class="dirty-tag">已修改</span>
@@ -642,7 +642,7 @@ function handleEditTask(task: Task) {
                 >
                   <!-- 无实例时遮罩 -->
                   <div v-if="!task.instanceId" class="algo-disabled-overlay">
-                    该算法没有关联的算法实例
+                    该会话没有关联的实例
                   </div>
 
                   <!-- 实例操作 -->
@@ -843,7 +843,7 @@ function handleEditTask(task: Task) {
         v-if="filteredTasks.length === 0 && !taskStore.loading"
         class="inner-empty"
       >
-        暂无算法，点击"创建算法"开始
+        暂无会话，点击"创建会话"开始
       </div>
     </div>
   </div>
@@ -1166,7 +1166,7 @@ function handleEditTask(task: Task) {
   font-weight: 500;
 }
 
-/* ---- 算法配置内部 ---- */
+/* ---- 会话配置内部 ---- */
 .algo-config-body {
   position: relative;
   display: flex;

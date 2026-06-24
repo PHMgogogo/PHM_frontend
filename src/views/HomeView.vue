@@ -27,7 +27,7 @@ onMounted(() => {
   store.fetchModels()
 })
 
-// 按机型筛选：切换机型时重新请求该机型下的单机列表
+// 按构型筛选：切换构型时重新请求该构型下的单机列表
 watch(selectedModel, (modelCode) => {
   searchQuery.value = ''
   if (modelCode) {
@@ -70,7 +70,7 @@ const filteredAircrafts = computed(() => {
         <div class="toolbar">
           <el-select
             v-model="selectedModel"
-            placeholder="按机型筛选"
+            placeholder="按构型筛选"
             clearable
             class="model-filter"
           >

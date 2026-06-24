@@ -128,7 +128,7 @@ export const useTaskStore = defineStore('task', () => {
     try {
       await loadTasks()
     } catch (e) {
-      ElMessage.error('加载算法列表失败: ' + friendlyError(e))
+      ElMessage.error('加载会话列表失败: ' + friendlyError(e))
     } finally {
       loading.value = false
     }
@@ -145,8 +145,8 @@ export const useTaskStore = defineStore('task', () => {
     let sessionId = ''
 
     try {
-      // Step 1: 启动算法实例
-      createStep.value = '正在启动算法实例...'
+      // Step 1: 启动实例
+      createStep.value = '正在启动实例...'
       const inst = await instanceApi.start()
       instanceId = inst.instance_id
 
@@ -165,7 +165,7 @@ export const useTaskStore = defineStore('task', () => {
       sessionId = session.id
 
       // Step 4: 保存任务到本地后端（携带当前飞机标识与默认/全局标记）
-      createStep.value = '正在保存算法...'
+      createStep.value = '正在保存会话...'
       await taskApi.create({
         name: data.name,
         description: data.description || '',
@@ -179,11 +179,11 @@ export const useTaskStore = defineStore('task', () => {
 
       // Step 5: 刷新列表（不切换 loading，避免在外壳内反复 toggle）
       await loadTasks()
-      ElMessage.success('算法创建成功')
+      ElMessage.success('会话创建成功')
 
       return tasks.value.find((t) => t.sessionId === sessionId) ?? null
     } catch (e) {
-      ElMessage.error(`算法创建失败 (${createStep.value}): ${friendlyError(e)}`)
+      ElMessage.error(`会话创建失败 (${createStep.value}): ${friendlyError(e)}`)
       return null
     } finally {
       creating.value = false
@@ -196,7 +196,7 @@ export const useTaskStore = defineStore('task', () => {
   async function deleteTask(taskId: number) {
     const task = tasks.value.find((t) => t.id === taskId)
     if (!task) {
-      ElMessage.error('算法不存在')
+      ElMessage.error('会话不存在')
       return
     }
 
@@ -226,12 +226,12 @@ export const useTaskStore = defineStore('task', () => {
       }
     }
 
-    // Step 3: 删除算法实例（尽力而为，失败不阻塞）
+    // Step 3: 删除实例（尽力而为，失败不阻塞）
     if (task.instanceId) {
       try {
         await instanceApi.remove(task.instanceId)
       } catch (e) {
-        console.warn('删除算法实例失败（可能已不存在）:', (e as Error).message)
+        console.warn('删除实例失败（可能已不存在）:', (e as Error).message)
         // 继续执行后续步骤
       }
       // 无论远程删除是否成功，清理本地 client 缓存
@@ -242,7 +242,7 @@ export const useTaskStore = defineStore('task', () => {
     try {
       await taskApi.remove(taskId)
     } catch (e) {
-      ElMessage.error('删除算法失败: ' + friendlyError(e))
+      ElMessage.error('删除会话失败: ' + friendlyError(e))
       return
     }
 
@@ -259,7 +259,7 @@ export const useTaskStore = defineStore('task', () => {
     currentTaskByAircraft.value = nextCurrent
     syncCurrentTaskCookie()
 
-    ElMessage.success('算法已删除')
+    ElMessage.success('会话已删除')
   }
 
   // ---- 更新任务信息 ----
@@ -276,7 +276,7 @@ export const useTaskStore = defineStore('task', () => {
         is_global: data.isGlobal,
       })
       await loadTasks()
-      ElMessage.success('算法信息已保存')
+      ElMessage.success('会话信息已保存')
     } catch (e) {
       ElMessage.error('保存失败: ' + friendlyError(e))
     } finally {
@@ -290,7 +290,7 @@ export const useTaskStore = defineStore('task', () => {
    * 初始化指定飞机的任务上下文：
    * 1. 记录当前飞机标识（作为后端 aircraft_id）
    * 2. 按飞机拉取任务列表
-   * 3. 若 initialization_required=true（该飞机无任何专属任务），静默自动创建一条默认算法（default=true）
+   * 3. 若 initialization_required=true（该飞机无任何专属任务），静默自动创建一条默认会话（default=true）
    *    注意：tasks 可能含全局任务导致 length>0，故只看 initialization_required，不看 tasks.length。
    * 整个流程包在单个 loading 外壳内，对外只产生一次 loading true→false 跳变。
    */
@@ -301,11 +301,11 @@ export const useTaskStore = defineStore('task', () => {
     try {
       const initializationRequired = await loadTasks()
       if (initializationRequired) {
-        await createTask({ name: '默认算法', description: '' }, { isDefault: true })
+        await createTask({ name: '默认会话', description: '' }, { isDefault: true })
         await loadTasks()
       }
     } catch (e) {
-      ElMessage.error('加载算法列表失败: ' + friendlyError(e))
+      ElMessage.error('加载会话列表失败: ' + friendlyError(e))
     } finally {
       loading.value = false
     }

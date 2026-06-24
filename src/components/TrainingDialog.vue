@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/task'
 import { getCsvOverview } from '@/api/csv'
+import { useTaskStore } from '@/stores/task'
 import type { ConfigDataMapping, TaskResponse, TrainTaskRequest } from '@/types/entities'
 
 const props = defineProps<{
@@ -17,9 +18,11 @@ const emit = defineEmits<{
   (e: 'navigate-to-tasks'): void
 }>()
 
+const taskStore = useTaskStore()
+
 const noTasksAvailable = ref(false)
 
-// ---- 步骤1：选择算法任务 ----
+// ---- 步骤1：选择会话 ----
 const tasks = ref<TaskResponse[]>([])
 const tasksLoading = ref(false)
 const selectedTaskId = ref<number | null>(null)
@@ -73,6 +76,17 @@ watch(
       tasks.value = taskRes.tasks
       noTasksAvailable.value = taskRes.tasks.length === 0
       allColumns.value = overview.dataColumns ?? []
+
+      // 默认选中会话：优先级1 cookie 当前会话 → 优先级2 默认会话
+      const currentTask = taskStore.getCurrentTask(props.aircraftNumber)
+      if (currentTask) {
+        const match = tasks.value.find((t) => t.task_id === currentTask.id)
+        if (match) selectedTaskId.value = match.task_id
+      }
+      if (selectedTaskId.value === null) {
+        const defaultTask = tasks.value.find((t) => t.default)
+        if (defaultTask) selectedTaskId.value = defaultTask.task_id
+      }
     } catch (e) {
       ElMessage.error('加载配置数据失败: ' + (e as Error).message)
     } finally {
@@ -98,11 +112,11 @@ async function handleConfirm() {
 
   const task = selectedTask()
   if (!task) {
-    ElMessage.warning('请选择一个算法任务')
+    ElMessage.warning('请选择一个会话')
     return
   }
   if (!task.instance_id) {
-    ElMessage.warning('所选算法缺少实例，请先在算法管理中配置实例')
+    ElMessage.warning('所选会话缺少实例，请先在会话管理中配置实例')
     return
   }
   if (selectedDataCols.value.length === 0) {
@@ -129,7 +143,7 @@ async function handleConfirm() {
   submitting.value = true
   try {
     await taskApi.trainWithCsv(request)
-    ElMessage.success('训练已启动，请前往"算法管理"查看训练结果')
+    ElMessage.success('训练已启动，请前往"会话管理"查看训练结果')
     emit('success')
     emit('update:modelValue', false)
   } catch (e) {
@@ -158,12 +172,12 @@ function handleNavigateToTasks() {
     destroy-on-close
     @update:model-value="handleClose"
   >
-    <!-- 步骤1：选择算法任务 -->
+    <!-- 步骤1：选择会话 -->
     <el-form label-width="100px">
-      <el-form-item label="选择算法">
+      <el-form-item label="选择会话">
         <el-select
           v-model="selectedTaskId"
-          placeholder="请选择算法任务"
+          placeholder="请选择会话"
           :loading="tasksLoading"
           style="width: 100%"
         >
@@ -181,13 +195,13 @@ function handleNavigateToTasks() {
           </el-option>
         </el-select>
         <div v-if="noTasksAvailable" class="no-task-hint">
-          暂无可用算法，
-          <a class="hint-link" @click="handleNavigateToTasks">前往算法管理</a>
+          暂无可用会话，
+          <a class="hint-link" @click="handleNavigateToTasks">前往会话管理</a>
           创建
         </div>
         <div v-else class="task-hint">
-          没有合适的算法？
-          <a class="hint-link" @click="handleNavigateToTasks">前往算法管理</a>
+          没有合适的会话？
+          <a class="hint-link" @click="handleNavigateToTasks">前往会话管理</a>
           新建
         </div>
       </el-form-item>
@@ -255,10 +269,10 @@ function handleNavigateToTasks() {
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="后台运行">
+          <!-- <el-form-item label="后台运行">
             <el-switch v-model="backgroundRun" />
             <span class="hint-text">{{ backgroundRun ? '异步执行' : '同步阻塞' }}</span>
-          </el-form-item>
+          </el-form-item> -->
         </div>
       </template>
     </el-form>

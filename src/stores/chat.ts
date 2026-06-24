@@ -311,6 +311,10 @@ export const useChatStore = defineStore('chat', () => {
     await loadMessages(currentSid.value)
   }
 
+  function clearMessages() {
+    messages.value = []
+  }
+
   async function handleQuestionReply(labels: string[]) {
     if (!pendingQuestion.value) return
     const qid = pendingQuestion.value.id
@@ -520,6 +524,6 @@ export const useChatStore = defineStore('chat', () => {
     handleOpenSession, handleCreateSession, handleDeleteSession,
     handleSend, handleAbort, handleRefresh,
     handleQuestionReply, handleQuestionReject,
-    dispose,
+    clearMessages, dispose,
   }
 })

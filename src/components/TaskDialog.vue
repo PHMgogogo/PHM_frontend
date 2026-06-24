@@ -20,7 +20,7 @@ const form = reactive({
 })
 
 const rules: FormRules = {
-  name: [{ required: true, message: '请输入算法名称', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入会话名称', trigger: 'blur' }],
 }
 
 function handleClose() {
@@ -49,29 +49,29 @@ async function handleSubmit() {
 <template>
   <el-dialog
     :model-value="visible"
-    title="创建算法"
+    title="创建会话"
     width="520px"
     :close-on-click-modal="false"
     @update:model-value="handleClose"
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
-      <el-form-item label="算法名称" prop="name">
-        <el-input v-model="form.name" placeholder="请输入算法名称" clearable />
+      <el-form-item label="会话名称" prop="name">
+        <el-input v-model="form.name" placeholder="请输入会话名称" clearable />
       </el-form-item>
 
-      <el-form-item label="算法描述">
+      <el-form-item label="会话描述">
         <el-input
           v-model="form.description"
           type="textarea"
           :rows="4"
-          placeholder="请输入算法描述（可选）"
+          placeholder="请输入会话描述（可选）"
           resize="none"
         />
       </el-form-item>
 
-      <el-form-item label="算法可见性">
+      <el-form-item label="会话可见性">
         <el-switch v-model="form.isGlobal" />
-        <span class="visibility-hint">{{ form.isGlobal ? '全局可见' : '当前任务可见' }}</span>
+        <span class="visibility-hint">{{ form.isGlobal ? '全局可见' : '当前单机可见' }}</span>
       </el-form-item>
     </el-form>
 
@@ -83,7 +83,7 @@ async function handleSubmit() {
 </template>
 
 <style scoped>
-/* 统一三个表单项的字号，并避免「算法可见性」标签换行 */
+/* 统一三个表单项的字号，并避免「会话可见性」标签换行 */
 .el-form :deep(.el-form-item__label) {
   font-size: 13px;
   white-space: nowrap;

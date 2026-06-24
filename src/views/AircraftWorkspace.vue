@@ -27,12 +27,12 @@ const activeMenu = ref('task')
 const initializing = ref(true)
 const sidebarCollapsed = ref(false)
 const workspaceMenus = [
-  { key: 'task', icon: '📋', title: '算法管理' },
+  { key: 'task', icon: '📋', title: '会话管理' },
   { key: 'data', icon: '🗂️', title: '数据管理' },
-  { key: 'chat', icon: '💬', title: '对话入口' },
+  { key: 'chat', icon: '💬', title: '当前对话' },
 ]
 
-// ---- 初始化指定飞机的任务上下文：拉取列表，空列表则静默自动创建默认算法 ----
+// ---- 初始化指定飞机的任务上下文：拉取列表，空列表则静默自动创建默认会话 ----
 async function bootstrapFor(id: string) {
   initializing.value = true
   try {
@@ -40,8 +40,17 @@ async function bootstrapFor(id: string) {
   } finally {
     initializing.value = false
   }
-  // 任务上下文就绪后，若该飞机有 currentTask 且 workDir 可用，自动进入对话；否则停在算法管理
-  const ct = taskStore.getCurrentTask(id)
+  // 每个单机都有默认会话，因此任意情况下都进入当前对话：
+  // - 若 cookie 已有该飞机的 currentTask，直接使用；
+  // - 若 cookie 无记录，自动选中默认会话并更新 cookie。
+  let ct = taskStore.getCurrentTask(id)
+  if (!ct) {
+    const defaultTask = taskStore.tasks.find(t => t.isDefault)
+    if (defaultTask && defaultTask.workDir) {
+      taskStore.setCurrentTask(id, defaultTask.id)
+      ct = defaultTask
+    }
+  }
   if (ct && ct.workDir) {
     activeMenu.value = 'chat'
     await nextTick()

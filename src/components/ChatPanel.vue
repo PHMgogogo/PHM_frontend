@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { VideoPause } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useTaskStore } from '@/stores/task'
@@ -21,10 +22,25 @@ const inputText = ref('')
 
 // ========== 方法 ==========
 function handleSendKey(e: KeyboardEvent) {
-  if (e.ctrlKey && e.key === 'Enter' && !chatStore.sessionBusy) {
+  if (e.key === 'Enter' && !e.shiftKey && !chatStore.sessionBusy) {
+    e.preventDefault()
     chatStore.inputText = inputText.value
     inputText.value = ''
     chatStore.handleSend()
+  }
+}
+
+async function handleClearMessages() {
+  if (chatStore.messages.length === 0) return
+  try {
+    await ElMessageBox.confirm('确定要清空所有对话记录吗？', '确认', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    chatStore.clearMessages()
+  } catch {
+    // 用户取消
   }
 }
 
@@ -39,9 +55,9 @@ async function sendMessage() {
   <!-- 无 currentTask 时的空状态 -->
   <div v-if="!taskStore.getCurrentTask(props.aircraftNumber)" class="chat-empty-state">
     <div class="chat-empty-icon">💬</div>
-    <p>{{ taskStore.tasks.length === 0 ? '暂无算法，请先创建算法再开始对话。' : '请先在算法管理中选择一个算法开始对话。' }}</p>
+    <p>{{ taskStore.tasks.length === 0 ? '暂无会话，请先创建会话再开始对话。' : '请先在会话管理中选择一个会话开始对话。' }}</p>
     <el-button type="primary" @click="emit('navigate-to-tasks')">
-      {{ taskStore.tasks.length === 0 ? '去创建算法' : '去算法管理' }}
+      {{ taskStore.tasks.length === 0 ? '去创建会话' : '去会话管理' }}
     </el-button>
   </div>
 
@@ -75,7 +91,7 @@ async function sendMessage() {
         <el-button v-if="chatStore.sessionBusy" size="small" type="warning" :icon="VideoPause" @click="chatStore.handleAbort">
           中止
         </el-button>
-        <span class="current-task-label">算法：{{ taskStore.getCurrentTask(props.aircraftNumber)?.name }}</span>
+        <span class="current-task-label">会话：{{ taskStore.getCurrentTask(props.aircraftNumber)?.name }}</span>
       </div>
     </div>
 
@@ -100,13 +116,21 @@ async function sendMessage() {
         :disabled="!chatStore.currentSid || chatStore.sessionBusy"
         @keydown="handleSendKey"
       />
-      <el-button
-        type="primary"
-        :disabled="!chatStore.currentSid || chatStore.sessionBusy || !inputText.trim()"
-        @click="sendMessage"
-      >
-        Ctrl + Enter 发送
-      </el-button>
+      <div class="input-actions">
+        <el-button
+          :disabled="!chatStore.currentSid || chatStore.sessionBusy"
+          @click="handleClearMessages"
+        >
+          清空对话记录
+        </el-button>
+        <el-button
+          type="primary"
+          :disabled="!chatStore.currentSid || chatStore.sessionBusy || !inputText.trim()"
+          @click="sendMessage"
+        >
+          Enter 发送
+        </el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -163,6 +187,19 @@ async function sendMessage() {
   border-top: 1px solid #e0e8f5;
   flex-shrink: 0;
   align-items: flex-end;
+}
+
+.input-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 120px;
+}
+
+.input-actions .el-button {
+  width: 100%;
+  margin-left: 0;
 }
 
 .input-area :deep(.el-textarea__inner) {

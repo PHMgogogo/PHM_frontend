@@ -32,10 +32,10 @@ const form = reactive({
 const formRef = ref()
 const rules = {
   aircraftNumber: [{ required: true, message: '请输入机号/注册号', trigger: 'blur' }],
-  modelCode: [{ required: true, message: '请选择机型', trigger: 'change' }],
+  modelCode: [{ required: true, message: '请选择构型', trigger: 'change' }],
 }
 
-// ---- 新建机型 ----
+// ---- 新建构型 ----
 const showNewModel = ref(false)
 const newModelForm = reactive({
   modelCode: '',
@@ -44,7 +44,7 @@ const newModelForm = reactive({
 })
 const newModelRef = ref()
 const newModelRules = {
-  modelCode: [{ required: true, message: '请输入机型代码', trigger: 'blur' }],
+  modelCode: [{ required: true, message: '请输入构型代码', trigger: 'blur' }],
 }
 
 async function submitNewModel() {
@@ -58,7 +58,7 @@ async function submitNewModel() {
     manufacturer: newModelForm.manufacturer.trim(),
     description: newModelForm.description.trim(),
   })
-  ElMessage.success(`机型"${newModelForm.modelCode}"已创建`)
+  ElMessage.success(`构型"${newModelForm.modelCode}"已创建`)
   form.modelCode = newModelForm.modelCode
   newModelForm.modelCode = ''
   newModelForm.manufacturer = ''
@@ -113,11 +113,11 @@ function handleClose() {
         <el-input v-model="form.aircraftNumber" placeholder="例：B-1234" clearable />
       </el-form-item>
 
-      <el-form-item label="机型" prop="modelCode">
+      <el-form-item label="构型" prop="modelCode">
         <div class="model-select-row">
           <el-select
             v-model="form.modelCode"
-            placeholder="请选择机型"
+            placeholder="请选择构型"
             style="flex: 1"
             filterable
           >
@@ -133,12 +133,12 @@ function handleClose() {
             plain
             @click="showNewModel = !showNewModel"
           >
-            {{ showNewModel ? '收起' : '新建机型' }}
+            {{ showNewModel ? '收起' : '新建构型' }}
           </el-button>
         </div>
       </el-form-item>
 
-      <!-- 新建机型面板 -->
+      <!-- 新建构型面板 -->
       <template v-if="showNewModel">
         <el-form
           ref="newModelRef"
@@ -147,7 +147,7 @@ function handleClose() {
           label-width="100px"
           class="new-model-panel"
         >
-          <el-form-item label="机型代码" prop="modelCode">
+          <el-form-item label="构型代码" prop="modelCode">
             <el-input v-model="newModelForm.modelCode" placeholder="例：B737-800" />
           </el-form-item>
           <el-form-item label="制造商">
@@ -158,7 +158,7 @@ function handleClose() {
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="small" @click="submitNewModel">
-              保存机型
+              保存构型
             </el-button>
           </el-form-item>
         </el-form>
