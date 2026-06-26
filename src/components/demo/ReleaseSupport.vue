@@ -12,7 +12,7 @@
               <div class="squad-card" :class="sq.canRelease ? 'ok' : 'no'">
                 <div class="squad-name">{{ sq.squadronName }}</div>
                 <el-tag :type="sq.canRelease ? 'success' : 'danger'" effect="dark" size="large" style="margin: 8px 0">
-                  {{ sq.canRelease ? '✓ 建议放飞' : '✗ 不建议放飞' }}
+                  <el-icon><CircleCheck v-if="sq.canRelease" /><CircleClose v-else /></el-icon> {{ sq.canRelease ? '建议放飞' : '不建议放飞' }}
                 </el-tag>
                 <div class="squad-reason">{{ sq.reason }}</div>
               </div>
@@ -47,6 +47,7 @@
 
 <script setup lang="ts">
 import { releaseFlightData, squadronReleaseData } from '@/mock/demo/health'
+import { Flag, Avatar, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 </script>
 
 <style scoped>

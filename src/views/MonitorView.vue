@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { Warning, Lock, Unlock, MagicStick } from '@element-plus/icons-vue'
 // @ts-ignore – JS Vue 组件，运行时正常
 import DashboardContainer from '@/components/dashboard/DashboardContainer.vue'
 import { monitorInitialLayout, monitorDashboardConfig } from '@/mock/aircraft-monitor'
@@ -28,13 +29,19 @@ const optimizeLayout = () => {
       <div class="header-right">
         <div class="status-badges">
           <span class="badge badge-online">● 在线 5 架</span>
-          <span class="badge badge-warn">⚠ 预警 2 项</span>
+          <span class="badge badge-warn"><el-icon color="#F59E0B"><Warning /></el-icon> 预警 2 项</span>
         </div>
         <button class="lock-btn" :class="{ locked: isLayoutLocked }" @click="toggleLock">
-          <span>{{ isLayoutLocked ? '🔒 布局已锁定' : '🔓 可拖拽调整' }}</span>
+          <span>
+            <el-icon :color="isLayoutLocked ? '#F59E0B' : '#22C55E'">
+              <Lock v-if="isLayoutLocked" />
+              <Unlock v-else />
+            </el-icon>
+            {{ isLayoutLocked ? '布局已锁定' : '可拖拽调整' }}
+          </span>
         </button>
         <button class="optimize-btn" :disabled="isLayoutLocked" @click="optimizeLayout">
-          ✦ 一键优化
+          <el-icon color="#8B5CF6"><MagicStick /></el-icon> 一键优化
         </button>
       </div>
     </div>

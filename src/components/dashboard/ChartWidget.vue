@@ -10,6 +10,7 @@ import {
   LegendComponent,
   GridComponent,
 } from 'echarts/components'
+import { Warning, Close } from '@element-plus/icons-vue'
 
 // 注册 ECharts 按需模块（全局副作用，仅执行一次）
 use([
@@ -209,7 +210,7 @@ defineExpose({
     
     <!-- 错误状态 -->
     <div v-if="error" class="chart-error-state">
-      <div class="error-icon">⚠️</div>
+      <div class="error-icon"><el-icon color="#EF4444"><Warning /></el-icon></div>
       <div class="error-message">{{ error }}</div>
       <button @click="initChart" class="retry-btn">重试</button>
     </div>
@@ -229,7 +230,7 @@ defineExpose({
       @click="handleDelete"
       title="删除图表"
     >
-      ✕
+      <el-icon><Close /></el-icon>
     </div>
   </div>
 </template>

@@ -50,3 +50,12 @@ export function getCsvOverview(mappingId: number) {
     mappingId: String(mappingId),
   })
 }
+
+/**
+ * POST /csv/drop —— 删除指定的 CSV 数据表。
+ * tableName 为完整表名（含 `csv_` 前缀，如 `csv_训练`）。
+ */
+export function dropCsvTable(tableName: string) {
+  const params = new URLSearchParams({ tableName })
+  return client.post<ApiResponse>(`/csv/drop?${params.toString()}`)
+}

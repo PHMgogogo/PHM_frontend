@@ -7,6 +7,7 @@ export const useDataMappingStore = defineStore('dataMapping', () => {
   // CSV 上传流程状态
   const uploading = ref(false)
   const analyzing = ref(false)
+  const dropping = ref(false)
   const uploadResult = ref<{ success: boolean; message?: string } | null>(null)
 
   // 列分析结果
@@ -72,6 +73,22 @@ export const useDataMappingStore = defineStore('dataMapping', () => {
     previewResult.value = null
   }
 
+  /**
+   * 删除指定的 CSV 数据表。
+   * @param csvTableName 映射记录中的表名（不含 `csv_` 前缀）
+   */
+  async function dropCsvTable(csvTableName: string) {
+    dropping.value = true
+    try {
+      const res = await csvApi.dropCsvTable(`csv_${csvTableName}`)
+      // 同步移除本地缓存记录
+      csvRecords.value = csvRecords.value.filter((r) => r.tableName !== csvTableName)
+      return res
+    } finally {
+      dropping.value = false
+    }
+  }
+
   function clearUploadResult() {
     uploadResult.value = null
   }
@@ -79,6 +96,7 @@ export const useDataMappingStore = defineStore('dataMapping', () => {
   return {
     uploading,
     analyzing,
+    dropping,
     uploadResult,
     columnAnalysis,
     previewResult,
@@ -86,6 +104,7 @@ export const useDataMappingStore = defineStore('dataMapping', () => {
     analyzeCsv,
     previewCsv,
     uploadCsv,
+    dropCsvTable,
     clearAnalysis,
     clearUploadResult,
   }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { Search, Delete } from '@element-plus/icons-vue'
+import { Search, Delete, Upload, Document, Download, Grid } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import type { DocumentItem } from '@/api/document'
@@ -121,7 +121,7 @@ function getStatusType(status: string): 'success' | 'warning' {
         class="upload-area"
         >
           <div class="upload-inner">
-            <span class="upload-icon-emoji">📤</span>
+            <span class="upload-icon-emoji"><el-icon color="#2563EB"><Upload /></el-icon></span>
             <span class="upload-text">拖拽或点击上传</span>
             <div class="upload-formats">
               <el-tag size="small" type="info">.md</el-tag>
@@ -156,7 +156,7 @@ function getStatusType(status: string): 'success' | 'warning' {
 
       <!-- Empty State -->
       <div v-if="filteredDocuments.length === 0" class="empty-state">
-        <span class="empty-icon">📄</span>
+        <span class="empty-icon"><el-icon color="#64748B"><Document /></el-icon></span>
         <h3>暂无文档</h3>
         <p>上传文档以开始构建知识库</p>
       </div>
@@ -186,11 +186,11 @@ function getStatusType(status: string): 'success' | 'warning' {
             <h4 class="doc-name">{{ doc.filename }}</h4>
             <div class="doc-meta">
               <span class="meta-item">
-                <span class="meta-icon">📥</span>
+                <span class="meta-icon"><el-icon color="#10B981"><Download /></el-icon></span>
                 {{ formatSize(doc.size_bytes) }}
               </span>
               <span class="meta-item">
-                <span class="meta-icon">⊞</span>
+                <span class="meta-icon"><el-icon color="#64748B"><Grid /></el-icon></span>
                 {{ doc.chunks || 0 }} 分块
               </span>
             </div>

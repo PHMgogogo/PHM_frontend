@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Upload } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Upload, Warning } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataMappingStore } from '@/stores/dataMapping'
 import { useConfigItemStore } from '@/stores/configItem'
 import { getMappings } from '@/api/aircraft'
@@ -52,6 +52,8 @@ watch(() => props.aircraftNumber, fetchMappings, { immediate: true })
 
 function handleFileChange(file: File) {
   csvFile.value = file
+  // 自动填充数据表名为文件名前缀（去除扩展名）
+  csvTableName.value = file.name.replace(/\.[^.]+$/, '')
 }
 
 async function analyzeFile() {
@@ -119,6 +121,25 @@ const inferingMapping = ref<ConfigDataMapping | null>(null)
 function handleGoToInfering(row: ConfigDataMapping) {
   inferingMapping.value = row
   inferingDialogVisible.value = true
+}
+
+async function handleDelete(row: ConfigDataMapping) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除数据表「csv_${row.csvTableName}」？该操作不可恢复。`,
+      '确认删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await dataMappingStore.dropCsvTable(row.csvTableName)
+    ElMessage.success(res?.message || '删除成功')
+    fetchMappings()
+  } catch (e) {
+    ElMessage.error('删除失败: ' + (e as Error).message)
+  }
 }
 
 function onInferingSuccess() {
@@ -213,7 +234,7 @@ function onInferingSuccess() {
             :key="i"
             class="preview-error-item"
           >
-            ⚠ {{ err }}
+            <el-icon color="#EF4444"><Warning /></el-icon> {{ err }}
           </div>
         </div>
         <el-table
@@ -256,13 +277,22 @@ function onInferingSuccess() {
             <span class="time-text">{{ formatTime(row.createdAt) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="执行操作" width="160" align="center">
+        <el-table-column label="执行操作" width="220" align="center">
           <template #default="{ row }">
             <div class="action-btns">
               <el-button type="primary" text size="small" @click="handleGoToTraining(row)">
                 去训练
               </el-button>
               <el-button type="success" text size="small" @click="handleGoToInfering(row)">去推理</el-button>
+              <el-button
+                type="danger"
+                text
+                size="small"
+                :loading="dataMappingStore.dropping"
+                @click="handleDelete(row)"
+              >
+                删除
+              </el-button>
             </div>
           </template>
         </el-table-column>

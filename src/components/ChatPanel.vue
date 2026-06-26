@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { VideoPause } from '@element-plus/icons-vue'
+import { VideoPause, Warning, Loading, CircleCheck, Clock } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useTaskStore } from '@/stores/task'
 import MessageFeed from '@/components/MessageFeed.vue'
@@ -94,15 +94,15 @@ async function sendMessage() {
     <div class="chat-top-bar">
       <div class="conn-status-area">
         <span v-if="chatStore.errorMsg" class="conn-error-inline">
-          ⚠ {{ chatStore.errorMsg }}
+          <el-icon color="#EF4444"><Warning /></el-icon> {{ chatStore.errorMsg }}
           <el-button size="small" type="primary" plain @click="chatStore.retryConnect">重试</el-button>
         </span>
-        <span v-else-if="chatStore.connecting" class="conn-info-inline">⏳ 连接中…</span>
+        <span v-else-if="chatStore.connecting" class="conn-info-inline"><el-icon class="is-loading" color="#F59E0B"><Loading /></el-icon> 连接中…</span>
         <span v-else-if="chatStore.connected" class="conn-ok-inline">
-          ✅ 已连接
+          <el-icon color="#22C55E"><CircleCheck /></el-icon> 已连接
           <span v-if="chatStore.serverVersion" class="version-tag-inline">v{{ chatStore.serverVersion }}</span>
         </span>
-        <span v-else class="conn-info-inline">⚪ 未连接</span>
+        <span v-else class="conn-info-inline"><el-icon color="#94A3B8"><Clock /></el-icon> 未连接</span>
       </div>
 
       <div class="chat-header-actions">

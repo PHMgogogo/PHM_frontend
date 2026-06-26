@@ -9,6 +9,9 @@ import WorkspaceSidebar from '@/components/WorkspaceSidebar.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import TaskPanel from '@/components/TaskPanel.vue'
 import DataPanel from '@/components/DataPanel.vue'
+import taskIcon from '@/assets/task.svg'
+import dataIcon from '@/assets/data.svg'
+import chatIcon from '@/assets/chat.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,9 +30,9 @@ const activeMenu = ref('task')
 const initializing = ref(true)
 const sidebarCollapsed = ref(false)
 const workspaceMenus = [
-  { key: 'task', icon: '📋', title: '会话管理' },
-  { key: 'data', icon: '🗂️', title: '数据管理' },
-  { key: 'chat', icon: '💬', title: '当前对话' },
+  { key: 'task', svg: taskIcon, title: '会话管理' },
+  { key: 'data', svg: dataIcon, title: '数据管理' },
+  { key: 'chat', svg: chatIcon, title: '当前对话' },
 ]
 
 // ---- 初始化指定飞机的任务上下文：拉取列表，空列表则静默自动创建默认会话 ----

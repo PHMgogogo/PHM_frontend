@@ -17,6 +17,7 @@ import {
   storage 
 } from '../../utils/dashboard-utils.js'
 import { generateChartConfig } from '../../utils/chart-configs.js'
+import { DataBoard } from '@element-plus/icons-vue'
 
 const props = defineProps({
   config: {
@@ -416,7 +417,7 @@ defineExpose({
       <!-- 空状态提示 -->
       <div v-if="layout.length === 0" class="dashboard-empty-state">
         <div class="empty-content">
-          <div class="empty-icon">📊</div>
+          <div class="empty-icon"><el-icon color="#6366F1"><DataBoard /></el-icon></div>
           <h3>暂无图表</h3>
           <p v-if="!readonly">点击上方"创建图表"按钮开始添加图表</p>
           <p v-else>当前仪表盘为空</p>

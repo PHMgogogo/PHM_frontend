@@ -6,7 +6,7 @@ defineProps<{
   aircraft: Aircraft | undefined
   activeMenu: string
   collapsed: boolean
-  menus: { key: string; icon: string; title: string }[]
+  menus: { key: string; svg: string; title: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -23,7 +23,8 @@ const emit = defineEmits<{
       <span v-show="!collapsed">返回首页</span>
     </div>
     <div class="ws-aircraft-name">
-      <span class="ws-aircraft-icon">✈️</span>
+      <!-- <span class="ws-aircraft-icon">✈️</span> -->
+      <img v-show="!collapsed" src="@/assets/airplane.svg" class="ws-aircraft-icon" alt="Aircraft Icon" />
       <span v-show="!collapsed" class="ws-aircraft-title">{{ aircraft?.aircraftNumber }}</span>
     </div>
     <div v-show="!collapsed" class="ws-aircraft-meta">
@@ -38,7 +39,7 @@ const emit = defineEmits<{
         :title="collapsed ? menu.title : ''"
         @click="emit('update:activeMenu', menu.key)"
       >
-        <span class="ws-menu-icon">{{ menu.icon }}</span>
+        <img :src="menu.svg" class="ws-menu-icon" alt="" />
         <span v-show="!collapsed" class="ws-menu-title">{{ menu.title }}</span>
       </li>
     </ul>
@@ -129,7 +130,7 @@ const emit = defineEmits<{
 }
 .ws-menu-item:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .ws-menu-item.active { background: #1a6cf0; color: #fff; font-weight: 600; }
-.ws-menu-icon { font-size: 16px; flex-shrink: 0; }
+.ws-menu-icon { width: 18px; height: 18px; flex-shrink: 0; object-fit: contain; }
 .ws-menu-title { white-space: nowrap; }
 
 /* collapsed overrides */

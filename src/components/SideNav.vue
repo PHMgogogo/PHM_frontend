@@ -1,5 +1,14 @@
 <script setup lang="ts">
 import { Fold, Expand } from '@element-plus/icons-vue'
+import airplaneIcon from '@/assets/airplane.svg'
+import knowledgeIcon from '@/assets/knowledgebase.svg'
+import configIcon from '@/assets/config.svg'
+import monitorIcon from '@/assets/monitor.svg'
+import diagnosisIcon from '@/assets/diagnosis.svg'
+import healthIcon from '@/assets/health.svg'
+import trendIcon from '@/assets/trend.svg'
+import predictionIcon from '@/assets/predict.svg'
+import maintenanceIcon from '@/assets/maintenance.svg'
 
 defineProps<{
   activeMenu: string
@@ -11,24 +20,32 @@ const emit = defineEmits<{
   (e: 'toggle'): void
 }>()
 
-const menus = [
-  { key: 'aircraft', icon: '✈️', title: '飞行器管理' },
-  { key: 'knowledge', icon: '📚', title: '知识库管理' },
-  { key: 'config', icon: '🔧', title: '构型管理' },
-  { key: 'monitor', icon: '📡', title: '实时监控' },
-  { key: 'monitor-old', icon: '📡', title: '实时监控（旧）' },
-  { key: 'diagnosis', icon: '🔍', title: '增强诊断' },
-  { key: 'health', icon: '💚', title: '健康评估' },
-  { key: 'trend', icon: '📈', title: '趋势分析' },
-  { key: 'prediction', icon: '⚠️', title: '故障预测' },
-  { key: 'maintenance', icon: '🛠️', title: '维修建议' },
+type MenuItem = {
+  key: string
+  title: string
+  icon?: string // emoji
+  svg?: string // imported SVG url / data-uri
+}
+
+const menus: MenuItem[] = [
+  { key: 'aircraft', svg: airplaneIcon, title: '飞行器管理' },
+  { key: 'knowledge', svg: knowledgeIcon, title: '知识库管理' },
+  { key: 'config', svg: configIcon, title: '构型管理' },
+  { key: 'monitor', svg: monitorIcon, title: '实时监控' },
+  { key: 'monitor-old', svg: monitorIcon, title: '实时监控（旧）' },
+  { key: 'diagnosis', svg: diagnosisIcon, title: '增强诊断' },
+  { key: 'health', svg: healthIcon, title: '健康评估' },
+  { key: 'trend', svg: trendIcon, title: '趋势分析' },
+  { key: 'prediction', svg: predictionIcon, title: '故障预测' },
+  { key: 'maintenance', svg: maintenanceIcon, title: '维修建议' },
 ]
 </script>
 
 <template>
   <nav class="side-nav" :class="{ collapsed }">
     <div class="logo-area">
-      <span class="logo-icon">🛩️</span>
+      <!-- <span class="logo-icon">🛩️</span> -->
+      <img src="@/assets/logo.svg" class="logo-icon" alt="PHM Logo" />
       <span v-show="!collapsed" class="logo-text">PHM 平台</span>
     </div>
     <ul class="menu-list">
@@ -39,7 +56,10 @@ const menus = [
         :title="collapsed ? menu.title : ''"
         @click="emit('update:activeMenu', menu.key)"
       >
-        <span class="menu-icon">{{ menu.icon }}</span>
+        <span class="menu-icon">
+          <img v-if="menu.svg" :src="menu.svg" class="menu-icon-svg" alt="" />
+          <template v-else>{{ menu.icon ?? '' }}</template>
+        </span>
         <span v-show="!collapsed" class="menu-title">{{ menu.title }}</span>
       </li>
     </ul>
@@ -117,6 +137,12 @@ const menus = [
 .menu-icon {
   font-size: 18px;
   flex-shrink: 0;
+}
+
+.menu-icon-svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .menu-title {
