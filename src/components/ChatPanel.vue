@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { VideoPause, Warning, Loading, CircleCheck, Clock } from '@element-plus/icons-vue'
+import type { UploadFile } from 'element-plus'
+import { VideoPause, Warning, Loading, CircleCheck, Clock, Plus } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useTaskStore } from '@/stores/task'
 import MessageFeed from '@/components/MessageFeed.vue'
@@ -19,6 +20,9 @@ const chatStore = useChatStore()
 const taskStore = useTaskStore()
 
 const inputText = ref('')
+
+// 待发送的附件文件：用户点「+」挑选后在此持有，发送成功后清空
+const pendingFiles = ref<File[]>([])
 
 // SSE 状态监控：每 5s 打印 EventSource 状态
 const READY_STATE_LABELS: Record<number, string> = { [-1]: '未初始化', 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSED' }
@@ -45,10 +49,31 @@ onBeforeUnmount(() => {
 function handleSendKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && !chatStore.sessionBusy) {
     e.preventDefault()
-    chatStore.inputText = inputText.value
-    inputText.value = ''
-    chatStore.handleSend()
+    void sendWithFiles()
   }
+}
+
+// 发送当前正文 + 已附带文件；成功后清空附件
+async function sendWithFiles() {
+  chatStore.inputText = inputText.value
+  inputText.value = ''
+  const ok = await chatStore.handleSend(pendingFiles.value)
+  if (ok) {
+    pendingFiles.value = []
+  } else {
+    // 发送失败：正文已被 store 还原到 chatStore.inputText，同步回输入框
+    inputText.value = chatStore.inputText
+  }
+}
+
+// 「+」挑选附件：可多选，累积到 pendingFiles（发送时才上传）
+function onFilePick(uf: UploadFile) {
+  if (uf.raw) pendingFiles.value.push(uf.raw)
+}
+
+// 移除某个附件
+function removeFile(i: number) {
+  pendingFiles.value.splice(i, 1)
 }
 
 async function handleClearMessages() {
@@ -72,9 +97,7 @@ async function handleClearMessages() {
 }
 
 async function sendMessage() {
-  chatStore.inputText = inputText.value
-  inputText.value = ''
-  await chatStore.handleSend()
+  await sendWithFiles()
 }
 </script>
 
@@ -133,31 +156,60 @@ async function sendMessage() {
     />
 
     <!-- 输入区域 -->
-    <div class="input-area">
-      <el-input
-        v-model="inputText"
-        type="textarea"
-        :rows="3"
-        placeholder="输入消息"
-        resize="none"
-        :disabled="!chatStore.currentSid || chatStore.sessionBusy"
-        @keydown="handleSendKey"
-      />
-      <div class="input-actions">
-        <el-button
+    <div class="input-section">
+      <!-- 已附带的附件 -->
+      <div v-if="pendingFiles.length" class="attached-files">
+        <el-tag
+          v-for="(f, i) in pendingFiles"
+          :key="i"
+          type="info"
+          closable
+          @close="removeFile(i)"
+        >
+          {{ f.name }}
+        </el-tag>
+      </div>
+
+      <div class="input-area">
+        <!-- 「+」上传附件（发送时才上传） -->
+        <el-upload
+          :show-file-list="false"
+          :auto-upload="false"
+          multiple
+          :on-change="onFilePick"
+        >
+          <el-button
+            :icon="Plus"
+            circle
+            :disabled="!chatStore.currentSid || chatStore.sessionBusy"
+          />
+        </el-upload>
+
+        <el-input
+          v-model="inputText"
+          type="textarea"
+          :rows="3"
+          placeholder="输入消息"
+          resize="none"
           :disabled="!chatStore.currentSid || chatStore.sessionBusy"
-          :loading="taskStore.clearing"
-          @click="handleClearMessages"
-        >
-          清空对话记录
-        </el-button>
-        <el-button
-          type="primary"
-          :disabled="!chatStore.currentSid || chatStore.sessionBusy || !inputText.trim()"
-          @click="sendMessage"
-        >
-          Enter 发送
-        </el-button>
+          @keydown="handleSendKey"
+        />
+        <div class="input-actions">
+          <el-button
+            :disabled="!chatStore.currentSid || chatStore.sessionBusy"
+            :loading="taskStore.clearing"
+            @click="handleClearMessages"
+          >
+            清空对话记录
+          </el-button>
+          <el-button
+            type="primary"
+            :disabled="!chatStore.currentSid || chatStore.sessionBusy || !inputText.trim()"
+            @click="sendMessage"
+          >
+            Enter 发送
+          </el-button>
+        </div>
       </div>
     </div>
   </div>
@@ -207,13 +259,25 @@ async function sendMessage() {
   gap: 8px;
 }
 
+.input-section {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: #fff;
+  border-top: 1px solid #e0e8f5;
+}
+
+.attached-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px 0;
+}
+
 .input-area {
   display: flex;
   gap: 10px;
   padding: 12px 16px;
-  background: #fff;
-  border-top: 1px solid #e0e8f5;
-  flex-shrink: 0;
   align-items: flex-end;
 }
 

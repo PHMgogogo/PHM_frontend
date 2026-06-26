@@ -7,13 +7,9 @@ import { clearWorkerClient } from '@/api/instance-worker'
 import { opencodeApi } from '@/lib/opencode-api'
 import { useChatStore } from '@/stores/chat'
 import type { Task } from '@/types/entities'
+import { convertPath } from '@/utils/path'
 
 // ---- 工具函数 ----
-
-/** 将 Linux 路径转为 Windows UNC 路径 */
-function convertPath(filePath: string): string {
-  return filePath.replace(/^\/mnt\/d/, '\\\\192.168.31.13').replace(/\//g, '\\')
-}
 
 /** 友好错误信息 */
 function friendlyError(e: unknown): string {

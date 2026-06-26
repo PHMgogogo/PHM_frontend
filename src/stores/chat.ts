@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { opencodeApi } from '@/lib/opencode-api'
 import type { ConnOpts } from '@/lib/opencode-api'
+import { uploadToStorage } from '@/api/storage'
+import { convertPath } from '@/utils/path'
 
 // 默认连接配置（来自 ConnectionConfig.vue 默认填充值）
 const DEFAULT_OPTS = {
@@ -261,14 +263,37 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // ---- 发送消息 ----
-  async function handleSend() {
+  // files: 本次随消息附带的文件；发送时逐个 uploadToStorage → convertPath →
+  //        以 [file: <UNC路径>] 拼到消息头部（多文件换行分隔）。
+  // 返回 true 表示发送成功（供调用方清空已附带的文件）；
+  // false 表示未发送或失败（正文与文件保留，以便重试）。
+  async function handleSend(files: File[] = []): Promise<boolean> {
     const sid = currentSid.value
-    const body = inputText.value.trim()
-    if (!sid || !body || sessionBusy.value) return
+    const originalText = inputText.value.trim()
+    if (!sid || !originalText || sessionBusy.value) return false
 
     const modelOpt = modelOptions.value.find((m) => m.value === selectedModel.value)
     sending.value = true
     sessionBusy.value = true
+
+    // 1) 上传 + 转换所有附带文件，收集 [file: <UNC路径>] 前缀
+    const filePrefixes: string[] = []
+    if (files.length) {
+      try {
+        for (const f of files) {
+          const rawPath = await uploadToStorage(f)
+          filePrefixes.push(`[file: ${convertPath(rawPath)}]`)
+        }
+      } catch (e: unknown) {
+        ElMessage.error('文件上传失败: ' + (e as Error).message)
+        sending.value = false
+        sessionBusy.value = false
+        return false
+      }
+    }
+
+    // 2) 拼装最终 body：文件路径前缀（多文件换行分隔）+ 正文
+    const body = filePrefixes.length ? filePrefixes.join('\n') + '\n' + originalText : originalText
     inputText.value = ''
 
     const optimisticId = `optimistic-${Date.now()}`
@@ -288,11 +313,13 @@ export const useChatStore = defineStore('chat', () => {
         modelID: modelOpt?.modelID,
       })
       await loadMessages(sid)
+      return true
     } catch (e: unknown) {
       ElMessage.error('发送失败: ' + (e as Error).message)
       messages.value = messages.value.filter((m) => m.info.id !== optimisticId)
-      inputText.value = body
+      inputText.value = originalText
       sessionBusy.value = false
+      return false
     } finally {
       sending.value = false
     }
