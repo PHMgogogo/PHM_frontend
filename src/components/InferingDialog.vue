@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/task'
 import { getCsvOverview } from '@/api/csv'
 import { useTaskStore } from '@/stores/task'
-import type { ConfigDataMapping, TaskResponse, InferTaskRequest } from '@/types/entities'
+import type { ConfigDataMapping, TaskResponse, InferTaskRequest, ModelResult } from '@/types/entities'
 
 const props = defineProps<{
   modelValue: boolean
@@ -36,7 +36,29 @@ const selectedLabelCols = ref<string[]>([])
 // ---- 步骤3：推理参数（无 epoch、learning_rate） ----
 const batchSize = ref(32)
 const device = ref('CPU')
-const backgroundRun = ref(true)
+
+// ---- 推理结果 ----
+const inferResult = ref<ModelResult[] | null>(null)
+const inferError = ref<string | null>(null)
+
+/** 将 ModelResult[] 扁平化为表格行：每条 (id, output) 为一行 */
+interface ResultRow {
+  id: number
+  output: number[]
+}
+const resultRows = computed<ResultRow[]>(() => {
+  if (!inferResult.value) return []
+  const rows: ResultRow[] = []
+  for (const item of inferResult.value) {
+    const ids = item.ids ?? []
+    const outputs = item.outputs ?? []
+    const len = Math.min(ids.length, outputs.length)
+    for (let i = 0; i < len; i++) {
+      rows.push({ id: ids[i], output: outputs[i] })
+    }
+  }
+  return rows
+})
 
 // ---- 提交 ----
 const submitting = ref(false)
@@ -58,7 +80,8 @@ watch(
     selectedLabelCols.value = []
     batchSize.value = 32
     device.value = 'CPU'
-    backgroundRun.value = true
+    inferResult.value = null
+    inferError.value = null
     submitting.value = false
 
     // 并行加载任务列表和列名
@@ -121,23 +144,30 @@ async function handleConfirm() {
   }
 
   const request: InferTaskRequest = {
-    table_name: props.mapping.csvTableName,
+    table_name: 'csv_' + props.mapping.csvTableName,
     data_cols: selectedDataCols.value,
     label_cols: selectedLabelCols.value,
     instance_id: task.instance_id,
     batch_size: batchSize.value,
     device: mapDevice(device.value),
-    detach: backgroundRun.value,
+    detach: false,
   }
 
   submitting.value = true
+  inferResult.value = null
+  inferError.value = null
   try {
-    await taskApi.inferWithCsv(request)
-    ElMessage.success('推理已启动，请前往"会话管理"查看推理结果')
-    emit('success')
-    emit('update:modelValue', false)
+    const res = await taskApi.inferWithCsv(request) as unknown as ModelResult[]
+    if (Array.isArray(res) && res.length > 0) {
+      inferResult.value = res
+      ElMessage.success('推理完成')
+    } else {
+      inferError.value = '推理未返回结果'
+      ElMessage.error(inferError.value!)
+    }
   } catch (e) {
-    ElMessage.error('推理启动失败: ' + (e as Error).message)
+    inferError.value = '推理启动失败: ' + (e as Error).message
+    ElMessage.error(inferError.value!)
   } finally {
     submitting.value = false
   }
@@ -249,22 +279,43 @@ function handleNavigateToTasks() {
           </el-form-item>
         </div>
 
-        <!-- <el-form-item label="后台运行">
-          <el-switch v-model="backgroundRun" />
-          <span class="hint-text">{{ backgroundRun ? '异步执行' : '同步阻塞' }}</span>
-        </el-form-item> -->
       </template>
     </el-form>
+
+    <!-- 推理结果 -->
+    <div v-if="inferResult" class="infer-result">
+      <div class="infer-result-stats">
+        共 {{ resultRows.length }} 条结果
+      </div>
+      <div class="infer-result-table-wrap">
+        <el-table :data="resultRows" size="small" border stripe max-height="240">
+          <el-table-column label="ids" prop="id" width="100" />
+          <el-table-column label="outputs">
+            <template #default="{ row }">
+              <span class="output-cell">{{ row.output.join(', ') }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
 
     <template #footer>
       <el-button @click="handleClose" :disabled="submitting">取消</el-button>
       <el-button
+        v-if="!inferResult"
         type="primary"
         :loading="submitting"
         :disabled="selectedTaskId === null"
         @click="handleConfirm"
       >
         开始推理
+      </el-button>
+      <el-button
+        v-else
+        type="primary"
+        @click="handleClose"
+      >
+        关闭
       </el-button>
     </template>
   </el-dialog>
@@ -314,5 +365,39 @@ function handleNavigateToTasks() {
 
 .hint-link:hover {
   text-decoration: underline;
+}
+
+/* ---- 推理结果 ---- */
+.infer-result {
+  width: 100%;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  background: #fafbfd;
+  border: 1px solid #e0e8f5;
+  border-radius: 6px;
+  box-sizing: border-box;
+  margin-top: 16px;
+}
+
+.infer-result-stats {
+  font-size: 13px;
+  color: #3a4a5c;
+  margin-bottom: 6px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.infer-result-table-wrap {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.output-cell {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  color: #303133;
 }
 </style>

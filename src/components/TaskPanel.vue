@@ -10,7 +10,7 @@ import { instanceApi } from '@/api/instance'
 import { workerApi } from '@/api/instance-worker'
 import TaskDialog from '@/components/TaskDialog.vue'
 import CsvPreview from '@/components/CsvPreview.vue'
-import type { Task, TrainRequest, InferRequest } from '@/types/entities'
+import type { Task, TrainRequest, InferRequest, ProgressCounter, ModelResult } from '@/types/entities'
 
 const props = defineProps<{
   aircraftNumber: string
@@ -37,6 +37,7 @@ const STATE_LABELS: Record<string, string> = {
 }
 
 const taskStates = reactive<Record<number, string>>({})
+const taskProgress = reactive<Record<number, { epoch_progress?: ProgressCounter; batch_progress?: ProgressCounter }>>({})
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let polling = false
 
@@ -54,6 +55,10 @@ async function pollTaskStates() {
           try {
             const response = await workerApi.getState(task.instanceId!, 1)
             taskStates[task.id] = response.state
+            taskProgress[task.id] = {
+              epoch_progress: response.epoch_progress,
+              batch_progress: response.batch_progress,
+            }
           } catch {
             // 单个任务轮询失败静默忽略
           }
@@ -64,6 +69,11 @@ async function pollTaskStates() {
     for (const id of Object.keys(taskStates)) {
       if (!currentIds.has(Number(id))) {
         delete taskStates[Number(id)]
+      }
+    }
+    for (const id of Object.keys(taskProgress)) {
+      if (!currentIds.has(Number(id))) {
+        delete taskProgress[Number(id)]
       }
     }
   } finally {
@@ -92,6 +102,52 @@ onUnmounted(() => {
   stopPolling()
 })
 
+// ---- 推理结果查询 ----
+const inferResultDialogVisible = ref(false)
+const queriedInferResult = ref<ModelResult[] | null>(null)
+const inferResultLoading = ref(false)
+
+interface InferResultRow {
+  id: number
+  output: number[]
+}
+const inferResultRows = computed<InferResultRow[]>(() => {
+  if (!queriedInferResult.value) return []
+  const rows: InferResultRow[] = []
+  for (const item of queriedInferResult.value) {
+    const ids = item.ids ?? []
+    const outputs = item.outputs ?? []
+    const len = Math.min(ids.length, outputs.length)
+    for (let i = 0; i < len; i++) {
+      rows.push({ id: ids[i], output: outputs[i] })
+    }
+  }
+  return rows
+})
+
+async function handleShowInferResult(task: Task) {
+  if (!task.instanceId) {
+    ElMessage.warning('该会话没有关联的实例')
+    return
+  }
+  inferResultLoading.value = true
+  queriedInferResult.value = null
+  try {
+    const response = await workerApi.getState(task.instanceId, 1)
+    if (response.result && response.result.length > 0) {
+      queriedInferResult.value = response.result
+      inferResultDialogVisible.value = true
+    } else {
+      const stateLabel = STATE_LABELS[response.state] || response.state
+      ElMessage.info(`${stateLabel}，暂无推理结果`)
+    }
+  } catch (e) {
+    ElMessage.error('查询推理结果失败: ' + (e as Error).message)
+  } finally {
+    inferResultLoading.value = false
+  }
+}
+
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max) + '…' : str
 }
@@ -104,6 +160,55 @@ const filteredTasks = computed(() => {
 })
 
 const currentTask = computed(() => taskStore.getCurrentTask(props.aircraftNumber))
+
+// ---- 当前任务进度条 ----
+
+const currentTaskProgress = computed(() => {
+  const task = currentTask.value
+  if (!task) return null
+  return taskProgress[task.id] ?? null
+})
+
+/** 计算训练/推理总进度百分比，综合 epoch 和 batch 两级进度 */
+const currentTaskPercentage = computed(() => {
+  const p = currentTaskProgress.value
+  if (!p?.epoch_progress || p.epoch_progress.total === 0) return 0
+  const ep = p.epoch_progress
+  const bp = p.batch_progress
+  // epoch 部分：每完成一个 epoch 贡献 1/epoch_total
+  const epochFrac = ep.n / ep.total
+  // batch 部分：当前 epoch 内的 batch 进度，权重为单 epoch 的比例
+  const batchFrac = bp && bp.total > 0 ? bp.n / (bp.total * ep.total) : 0
+  return Math.min(Math.round((epochFrac + batchFrac) * 100), 100)
+})
+
+/** 估算剩余时间（秒），基于 batch 处理速率 */
+const currentTaskEta = computed(() => {
+  const p = currentTaskProgress.value
+  if (!p?.epoch_progress || !p?.batch_progress) return null
+  const ep = p.epoch_progress
+  const bp = p.batch_progress
+  if (!bp.rate || bp.rate <= 0 || ep.total === 0 || bp.total === 0) return null
+  const totalBatches = ep.total * bp.total
+  const doneBatches = ep.n * bp.total + bp.n
+  const remaining = totalBatches - doneBatches
+  if (remaining <= 0) return 0
+  return remaining / bp.rate
+})
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  return `${h}h ${m}m`
+}
+
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
+}
 
 // ============================================================
 // 配置面板
@@ -553,20 +658,60 @@ function handleEditTask(task: Task) {
             <el-button type="primary" size="small" @click="handleEditTask(task)">
               进入对话
             </el-button>
-            <el-button
+            <el-button type="primary" plain size="small" :loading="inferResultLoading" @click="handleShowInferResult(task)">
+              推理结果
+            </el-button>
+            <!-- <el-button
               type="primary"
               plain
               size="small"
               @click="toggleConfigPanel(task)"
             >
               {{ expandedTaskId === task.id ? '收起配置' : '数据配置' }}
-            </el-button>
+            </el-button> -->
             <el-button type="primary" plain size="small" @click="handleQueryTask(task)">
               接口查询
             </el-button>
             <el-button type="danger" size="small" :disabled="task.isDefault" @click="handleDeleteTask(task)">
               会话删除
             </el-button>
+          </div>
+        </div>
+
+        <!-- 当前会话进度条 -->
+        <div
+          v-if="currentTask?.id === task.id && taskStates[task.id] && (taskStates[task.id] === 'TRAINING' || taskStates[task.id] === 'INFERRING')"
+          class="task-progress-bar"
+        >
+          <div class="progress-header">
+            <span class="progress-label">
+              <span :class="['progress-dot', `dot-${taskStates[task.id].toLowerCase()}`]"></span>
+              {{ taskStates[task.id] === 'TRAINING' ? '训练中' : '推理中' }}
+            </span>
+            <span class="progress-percent">{{ currentTaskPercentage }}%</span>
+          </div>
+          <el-progress
+            :percentage="currentTaskPercentage"
+            :stroke-width="8"
+            :show-text="false"
+            :color="taskStates[task.id] === 'TRAINING' ? '#e6a23c' : '#409eff'"
+          />
+          <div class="progress-details">
+            <span v-if="taskProgress[task.id]?.epoch_progress">
+              Epoch {{ taskProgress[task.id].epoch_progress!.n }}/{{ taskProgress[task.id].epoch_progress!.total }}
+            </span>
+            <span v-if="taskProgress[task.id]?.batch_progress">
+              Batch {{ taskProgress[task.id].batch_progress!.n }}/{{ taskProgress[task.id].batch_progress!.total }}
+            </span>
+            <span v-if="taskProgress[task.id]?.epoch_progress?.elapsed">
+              耗时 {{ formatElapsed(taskProgress[task.id].epoch_progress!.elapsed) }}
+            </span>
+            <span v-if="taskProgress[task.id]?.batch_progress?.rate">
+              {{ taskProgress[task.id].batch_progress?.rate?.toFixed(1) }} batch/s
+            </span>
+            <span v-if="currentTaskEta">
+              预计剩余 {{ formatEta(currentTaskEta) }}
+            </span>
           </div>
         </div>
 
@@ -854,6 +999,34 @@ function handleEditTask(task: Task) {
     :loading="taskStore.creating"
     @confirm="onTaskConfirm"
   />
+
+  <!-- 推理结果弹窗 -->
+  <el-dialog
+    v-model="inferResultDialogVisible"
+    title="推理结果"
+    width="560px"
+    :close-on-click-modal="false"
+    destroy-on-close
+  >
+    <div v-if="queriedInferResult" class="infer-result">
+      <div class="infer-result-stats">
+        共 {{ inferResultRows.length }} 条结果
+      </div>
+      <div class="infer-result-table-wrap">
+        <el-table :data="inferResultRows" size="small" border stripe max-height="320">
+          <el-table-column label="ids" prop="id" width="100" />
+          <el-table-column label="outputs">
+            <template #default="{ row }">
+              <span class="output-cell">{{ row.output.join(', ') }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+    <template #footer>
+      <el-button type="primary" @click="inferResultDialogVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
 
   <!-- 创建进度 -->
   <div v-if="taskStore.creating" class="create-progress">
@@ -1227,5 +1400,100 @@ function handleEditTask(task: Task) {
   justify-content: flex-end;
   padding-top: 6px;
   border-top: 1px solid #f0f3f8;
+}
+
+/* ========== 进度条样式 ========== */
+
+.task-progress-bar {
+  background: #fff;
+  border: 1px solid #e0e8f5;
+  border-radius: 10px;
+  margin-top: 4px;
+  padding: 14px 24px;
+}
+
+.task-progress-bar .progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.task-progress-bar .progress-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0d1f3c;
+}
+
+.task-progress-bar .progress-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.task-progress-bar .dot-training {
+  background: #e6a23c;
+}
+
+.task-progress-bar .dot-inferring {
+  background: #409eff;
+}
+
+.task-progress-bar .progress-percent {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a6cf0;
+}
+
+.task-progress-bar .progress-details {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8c9ab0;
+  flex-wrap: wrap;
+}
+
+.task-progress-bar .progress-details span {
+  white-space: nowrap;
+}
+
+/* ========== 推理结果弹窗 ========== */
+.infer-result {
+  width: 100%;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  background: #fafbfd;
+  border: 1px solid #e0e8f5;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.infer-result-stats {
+  font-size: 13px;
+  color: #3a4a5c;
+  margin-bottom: 6px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.infer-result-table-wrap {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.output-cell {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  color: #303133;
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { VideoPause } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
@@ -20,6 +20,27 @@ const taskStore = useTaskStore()
 
 const inputText = ref('')
 
+// SSE 状态监控：每 5s 打印 EventSource 状态
+const READY_STATE_LABELS: Record<number, string> = { [-1]: '未初始化', 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSED' }
+let sseMonitorTimer: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  sseMonitorTimer = setInterval(() => {
+    const state = chatStore.sseReadyState
+    console.log(`[SSE Monitor] EventSource readyState: ${state} (${READY_STATE_LABELS[state] ?? '未知'})`)
+  }, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (sseMonitorTimer) {
+    clearInterval(sseMonitorTimer)
+    sseMonitorTimer = null
+  }
+  // 注意：不在此处调用 chatStore.dispose()。SSE 是会话级资源，生命周期由
+  // AircraftWorkspace（切飞行器/离开页面）与 connectToSession（切 session）管理，
+  // 不应随 chat tab 的显隐而断流，否则切到会话管理/数据管理再切回会丢失实时推送。
+})
+
 // ========== 方法 ==========
 function handleSendKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && !chatStore.sessionBusy) {
@@ -32,13 +53,19 @@ function handleSendKey(e: KeyboardEvent) {
 
 async function handleClearMessages() {
   if (chatStore.messages.length === 0) return
+  const task = taskStore.getCurrentTask(props.aircraftNumber)
+  if (!task) return
   try {
-    await ElMessageBox.confirm('确定要清空所有对话记录吗？', '确认', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-    chatStore.clearMessages()
+    await ElMessageBox.confirm(
+      '清空将重置 AI 上下文，当前对话历史不可恢复。是否继续？',
+      '确认清空',
+      {
+        confirmButtonText: '清空',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+    await taskStore.clearTaskSession(task.id)
   } catch {
     // 用户取消
   }
@@ -119,6 +146,7 @@ async function sendMessage() {
       <div class="input-actions">
         <el-button
           :disabled="!chatStore.currentSid || chatStore.sessionBusy"
+          :loading="taskStore.clearing"
           @click="handleClearMessages"
         >
           清空对话记录

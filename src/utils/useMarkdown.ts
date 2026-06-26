@@ -174,9 +174,10 @@ export function renderMarkdown(text: string): string {
 }
 
 /**
- * 流式渲染：在普通渲染结果末尾追加打字机光标。
- * 仅供"正在流式输出的最后一条助手 text part"使用。
+ * 流式渲染：与 renderMarkdown 等价，不再追加打字机光标。
+ * 仅供"正在流式输出的最后一条助手 text part"使用，保留独立函数以表达"流式"语义，
+ * 便于将来在流式期间做特殊处理。
  */
 export function renderMarkdownStreaming(text: string): string {
-  return renderMarkdown(text) + '<span class="typing-cursor"></span>'
+  return renderMarkdown(text)
 }

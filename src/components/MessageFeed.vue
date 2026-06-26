@@ -449,24 +449,6 @@ function formatJson(obj: unknown) {
   background: rgba(255, 255, 255, 0.15);
 }
 
-/* 打字机光标（仅流式输出中的最后一条助手 text part） */
-.bubble-text :deep(.typing-cursor) {
-  display: inline-block;
-  width: 7px;
-  height: 1.1em;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  background: #1a6cf0;
-  animation: cursor-blink 1s step-end infinite;
-}
-.bubble-user .bubble-text :deep(.typing-cursor) {
-  background: #fff;
-}
-@keyframes cursor-blink {
-  0%, 50% { opacity: 1; }
-  50.01%, 100% { opacity: 0; }
-}
-
 /* 思考过程 - 米黄色系 */
 .reasoning-block {
   border: 1px solid #e8d9b0;

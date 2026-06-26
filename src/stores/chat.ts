@@ -72,6 +72,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // SSE
   let eventSource: EventSource | null = null
+  const sseReadyState = ref<number>(-1) // -1=未初始化, 0=CONNECTING, 1=OPEN, 2=CLOSED
   let sseRetryCount = 0
   let sseRetryTimer: ReturnType<typeof setTimeout> | null = null
   const SSE_RETRY_BASE_MS = 3000   // 初始重试间隔 3s
@@ -182,7 +183,6 @@ export const useChatStore = defineStore('chat', () => {
 
       sessions.value = sessionsRes || []
       startEventSource()
-
       // 自动打开或创建会话
       if (sessions.value.length > 0 && !currentSid.value) {
         await handleOpenSession(sessions.value[0].id)
@@ -272,6 +272,7 @@ export const useChatStore = defineStore('chat', () => {
     inputText.value = ''
 
     const optimisticId = `optimistic-${Date.now()}`
+
     messages.value = [
       ...messages.value,
       {
@@ -309,10 +310,6 @@ export const useChatStore = defineStore('chat', () => {
   async function handleRefresh() {
     if (!currentSid.value) return
     await loadMessages(currentSid.value)
-  }
-
-  function clearMessages() {
-    messages.value = []
   }
 
   async function handleQuestionReply(labels: string[]) {
@@ -395,7 +392,7 @@ export const useChatStore = defineStore('chat', () => {
         if (!matched.length) return p
         const merged = { ...p } as Record<string, unknown>
         for (const d of matched) merged[d.field] = ((merged[d.field] as string) ?? '') + d.text
-        return merged as MessagePart
+        return merged as unknown as MessagePart
       })
       const updated = [...messages.value]
       updated[msgIdx] = { ...msg, parts: newParts }
@@ -427,8 +424,10 @@ export const useChatStore = defineStore('chat', () => {
     stopEventSource()
     try {
       eventSource = opencodeApi.event(opts.value)
+      sseReadyState.value = 0 // CONNECTING
       eventSource.onopen = () => {
         sseRetryCount = 0
+        sseReadyState.value = 1 // OPEN
       }
       eventSource.onmessage = async (e: MessageEvent) => {
         let event: { type: string; properties?: Record<string, unknown> }
@@ -480,6 +479,7 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
       eventSource.onerror = () => {
+        sseReadyState.value = eventSource?.readyState ?? 2 // CLOSED
         if (eventSource) {
           eventSource.close()
           eventSource = null
@@ -502,10 +502,19 @@ export const useChatStore = defineStore('chat', () => {
       eventSource.close()
       eventSource = null
     }
+    sseReadyState.value = -1 // 未初始化
   }
 
   function dispose() {
     stopEventSource()
+    // 重置连接态：dispose 已关闭 SSE，必须同步清掉 connected/currentSid 等，
+    // 否则 Pinia 单例残影会让 connectToSession 开头的防重入误判为「已连接同一 session」
+    // 而直接 return，导致 SPA 内导航后再也无法重建 SSE（仅 F5 整页刷新才能恢复）。
+    connected.value = false
+    currentSid.value = ''
+    connecting.value = false
+    connectingToSid = ''
+    sessionBusy.value = false
     if (deltaRafId !== null) {
       cancelAnimationFrame(deltaRafId)
       deltaRafId = null
@@ -524,6 +533,7 @@ export const useChatStore = defineStore('chat', () => {
     handleOpenSession, handleCreateSession, handleDeleteSession,
     handleSend, handleAbort, handleRefresh,
     handleQuestionReply, handleQuestionReject,
-    clearMessages, dispose,
+    dispose,
+    sseReadyState,
   }
 })

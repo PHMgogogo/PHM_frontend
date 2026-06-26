@@ -129,7 +129,7 @@ async function handleConfirm() {
   }
 
   const request: TrainTaskRequest = {
-    table_name: props.mapping.csvTableName,
+    table_name: 'csv_' + props.mapping.csvTableName,
     data_cols: selectedDataCols.value,
     label_cols: selectedLabelCols.value,
     instance_id: task.instance_id,

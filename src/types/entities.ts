@@ -171,6 +171,8 @@ export interface ModelResult {
 export interface ProgressCounter {
   n: number
   total: number
+  elapsed: number
+  rate: number | null
 }
 
 export interface StateResponse {

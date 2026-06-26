@@ -47,6 +47,7 @@ export const useTaskStore = defineStore('task', () => {
   const creating = ref(false)
   const createStep = ref('')
   const updating = ref(false)
+  const clearing = ref(false)
 
   /** 每个飞行器当前正在对话的任务 ID（session cookie 持久化，关浏览器后清除） */
   const currentTaskByAircraft = ref<Record<string, number>>({})
@@ -284,6 +285,72 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
+  // ---- 清空对话（/clear：换新 session 重置 AI 上下文） ----
+
+  /**
+   * 真正的 /clear：创建全新 OpenCode session → 同步 task 记录的 session_id →
+   * 切换 chat 连接 → 删除旧 session。这样 AI 上下文被彻底重置，
+   * 且重开任务不会连回带历史的旧 session。
+   */
+  async function clearTaskSession(taskId: number): Promise<boolean> {
+    const task = tasks.value.find((t) => t.id === taskId)
+    if (!task) {
+      ElMessage.error('会话不存在')
+      return false
+    }
+
+    const chatStore = useChatStore()
+    if (chatStore.sessionBusy) {
+      ElMessage.warning('对话进行中，请先中止后再清空')
+      return false
+    }
+
+    const oldSid = task.sessionId
+    const workDir = task.workDir
+    const sessionOpts = { base: '/opencode', dir: workDir, user: 'opencode' }
+
+    clearing.value = true
+    try {
+      // Step 1: 创建新 session（全新上下文）
+      const session = await opencodeApi.create(sessionOpts, task.name)
+
+      // Step 2: 同步 task 记录的 session_id（必须成功，否则重开任务会连回旧 session）
+      try {
+        await taskApi.updateSessionId(taskId, session.id)
+      } catch (e) {
+        // 回滚：删除刚创建的孤立新 session，保持原绑定不变
+        try {
+          await opencodeApi.deleteSession(sessionOpts, session.id)
+        } catch {
+          /* 忽略清理失败 */
+        }
+        throw e
+      }
+
+      // Step 3: 切换 chat 连接到新 session（内部 dispose 旧 SSE + 拉取空消息）
+      await chatStore.connectToSession(session.id, workDir)
+
+      // Step 4: 删除旧 session（best-effort，失败不阻塞）
+      if (oldSid && oldSid !== session.id) {
+        try {
+          await opencodeApi.deleteSession(sessionOpts, oldSid)
+        } catch (e) {
+          console.warn('删除旧 OpenCode 会话失败（可能已不存在）:', (e as Error).message)
+        }
+      }
+
+      // Step 5: 刷新本地 task 列表，同步 sessionId
+      await loadTasks()
+      ElMessage.success('已清空对话，AI 上下文已重置')
+      return true
+    } catch (e) {
+      ElMessage.error('清空失败: ' + friendlyError(e))
+      return false
+    } finally {
+      clearing.value = false
+    }
+  }
+
   // ---- 初始化入口 ----
 
   /**
@@ -317,6 +384,7 @@ export const useTaskStore = defineStore('task', () => {
     creating,
     createStep,
     updating,
+    clearing,
     currentTaskByAircraft,
     currentAircraftId,
     getCurrentTask,
@@ -326,6 +394,7 @@ export const useTaskStore = defineStore('task', () => {
     createTask,
     deleteTask,
     updateTask,
+    clearTaskSession,
     init,
   }
 })

@@ -46,6 +46,11 @@ export const taskApi = {
     return client.put<TaskResponse>(`/tasks/${taskId}`, data)
   },
 
+  /** 更新任务关联的 OpenCode session_id（/clear 换新 session 后同步绑定） */
+  updateSessionId(taskId: number, sessionId: string) {
+    return client.put<TaskResponse>(`/tasks/${taskId}`, { session_id: sessionId })
+  },
+
   /** 通过已上传的 CSV 数据启动训练 */
   trainWithCsv(data: TrainTaskRequest) {
     return client.post<ApiResponse>('/tasks/train', data)
