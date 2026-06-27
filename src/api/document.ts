@@ -122,7 +122,7 @@ export function denseRetrieval(params: RetrievalRequest) {
 
 // ---- 5.3 纯关键词检索 ----
 
-/** 纯关键词检索：仅 BM25 词频匹配（适用于 ATA 编号、零件号、故障代码等精确查询） */
+/** 纯关键词检索：仅 BM25 词频匹配（适用于 GJB 编号、零件号、故障代码等精确查询） */
 export function sparseRetrieval(params: RetrievalRequest) {
   return client.post<RetrievalResponse>('/retrieval/sparse', params)
 }

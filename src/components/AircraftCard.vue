@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAircraftStore } from '@/stores/aircraft'
 import type { Aircraft } from '@/types/entities'
 
 const props = defineProps<{
@@ -7,6 +10,20 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const aircraftStore = useAircraftStore()
+
+async function handleDelete(e: Event) {
+  e.stopPropagation()
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除飞机"${props.aircraft.aircraftNumber}"吗？此操作不可撤销。`,
+      '删除飞机确认',
+      { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
+    )
+    await aircraftStore.deleteAircraft(props.aircraft.aircraftNumber)
+    ElMessage.success('飞机已删除')
+  } catch { /* cancelled */ }
+}
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   active: { label: '活跃', color: '#00c87a' },
@@ -61,6 +78,15 @@ function formatTime(dateStr: string) {
         :style="{ background: statusInfo(aircraft.status).color }"
       ></span>
       <span class="status-text">{{ statusInfo(aircraft.status).label }}</span>
+      <el-button
+        class="delete-btn"
+        :icon="Delete"
+        circle
+        size="small"
+        type="danger"
+        text
+        @click.stop="handleDelete"
+      />
     </div>
   </div>
 </template>
@@ -140,6 +166,10 @@ function formatTime(dateStr: string) {
   gap: 6px;
   padding-top: 8px;
   border-top: 1px solid #f0f3f8;
+}
+
+.delete-btn {
+  margin-left: auto;
 }
 
 .status-dot {

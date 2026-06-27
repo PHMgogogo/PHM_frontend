@@ -54,7 +54,10 @@ export function getConfigItemSelectList(modelCode: string) {
   return client.get<ConfigItem[]>('/aircraft/config-items/select-list', { modelCode })
 }
 
-export function createConfigItem(data: Omit<ConfigItem, 'itemId' | 'children'>) {
+/** 创建构型项目：仅 modelCode / itemType / ataChapter 必填，其余按 itemType 条件填写 */
+export function createConfigItem(
+  data: Partial<Omit<ConfigItem, 'itemId' | 'children'>> & Pick<ConfigItem, 'modelCode' | 'itemType' | 'ataChapter'>,
+) {
   return client.post<ApiResponse>('/aircraft/config-items', data)
 }
 

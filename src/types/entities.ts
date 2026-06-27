@@ -31,7 +31,8 @@ export interface ConfigItem {
   modelCode: string
   parentItemId: number | null
   ataChapter: string
-  systemName: string
+  // modify here
+  systemName: string | null
   subSystemName: string | null
   equipmentName: string | null
   partNumber: string | null
