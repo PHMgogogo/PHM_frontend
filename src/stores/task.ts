@@ -12,7 +12,8 @@ import type { Task } from '@/types/entities'
 
 /** 将 Linux 路径转为 Windows UNC 路径 */
 function convertPath(filePath: string): string {
-  return filePath.replace(/^\/mnt\/d/, '\\\\192.168.31.13').replace(/\//g, '\\')
+  return filePath;
+  // return filePath.replace(/^\/mnt\/d/, '\\\\192.168.31.13').replace(/\//g, '\\')
 }
 
 /** 友好错误信息 */
