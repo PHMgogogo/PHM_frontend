@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { useConfigItemStore } from '@/stores/configItem'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { ConfigItemType } from '@/types/entities'
+import type { ConfigItem, ConfigItemType } from '@/types/entities'
 
 const aircraftStore = useAircraftStore()
 const configItemStore = useConfigItemStore()
@@ -42,7 +42,7 @@ const parentContext = ref<{
 const itemName = ref('')
 const configForm = ref({
   parentItemId: null as number | null,
-  ataChapter: '',
+  gjbChapter: '',
   partNumber: '' as string | null,
   itemType: 'SYSTEM' as ConfigItemType,
 })
@@ -63,7 +63,7 @@ function openCreateConfig(parentId?: number, parentType?: ConfigItemType, parent
     configForm.value.itemType = 'SYSTEM'
   }
   itemName.value = ''
-  configForm.value.ataChapter = ''
+  configForm.value.gjbChapter = ''
   configForm.value.partNumber = null
   configDialogVisible.value = true
 }
@@ -92,37 +92,37 @@ async function submitConfig() {
     ElMessage.warning('请输入项目名称')
     return
   }
-  if (!configForm.value.ataChapter.trim()) {
-    ElMessage.warning('请输入 ATA 章节号')
+  if (!configForm.value.gjbChapter.trim()) {
+    ElMessage.warning('请输入 GJB 章节号')
     return
   }
 
   const type = configForm.value.itemType
-
-  let systemName = ''
-  let subSystemName: string | null = null
-  let equipmentName: string | null = null
-
-  if (type === 'SYSTEM') {
-    systemName = itemName.value.trim()
-  } else if (type === 'SUBSYSTEM') {
-    systemName = parentContext.value?.systemName || ''
-    subSystemName = itemName.value.trim()
-  } else {
-    // EQUIPMENT / LRU
-    equipmentName = itemName.value.trim()
+  const base = {
+    itemType: type,
+    ataChapter: configForm.value.gjbChapter.trim(),
+    parentItemId: configForm.value.parentItemId,
   }
 
-  await configItemStore.createItem({
-    modelCode: selectedModelCode.value,
-    parentItemId: configForm.value.parentItemId,
-    ataChapter: configForm.value.ataChapter.trim(),
-    systemName,
-    subSystemName,
-    equipmentName,
-    partNumber: configForm.value.partNumber?.trim() || null,
-    itemType: type,
-  })
+  if (type === 'SYSTEM') {
+    await configItemStore.createItem({
+      ...base,
+      systemName: itemName.value.trim(),
+    })
+  } else if (type === 'SUBSYSTEM') {
+    await configItemStore.createItem({
+      ...base,
+      subSystemName: itemName.value.trim(),
+    })
+  } else {
+    // EQUIPMENT / LRU
+    await configItemStore.createItem({
+      ...base,
+      equipmentName: itemName.value.trim(),
+      partNumber: configForm.value.partNumber?.trim() || null,
+    })
+  }
+
   ElMessage.success('构型项目已创建')
   configDialogVisible.value = false
 }
@@ -159,6 +159,12 @@ async function handleDeleteConfigItem(itemId: number, label: string) {
 const treeProps = {
   children: 'children',
   label: 'systemName',
+}
+
+function treeNodeName(data: ConfigItem): string {
+  if (data.itemType === 'SUBSYSTEM') return data.subSystemName ?? ''
+  if (data.itemType === 'EQUIPMENT' || data.itemType === 'LRU') return data.equipmentName ?? ''
+  return data.systemName ?? ''
 }
 </script>
 
@@ -231,15 +237,7 @@ const treeProps = {
           <template #default="{ data }">
             <div class="tree-node-content">
               <span class="tree-node-label">{{ data.ataChapter }}</span>
-              <span class="tree-node-name">{{ data.systemName }}</span>
-              <template v-if="data.subSystemName">
-                <span class="tree-sep">/</span>
-                <span class="tree-node-sub">{{ data.subSystemName }}</span>
-              </template>
-              <template v-if="data.equipmentName">
-                <span class="tree-sep">/</span>
-                <span class="tree-node-equip">{{ data.equipmentName }}</span>
-              </template>
+              <span class="tree-node-name">{{ treeNodeName(data) }}</span>
               <el-tag
                 :type="data.itemType === 'SYSTEM' ? '' : data.itemType === 'SUBSYSTEM' ? 'success' : 'info'"
                 class="tree-type-tag"
@@ -250,7 +248,7 @@ const treeProps = {
 
               <span class="tree-actions">
                 <el-button
-                  v-if="data.itemType !== 'LRU'"
+                  v-if="data.itemType === 'SYSTEM' || data.itemType === 'SUBSYSTEM'"
                   type="primary"
                   text
                   size="small"
@@ -264,7 +262,7 @@ const treeProps = {
                   size="small"
                   @click.stop="handleDeleteConfigItem(
                     data.itemId,
-                    data.systemName || data.ataChapter
+                    treeNodeName(data) || data.ataChapter
                   )"
                 >
                   删除
@@ -299,8 +297,8 @@ const treeProps = {
           </el-select>
         </el-form-item>
 
-        <el-form-item label="ATA 章节号" required>
-          <el-input v-model="configForm.ataChapter" placeholder="例：72-00" />
+        <el-form-item label="GJB 章节号" required>
+          <el-input v-model="configForm.gjbChapter" placeholder="例：72-00" />
         </el-form-item>
 
         <el-form-item
