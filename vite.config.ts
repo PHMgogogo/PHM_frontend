@@ -66,14 +66,14 @@ export default defineConfig({
         rewrite: (path: string) => path.replace(/^\/instance/, ''),
       },
       '/task': {
-        target: 'http://localhost:8000',
+        target: 'http://192.168.31.13:8001',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/task/, '/api'),
       },
       "/opencode":{
-        target: 'http://localhost:4096',
+        target: 'http://192.168.31.13:8001',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/opencode/, ''),
+        // rewrite: (path) => path.replace(/^\/opencode/, ''),
       }
     },
   },
