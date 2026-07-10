@@ -7,7 +7,7 @@ import type { ConnOpts } from '@/lib/opencode-api'
 // 默认连接配置（来自 ConnectionConfig.vue 默认填充值）
 const DEFAULT_OPTS = {
   base: '/opencode',
-  dir: "D:\\AA Lynx's Workspace\\user_project\\web_test",
+  dir: "/mnt/d/phm",
   user: 'opencode',
   pass: '',
 }

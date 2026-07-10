@@ -23,7 +23,7 @@ const optimizeLayout = () => {
     <!-- 页面顶栏 -->
     <div class="monitor-header">
       <div class="header-left">
-        <h2 class="page-title">实时监控</h2>
+        <h2 class="page-title">数据展示</h2>
         <span class="header-subtitle">飞行器状态总览 · 数据更新：2026-05-18 18:00</span>
       </div>
       <div class="header-right">

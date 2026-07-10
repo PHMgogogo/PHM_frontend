@@ -31,13 +31,7 @@ const menus: MenuItem[] = [
   { key: 'aircraft', svg: airplaneIcon, title: '飞行器管理' },
   { key: 'knowledge', svg: knowledgeIcon, title: '知识库管理' },
   { key: 'config', svg: configIcon, title: '构型管理' },
-  { key: 'monitor', svg: monitorIcon, title: '实时监控' },
-  { key: 'monitor-old', svg: monitorIcon, title: '实时监控（旧）' },
-  { key: 'diagnosis', svg: diagnosisIcon, title: '增强诊断' },
-  { key: 'health', svg: healthIcon, title: '健康评估' },
-  { key: 'trend', svg: trendIcon, title: '趋势分析' },
-  { key: 'prediction', svg: predictionIcon, title: '故障预测' },
-  { key: 'maintenance', svg: maintenanceIcon, title: '维修建议' },
+  { key: 'monitor', svg: monitorIcon, title: '数据展示' },
 ]
 </script>
 

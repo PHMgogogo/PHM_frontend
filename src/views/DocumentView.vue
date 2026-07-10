@@ -94,11 +94,13 @@ function formatDate(ts: number): string {
 }
 
 function getStatusText(status: string): string {
-  return status === 'completed' ? '已完成' : '处理中'
+  //return status === 'completed' ? '已完成' : '处理中'
+  return '已完成'
 }
 
 function getStatusType(status: string): 'success' | 'warning' {
-  return status === 'completed' ? 'success' : 'warning'
+  //return status === 'completed' ? 'success' : 'warning'\
+  return 'success'
 }
 </script>
 

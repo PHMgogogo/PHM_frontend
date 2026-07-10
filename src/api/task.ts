@@ -13,7 +13,7 @@ import type {
   ApiResponse,
 } from '@/types/entities'
 
-const client = createClient({ baseURL: '/task' })
+const client = createClient({ baseURL: '/api' })
 
 export const taskApi = {
   /** 获取全部任务 */

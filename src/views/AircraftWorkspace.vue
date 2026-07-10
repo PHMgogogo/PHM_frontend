@@ -9,9 +9,21 @@ import WorkspaceSidebar from '@/components/WorkspaceSidebar.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import TaskPanel from '@/components/TaskPanel.vue'
 import DataPanel from '@/components/DataPanel.vue'
+import DemoRealtimeView from '@/views/demo/DemoRealtimeView.vue'
+import DemoDiagnosisView from '@/views/demo/DemoDiagnosisView.vue'
+import DemoHealthView from '@/views/demo/DemoHealthView.vue'
+import DemoTrendView from '@/views/demo/DemoTrendView.vue'
+import DemoPredictionView from '@/views/demo/DemoPredictionView.vue'
+import DemoMaintenanceView from '@/views/demo/DemoMaintenanceView.vue'
 import taskIcon from '@/assets/task.svg'
 import dataIcon from '@/assets/data.svg'
 import chatIcon from '@/assets/chat.svg'
+import monitorIcon from '@/assets/monitor.svg'
+import diagnosisIcon from '@/assets/diagnosis.svg'
+import healthIcon from '@/assets/health.svg'
+import trendIcon from '@/assets/trend.svg'
+import predictionIcon from '@/assets/predict.svg'
+import maintenanceIcon from '@/assets/maintenance.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,6 +45,12 @@ const workspaceMenus = [
   { key: 'task', svg: taskIcon, title: '会话管理' },
   { key: 'data', svg: dataIcon, title: '数据管理' },
   { key: 'chat', svg: chatIcon, title: '当前对话' },
+  { key: 'monitor-old', svg: monitorIcon, title: '实时监控' },
+  { key: 'diagnosis', svg: diagnosisIcon, title: '增强诊断' },
+  { key: 'health', svg: healthIcon, title: '健康评估' },
+  { key: 'trend', svg: trendIcon, title: '趋势分析' },
+  { key: 'prediction', svg: predictionIcon, title: '故障预测' },
+  { key: 'maintenance', svg: maintenanceIcon, title: '维修建议' },
 ]
 
 // ---- 初始化指定飞机的任务上下文：拉取列表，空列表则静默自动创建默认会话 ----
@@ -131,6 +149,24 @@ function onNavigateToTasks() {
           v-else-if="activeMenu === 'data'"
           :aircraft-number="aircraftNumber"
           @navigate-to-tasks="onNavigateToTasks"
+        />
+        <DemoRealtimeView
+          v-else-if="activeMenu === 'monitor-old'"
+        />
+        <DemoDiagnosisView
+          v-else-if="activeMenu === 'diagnosis'"
+        />
+        <DemoHealthView
+          v-else-if="activeMenu === 'health'"
+        />
+        <DemoTrendView
+          v-else-if="activeMenu === 'trend'"
+        />
+        <DemoPredictionView
+          v-else-if="activeMenu === 'prediction'"
+        />
+        <DemoMaintenanceView
+          v-else-if="activeMenu === 'maintenance'"
         />
       </template>
     </main>
