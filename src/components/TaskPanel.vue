@@ -84,7 +84,7 @@ async function pollTaskStates() {
 function startPolling() {
   stopPolling()
   pollTaskStates()
-  pollTimer = setInterval(pollTaskStates, 3000)
+  pollTimer = setInterval(pollTaskStates, 500)
 }
 
 function stopPolling() {

@@ -9,7 +9,7 @@ const instanceId = String(route.params.instanceId)
 const specContent = ref<Record<string, unknown> | null>(null)
 
 // 实际调试用的后端地址
-const API_BASE = 'http://192.168.31.13:8001'
+const API_BASE = 'http://172.21.48.1:8001'
 
 // 自行拉取 OpenAPI 规范，注入正确的 server 地址后再交给 Scalar 渲染
 watchEffect(async () => {

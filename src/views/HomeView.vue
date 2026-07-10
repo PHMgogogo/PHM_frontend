@@ -6,12 +6,6 @@ import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
 import ConfigManagement from '@/views/ConfigManagement.vue'
 import DocumentView from '@/views/DocumentView.vue'
 import MonitorView from '@/views/MonitorView.vue'
-import DemoRealtimeView from '@/views/demo/DemoRealtimeView.vue'
-import DemoDiagnosisView from '@/views/demo/DemoDiagnosisView.vue'
-import DemoHealthView from '@/views/demo/DemoHealthView.vue'
-import DemoTrendView from '@/views/demo/DemoTrendView.vue'
-import DemoPredictionView from '@/views/demo/DemoPredictionView.vue'
-import DemoMaintenanceView from '@/views/demo/DemoMaintenanceView.vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { Search } from '@element-plus/icons-vue'
 
@@ -123,36 +117,6 @@ const filteredAircrafts = computed(() => {
       <!-- 实时监控 -->
       <template v-else-if="activeMenu === 'monitor'">
         <MonitorView />
-      </template>
-
-      <!-- 实时监控（旧） -->
-      <template v-else-if="activeMenu === 'monitor-old'">
-        <DemoRealtimeView />
-      </template>
-
-      <!-- 增强诊断 -->
-      <template v-else-if="activeMenu === 'diagnosis'">
-        <DemoDiagnosisView />
-      </template>
-
-      <!-- 健康评估 -->
-      <template v-else-if="activeMenu === 'health'">
-        <DemoHealthView />
-      </template>
-
-      <!-- 趋势分析 -->
-      <template v-else-if="activeMenu === 'trend'">
-        <DemoTrendView />
-      </template>
-
-      <!-- 故障预测 -->
-      <template v-else-if="activeMenu === 'prediction'">
-        <DemoPredictionView />
-      </template>
-
-      <!-- 维修建议 -->
-      <template v-else-if="activeMenu === 'maintenance'">
-        <DemoMaintenanceView />
       </template>
     </main>
   </div>
