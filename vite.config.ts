@@ -56,9 +56,9 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://192.168.31.13:8001',
+        target: 'http://152.136.119.117:8080/',
         changeOrigin: true,
-        // rewrite: (path) => path.replace(/^\/api/, ''),
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/instance': {
         target: 'http://192.168.31.13:8001',
@@ -66,7 +66,7 @@ export default defineConfig({
         rewrite: (path: string) => path.replace(/^\/instance/, ''),
       },
       '/task': {
-        target: 'http://192.168.31.13:8001',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/task/, '/api'),
       },

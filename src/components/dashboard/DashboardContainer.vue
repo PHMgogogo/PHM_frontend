@@ -140,6 +140,14 @@ const updateRowHeight = () => {
 
 const debouncedUpdateRowHeight = debounce(updateRowHeight, 100)
 
+// 是否纵向溢出：任一图表底部（y + h）超过画布总行数，即纵向占比超过 100%
+const isYOverflow = computed(() => {
+  if (layout.value.length === 0) return false
+  const totalRows = dashboardConfig.value.layout.totalRows
+  const maxBottom = layout.value.reduce((max, item) => Math.max(max, item.y + item.h), 0)
+  return maxBottom > totalRows
+})
+
 const getCurrentSizeConfig = () => {
   return dashboardConfig.value.sizes.find(s => s.value === selectedSize.value) || dashboardConfig.value.sizes[0]
 }
@@ -200,6 +208,55 @@ const addDashboardItem = () => {
   if (props.autoSave) {
     storage.set(props.storageKey, layout.value)
   }
+}
+
+/**
+ * 用外部构造好的 ECharts option 直接添加图表项（不依赖内部 selectedCategory/selectedChartType）。
+ * 供 MonitorView 等父级在完成 /api/display 查询后注入真实图表。
+ * @param {object} option ECharts option
+ * @param {string} title 图表标题
+ * @param {string} sizeValue 'small' | 'medium' | 'large'
+ * @returns {object|null} 新添加的 layout item，失败返回 null
+ */
+const addItemWithOption = (option, title, sizeValue = 'medium') => {
+  const sizeConfig =
+    dashboardConfig.value.sizes.find((s) => s.value === sizeValue) || dashboardConfig.value.sizes[0]
+  if (!sizeConfig) return null
+
+  const emptySpace = findEmptySpace(
+    layout.value,
+    sizeConfig.w,
+    sizeConfig.h,
+    dashboardConfig.value.layout.cols,
+    dashboardConfig.value.layout.totalRows,
+  )
+  if (!emptySpace) {
+    alert(`画布空间不足！无法放置 ${sizeConfig.w}x${sizeConfig.h} 的组件`)
+    return null
+  }
+
+  const newItem = {
+    i: generateId(),
+    x: emptySpace.x,
+    y: emptySpace.y,
+    w: sizeConfig.w,
+    h: sizeConfig.h,
+    option,
+    type: 'display',
+    category: '',
+    title: title || '数据图表',
+    static: false,
+  }
+
+  layout.value.push(newItem)
+  nextId.value++
+
+  emit(DASHBOARD_EVENTS.ITEM_ADDED, newItem)
+
+  if (props.autoSave) {
+    storage.set(props.storageKey, layout.value)
+  }
+  return newItem
 }
 
 const optimizeDashboardLayout = () => {
@@ -284,11 +341,13 @@ const exportLayout = () => {
 
 defineExpose({
   addItem: addDashboardItem,
+  addItemWithOption,
   optimizeLayout: optimizeDashboardLayout,
   clearLayout,
   exportLayout,
   getLayout: () => layout.value,
-  setLayout: (newLayout) => { layout.value = newLayout }
+  setLayout: (newLayout) => { layout.value = newLayout },
+  isYOverflow: () => isYOverflow.value
 })
 </script>
 
@@ -552,7 +611,8 @@ defineExpose({
   background-size: 20px 20px;
   padding: 16px;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .dashboard-grid-item {

@@ -85,7 +85,7 @@ export function findEmptySpace(layout, w, h, cols, maxRows) {
   }
   
   const maxY = layout.reduce((max, item) => Math.max(max, item.y + item.h), 0)
-  if (maxY + h <= max) {
+  if (maxY + h <= maxRows) {
     return { x: 0, y: maxY }
   }
   

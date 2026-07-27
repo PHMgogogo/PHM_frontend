@@ -10,6 +10,8 @@ import {
   LegendComponent,
   GridComponent,
 } from 'echarts/components'
+// echarts-gl：提供 scatter3D / grid3D 等 3D 图表能力（用于 POINT_CLOUD_3D 展示）
+import 'echarts-gl'
 import { Warning, Close } from '@element-plus/icons-vue'
 
 // 注册 ECharts 按需模块（全局副作用，仅执行一次）

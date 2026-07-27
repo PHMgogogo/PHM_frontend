@@ -18,6 +18,7 @@ declare module 'vue' {
     CsvPreview: typeof import('./src/components/CsvPreview.vue')['default']
     DashboardContainer: typeof import('./src/components/dashboard/DashboardContainer.vue')['default']
     DataPanel: typeof import('./src/components/DataPanel.vue')['default']
+    DataSourcePanel: typeof import('./src/components/dashboard/DataSourcePanel.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCard: typeof import('element-plus/es')['ElCard']
