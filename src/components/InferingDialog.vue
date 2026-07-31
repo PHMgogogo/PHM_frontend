@@ -1,0 +1,403 @@
+<script setup lang="ts">
+import { ref, watch, computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import { taskApi } from '@/api/task'
+import { getCsvOverview } from '@/api/csv'
+import { useTaskStore } from '@/stores/task'
+import type { ConfigDataMapping, TaskResponse, InferTaskRequest, ModelResult } from '@/types/entities'
+
+const props = defineProps<{
+  modelValue: boolean
+  mapping: ConfigDataMapping | null
+  aircraftNumber: string
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:modelValue', val: boolean): void
+  (e: 'success'): void
+  (e: 'navigate-to-tasks'): void
+}>()
+
+const taskStore = useTaskStore()
+
+const noTasksAvailable = ref(false)
+
+// ---- 步骤1：选择会话 ----
+const tasks = ref<TaskResponse[]>([])
+const tasksLoading = ref(false)
+const selectedTaskId = ref<number | null>(null)
+
+// ---- 步骤2：选择数据列 / 标签列（标签列可选） ----
+const allColumns = ref<string[]>([])
+const columnsLoading = ref(false)
+const selectedDataCols = ref<string[]>([])
+const selectedLabelCols = ref<string[]>([])
+
+// ---- 步骤3：推理参数（无 epoch、learning_rate） ----
+const batchSize = ref(32)
+const device = ref('CPU')
+
+// ---- 推理结果 ----
+const inferResult = ref<ModelResult[] | null>(null)
+const inferError = ref<string | null>(null)
+
+/** 将 ModelResult[] 扁平化为表格行：每条 (id, output) 为一行 */
+interface ResultRow {
+  id: number
+  output: number[]
+}
+const resultRows = computed<ResultRow[]>(() => {
+  if (!inferResult.value) return []
+  const rows: ResultRow[] = []
+  for (const item of inferResult.value) {
+    const ids = item.ids ?? []
+    const outputs = item.outputs ?? []
+    const len = Math.min(ids.length, outputs.length)
+    for (let i = 0; i < len; i++) {
+      rows.push({ id: ids[i], output: outputs[i] })
+    }
+  }
+  return rows
+})
+
+// ---- 提交 ----
+const submitting = ref(false)
+
+// ---- 设备选项 ----
+const deviceOptions = [
+  { label: 'CPU', value: 'CPU' },
+  { label: 'GPU (CUDA)', value: 'GPU (CUDA)' },
+]
+
+// ---- 对话框打开时加载数据 ----
+watch(
+  () => props.modelValue,
+  async (visible) => {
+    if (!visible || !props.mapping) return
+    // 重置
+    selectedTaskId.value = null
+    selectedDataCols.value = []
+    selectedLabelCols.value = []
+    batchSize.value = 32
+    device.value = 'CPU'
+    inferResult.value = null
+    inferError.value = null
+    submitting.value = false
+
+    // 并行加载任务列表和列名
+    tasksLoading.value = true
+    columnsLoading.value = true
+    try {
+      const [taskRes, overview] = await Promise.all([
+        taskApi.listByAircraft(props.aircraftNumber),
+        getCsvOverview(props.mapping.mappingId),
+      ])
+      tasks.value = taskRes.tasks
+      noTasksAvailable.value = taskRes.tasks.length === 0
+      allColumns.value = overview.dataColumns ?? []
+
+      // 默认选中会话：优先级1 cookie 当前会话 → 优先级2 默认会话
+      const currentTask = taskStore.getCurrentTask(props.aircraftNumber)
+      if (currentTask) {
+        const match = tasks.value.find((t) => t.task_id === currentTask.id)
+        if (match) selectedTaskId.value = match.task_id
+      }
+      if (selectedTaskId.value === null) {
+        const defaultTask = tasks.value.find((t) => t.default)
+        if (defaultTask) selectedTaskId.value = defaultTask.task_id
+      }
+    } catch (e) {
+      ElMessage.error('加载配置数据失败: ' + (e as Error).message)
+    } finally {
+      tasksLoading.value = false
+      columnsLoading.value = false
+    }
+  },
+)
+
+// ---- 当前选中任务 ----
+function selectedTask(): TaskResponse | undefined {
+  return tasks.value.find((t) => t.task_id === selectedTaskId.value)
+}
+
+// ---- 设备值映射 ----
+function mapDevice(uiDevice: string): 'cpu' | 'cuda' {
+  return uiDevice === 'GPU (CUDA)' ? 'cuda' : 'cpu'
+}
+
+// ---- 确认提交 ----
+async function handleConfirm() {
+  if (!props.mapping) return
+
+  const task = selectedTask()
+  if (!task) {
+    ElMessage.warning('请选择一个会话')
+    return
+  }
+  if (!task.instance_id) {
+    ElMessage.warning('所选会话缺少实例，请先在会话管理中配置实例')
+    return
+  }
+  if (selectedDataCols.value.length === 0) {
+    ElMessage.warning('请至少选择一列数据列')
+    return
+  }
+
+  const request: InferTaskRequest = {
+    table_name: 'csv_' + props.mapping.csvTableName,
+    data_cols: selectedDataCols.value,
+    label_cols: selectedLabelCols.value,
+    instance_id: task.instance_id,
+    batch_size: batchSize.value,
+    device: mapDevice(device.value),
+    detach: false,
+  }
+
+  submitting.value = true
+  inferResult.value = null
+  inferError.value = null
+  try {
+    const res = await taskApi.inferWithCsv(request) as unknown as ModelResult[]
+    if (Array.isArray(res) && res.length > 0) {
+      inferResult.value = res
+      ElMessage.success('推理完成')
+    } else {
+      inferError.value = '推理未返回结果'
+      ElMessage.error(inferError.value!)
+    }
+  } catch (e) {
+    inferError.value = '推理启动失败: ' + (e as Error).message
+    ElMessage.error(inferError.value!)
+  } finally {
+    submitting.value = false
+  }
+}
+
+function handleClose() {
+  emit('update:modelValue', false)
+}
+
+function handleNavigateToTasks() {
+  emit('update:modelValue', false)
+  emit('navigate-to-tasks')
+}
+</script>
+
+<template>
+  <el-dialog
+    :model-value="modelValue"
+    title="推理配置"
+    width="560px"
+    :close-on-click-modal="false"
+    destroy-on-close
+    @update:model-value="handleClose"
+  >
+    <!-- 步骤1：选择会话 -->
+    <el-form label-width="100px">
+      <el-form-item label="选择会话">
+        <el-select
+          v-model="selectedTaskId"
+          placeholder="请选择会话"
+          :loading="tasksLoading"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="t in tasks"
+            :key="t.task_id"
+            :label="t.name"
+            :value="t.task_id"
+          >
+            <span>{{ t.name }}</span>
+            <span
+              v-if="t.default"
+              style="margin-left: 8px; font-size: 12px; color: #909399"
+            >（默认）</span>
+          </el-option>
+        </el-select>
+        <div v-if="noTasksAvailable" class="no-task-hint">
+          暂无可用会话，
+          <a class="hint-link" @click="handleNavigateToTasks">前往会话管理</a>
+          创建
+        </div>
+        <div v-else class="task-hint">
+          没有合适的会话？
+          <a class="hint-link" @click="handleNavigateToTasks">前往会话管理</a>
+          新建
+        </div>
+      </el-form-item>
+
+      <!-- 步骤2：列选择（仅在选择任务后展示） -->
+      <template v-if="selectedTaskId !== null">
+        <el-form-item label="数据列" required>
+          <el-select
+            v-model="selectedDataCols"
+            multiple
+            placeholder="选择数据列"
+            :loading="columnsLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="col in allColumns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="标签列">
+          <el-select
+            v-model="selectedLabelCols"
+            multiple
+            placeholder="选择标签列（可选）"
+            :loading="columnsLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="col in allColumns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </el-form-item>
+
+        <!-- 步骤3：推理参数（无 epoch、学习率） -->
+        <div class="config-form-row">
+          <el-form-item label="Batch Size">
+            <el-input-number v-model="batchSize" :min="1" :max="4096" />
+          </el-form-item>
+          <el-form-item label="设备">
+            <el-select v-model="device" style="width: 160px">
+              <el-option
+                v-for="d in deviceOptions"
+                :key="d.value"
+                :label="d.label"
+                :value="d.value"
+              />
+            </el-select>
+          </el-form-item>
+        </div>
+
+      </template>
+    </el-form>
+
+    <!-- 推理结果 -->
+    <div v-if="inferResult" class="infer-result">
+      <div class="infer-result-stats">
+        共 {{ resultRows.length }} 条结果
+      </div>
+      <div class="infer-result-table-wrap">
+        <el-table :data="resultRows" size="small" border stripe max-height="240">
+          <el-table-column label="ids" prop="id" width="100" />
+          <el-table-column label="outputs">
+            <template #default="{ row }">
+              <span class="output-cell">{{ row.output.join(', ') }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+
+    <template #footer>
+      <el-button @click="handleClose" :disabled="submitting">取消</el-button>
+      <el-button
+        v-if="!inferResult"
+        type="primary"
+        :loading="submitting"
+        :disabled="selectedTaskId === null"
+        @click="handleConfirm"
+      >
+        开始推理
+      </el-button>
+      <el-button
+        v-else
+        type="primary"
+        @click="handleClose"
+      >
+        关闭
+      </el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<style scoped>
+.el-form :deep(.el-form-item__label) {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.el-form :deep(.el-input__inner) {
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.config-form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.config-form-row .el-form-item {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 18px;
+}
+
+.hint-text {
+  margin-left: 10px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.no-task-hint,
+.task-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+.hint-link {
+  color: #1a6cf0;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.hint-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- 推理结果 ---- */
+.infer-result {
+  width: 100%;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  background: #fafbfd;
+  border: 1px solid #e0e8f5;
+  border-radius: 6px;
+  box-sizing: border-box;
+  margin-top: 16px;
+}
+
+.infer-result-stats {
+  font-size: 13px;
+  color: #3a4a5c;
+  margin-bottom: 6px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.infer-result-table-wrap {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.output-cell {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  color: #303133;
+}
+</style>
