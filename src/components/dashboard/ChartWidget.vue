@@ -54,6 +54,11 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
+  // 选中态（编辑模式）：由父级 DashboardContainer 根据 selectedId 计算
+  selected: {
+    type: Boolean,
+    default: false
+  },
   enableInteraction: {
     type: Boolean,
     default: true
@@ -200,7 +205,8 @@ defineExpose({
     :class="['chart-widget-wrapper', customClass, {
       'chart-readonly': readonly,
       'chart-error': error,
-      'chart-loading': loading
+      'chart-loading': loading,
+      'chart-selected': selected
     }]"
     @mouseenter="!readonly && (isHovered = true)"
     @mouseleave="!readonly && (isHovered = false)"
@@ -217,13 +223,14 @@ defineExpose({
       <button @click="initChart" class="retry-btn">重试</button>
     </div>
     
-    <!-- ECharts图表容器 -->
-    <div 
-      v-show="!error"
-      class="chart-container" 
-      ref="chartRef"
-      :style="{ width, height }"
-    ></div>
+    <!-- ECharts图表容器：外层 chart-area 提供留白，内层 chart-container 承载画布 -->
+    <div v-show="!error" class="chart-area">
+      <div
+        class="chart-container"
+        ref="chartRef"
+        :style="{ width, height }"
+      ></div>
+    </div>
     
     <!-- 删除按钮 -->
     <div 
@@ -261,6 +268,13 @@ defineExpose({
   border: 2px dashed var(--dashboard-danger-color, #f56c6c);
 }
 
+/* 选中态：用 outline 而非 border，避免撑动栅格布局 */
+.chart-widget-wrapper.chart-selected {
+  outline: 2px solid var(--dashboard-primary-color, #3b7cff);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 4px rgba(59, 124, 255, 0.12), 0 6px 16px rgba(0, 30, 90, 0.12);
+}
+
 .chart-title {
   padding: 8px 12px;
   font-size: 13px;
@@ -274,11 +288,19 @@ defineExpose({
   text-overflow: ellipsis;
 }
 
-.chart-container {
+/* 外层留白容器：flex 占位 + 内边距，使图表画布与卡片边缘保持间距 */
+.chart-area {
   flex: 1;
+  min-height: 0;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.chart-container {
+  width: 100%;
+  height: 100%;
   background: var(--dashboard-card-bg, white);
   border-radius: var(--dashboard-border-radius, 8px);
-  min-height: 0;
 }
 
 .chart-error-state {

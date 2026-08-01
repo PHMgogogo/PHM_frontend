@@ -50,19 +50,6 @@ export const DEFAULT_LAYOUT_CONFIG = {
 }
 
 /**
- * 默认控制面板配置
- */
-export const DEFAULT_CONTROL_PANEL_CONFIG = {
-  enabled: true,
-  title: '仪表盘控制中心',
-  height: '20%',
-  showOptimizeButton: true,
-  showSizeSelector: true,
-  showTypeSelector: true,
-  showDataSelector: true
-}
-
-/**
  * 仪表盘配置接口
  */
 export const DashboardConfigSchema = {
@@ -80,10 +67,7 @@ export const DashboardConfigSchema = {
   
   // 布局配置
   layout: DEFAULT_LAYOUT_CONFIG,
-  
-  // 控制面板配置
-  controlPanel: DEFAULT_CONTROL_PANEL_CONFIG,
-  
+
   // 自定义图表配置生成器
   chartConfigGenerator: null,
   
@@ -165,7 +149,6 @@ export function setDefaultConfig(config = {}) {
     ],
     sizes: config.sizes || Object.values(DEFAULT_SIZES),
     layout: { ...DEFAULT_LAYOUT_CONFIG, ...config.layout },
-    controlPanel: { ...DEFAULT_CONTROL_PANEL_CONFIG, ...config.controlPanel },
     chartConfigGenerator: config.chartConfigGenerator || null,
     theme: { 
       primaryColor: '#409eff',

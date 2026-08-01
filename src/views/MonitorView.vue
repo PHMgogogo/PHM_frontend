@@ -15,6 +15,10 @@ import { buildDisplayOption, buildTitle } from '@/components/dashboard/DisplayOp
 const dashboardRef = ref<any>(null)
 const isLayoutLocked = ref(false)
 
+// 图表编辑态：当前选中的图表 id 与回填给 DataSourcePanel 的编辑目标（{ id, config } | null）
+const selectedId = ref<string | number | null>(null)
+const editTarget = ref<{ id: string | number; config: any } | null>(null)
+
 // 右侧数据源配置侧栏：展开/收起（flex 宽度过渡，不触及 DashboardContainer 内部栅格）
 const sidebarCollapsed = ref(false)
 const toggleSidebar = () => {
@@ -47,16 +51,16 @@ const dashboardConfig = {
     { value: 'large', label: '大', w: 9, h: 10 },
   ],
   layout: { cols: 12, totalRows: 30, margin: [12, 12], containerPadding: [16, 16] },
-  controlPanel: { enabled: false },
 }
 
 // 查询中状态（用于禁用/提示，由 DataSourcePanel 内部自管 loading，这里仅作画布侧兜底）
 const displayLoading = ref(false)
 
 /**
- * 接收 DataSourcePanel 提交的查询参数，调 /api/display/raw-data 并把结果作为图表注入画布。
+ * 用 payload 构造 DisplayRequest → 查询 → 构建 ECharts option 与标题。
+ * 新建 / 更新两条路径共用。失败/空结果时返回 null 并已提示用户。
  */
-async function handleAddChart(payload: {
+async function resolveDisplay(payload: {
   data: string
   columns: string[]
   limit: number
@@ -77,25 +81,83 @@ async function handleAddChart(payload: {
     response = await queryDisplay(req)
   } catch (e) {
     ElMessage.error('图表数据查询失败: ' + (e instanceof Error ? e.message : String(e)))
-    displayLoading.value = false
-    return
+    return null
   } finally {
     displayLoading.value = false
   }
 
   if (!response || !Array.isArray(response.data) || response.data.length === 0) {
     ElMessage.warning('查询结果为空')
-    return
+    return null
   }
 
   const option = buildDisplayOption(payload.type, response, payload.size, payload.style)
   // 用户自定义标题优先；留空则按参数名自动命名（buildTitle 兜底返回“数据展示”）
   const title = payload.title?.trim() || buildTitle(response.parameter)
+  return { option, title }
+}
 
-  const added = dashboardRef.value?.addItemWithOption?.(option, title, payload.size)
+/**
+ * 新建图表：查询 → 注入画布 → 自动进入编辑态（选中新建项，面板保留其配置）。
+ */
+async function handleAddChart(payload: any) {
+  const resolved = await resolveDisplay(payload)
+  if (!resolved) return
+  const added = dashboardRef.value?.addItemWithOption?.(resolved.option, resolved.title, payload.size, payload)
   if (!added) {
-    ElMessage.warning('画布空间不足，无法添加图表')
+    ElMessage.error('图表添加失败')
+    return
   }
+  // 自动选中新建图表，便于立即微调
+  selectedId.value = added.i
+  editTarget.value = { id: added.i, config: payload }
+}
+
+/**
+ * 编辑图表：按选中图表的 id 原位更新（不新增、不删除）。
+ */
+async function handleUpdateChart(payload: any) {
+  const id = payload.id
+  const resolved = await resolveDisplay(payload)
+  if (!resolved) return
+  const updated = dashboardRef.value?.updateItemOption?.(id, resolved.option, resolved.title, payload.size, payload)
+  if (!updated) {
+    // 异步查询期间图表可能已被删除
+    ElMessage.warning('目标图表已不存在，请重新选择')
+    selectedId.value = null
+    editTarget.value = null
+    return
+  }
+  // 刷新 editTarget.config（id 不变 → 不触发面板回填，仅更新内部快照）
+  selectedId.value = id
+  editTarget.value = { id, config: payload }
+}
+
+/** 画布图表点击：item 为 null 表示点击空白处取消选中。 */
+function handleChartClicked(item: any) {
+  if (!item) {
+    selectedId.value = null
+    editTarget.value = null
+    return
+  }
+  // 点击已选中的图表：保持选中（v1 不做 toggle）
+  if (item.i === selectedId.value) return
+  selectedId.value = item.i
+  editTarget.value = { id: item.i, config: item.config }
+}
+
+/** 删除事件：若删的是当前选中图表，清空编辑态。 */
+function handleItemDeleted(deletedItem: any) {
+  if (deletedItem && deletedItem.i === selectedId.value) {
+    selectedId.value = null
+    editTarget.value = null
+  }
+}
+
+/** 取消选择 / 回到新建态。 */
+function handleCancelEdit() {
+  selectedId.value = null
+  editTarget.value = null
 }
 </script>
 
@@ -132,6 +194,9 @@ async function handleAddChart(payload: {
           :initial-layout="[]"
           :readonly="isLayoutLocked"
           :show-delete-button="!isLayoutLocked"
+          :selected-id="selectedId"
+          @chart-clicked="handleChartClicked"
+          @item-deleted="handleItemDeleted"
         />
       </div>
 
@@ -147,7 +212,12 @@ async function handleAddChart(payload: {
 
       <!-- 右侧数据源配置侧栏 -->
       <div class="monitor-sidebar" :class="{ collapsed: sidebarCollapsed }">
-        <DataSourcePanel @add-chart="handleAddChart" />
+        <DataSourcePanel
+          :edit-target="editTarget"
+          @add-chart="handleAddChart"
+          @update-chart="handleUpdateChart"
+          @cancel-edit="handleCancelEdit"
+        />
       </div>
     </div>
   </div>

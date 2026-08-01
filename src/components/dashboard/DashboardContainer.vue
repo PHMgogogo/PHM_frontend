@@ -16,7 +16,6 @@ import {
   debounce, 
   storage 
 } from '../../utils/dashboard-utils.js'
-import { generateChartConfig } from '../../utils/chart-configs.js'
 import { DataBoard } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -56,6 +55,11 @@ const props = defineProps({
   showDeleteButton: {
     type: Boolean,
     default: true
+  },
+  // 当前选中的图表 id（由父级 MonitorView 持有，用于渲染选中环）
+  selectedId: {
+    type: [String, Number],
+    default: null
   }
 })
 
@@ -70,9 +74,6 @@ const emit = defineEmits([
 
 const dashboardConfig = computed(() => setDefaultConfig(props.config))
 
-const selectedCategory = ref('')
-const selectedChartType = ref('bar') 
-const selectedSize = ref('small')
 const layout = ref([])
 const nextId = ref(1)
 
@@ -81,22 +82,6 @@ const itemToDelete = ref(null)
 
 const canvasRef = ref(null)
 const rowHeight = ref(30)
-
-watch(
-  () => [dashboardConfig.value.dataSource, dashboardConfig.value.chartTypes, dashboardConfig.value.sizes],
-  ([dataSource, chartTypes, sizes]) => {
-    if (dataSource.length > 0 && !selectedCategory.value) {
-      selectedCategory.value = dataSource[0].name
-    }
-    if (chartTypes.length > 0 && !selectedChartType.value) {
-      selectedChartType.value = chartTypes[0].value
-    }
-    if (sizes.length > 0 && !selectedSize.value) {
-      selectedSize.value = sizes[0].value
-    }
-  },
-  { immediate: true }
-)
 
 watch(
   () => props.initialLayout,
@@ -148,77 +133,16 @@ const isYOverflow = computed(() => {
   return maxBottom > totalRows
 })
 
-const getCurrentSizeConfig = () => {
-  return dashboardConfig.value.sizes.find(s => s.value === selectedSize.value) || dashboardConfig.value.sizes[0]
-}
-
-const getChartOption = (categoryName, chartType, size) => {
-  if (dashboardConfig.value.chartConfigGenerator) {
-    const customConfig = dashboardConfig.value.chartConfigGenerator(
-      dashboardConfig.value.dataSource, 
-      categoryName, 
-      chartType, 
-      size
-    )
-    if (customConfig) return customConfig
-  }
-  
-  return generateChartConfig(
-    chartType, 
-    categoryName, 
-    dashboardConfig.value.dataSource, 
-    size
-  )
-}
-
-const addDashboardItem = () => {
-  const sizeConfig = getCurrentSizeConfig()
-  
-  const emptySpace = findEmptySpace(
-    layout.value,
-    sizeConfig.w,
-    sizeConfig.h,
-    dashboardConfig.value.layout.cols,
-    dashboardConfig.value.layout.totalRows
-  )
-  
-  if (!emptySpace) {
-    alert(`画布空间不足！无法放置 ${sizeConfig.w}x${sizeConfig.h} 的组件`)
-    return
-  }
-  
-  const newItem = {
-    i: generateId(),
-    x: emptySpace.x,
-    y: emptySpace.y,
-    w: sizeConfig.w,
-    h: sizeConfig.h,
-    option: getChartOption(selectedCategory.value, selectedChartType.value, selectedSize.value),
-    type: selectedChartType.value,
-    category: selectedCategory.value,
-    title: `${selectedCategory.value} - ${selectedChartType.value}`,
-    static: false
-  }
-  
-  layout.value.push(newItem)
-  nextId.value++
-  
-  emit(DASHBOARD_EVENTS.ITEM_ADDED, newItem)
-  
-  if (props.autoSave) {
-    storage.set(props.storageKey, layout.value)
-  }
-}
-
 /**
- * 用外部构造好的 ECharts option 直接添加图表项（不依赖内部 selectedCategory/selectedChartType）。
+ * 用外部构造好的 ECharts option 直接添加图表项。
  * 供 MonitorView 等父级在完成 /api/display/raw-data 查询后注入真实图表。
  * @param {object} option ECharts option
  * @param {string} title 图表标题
  * @param {string} sizeValue 'small' | 'medium' | 'large'
+ * @param {object|null} config 创建该图表时的前端配置快照（供选中后回填右侧面板）
  * @returns {object|null} 新添加的 layout item，失败返回 null
  */
-const addItemWithOption = (option, title, sizeValue = 'medium') => {
+const addItemWithOption = (option, title, sizeValue = 'medium', config = null) => {
   const sizeConfig =
     dashboardConfig.value.sizes.find((s) => s.value === sizeValue) || dashboardConfig.value.sizes[0]
   if (!sizeConfig) return null
@@ -230,11 +154,7 @@ const addItemWithOption = (option, title, sizeValue = 'medium') => {
     dashboardConfig.value.layout.cols,
     dashboardConfig.value.layout.totalRows,
   )
-  if (!emptySpace) {
-    alert(`画布空间不足！无法放置 ${sizeConfig.w}x${sizeConfig.h} 的组件`)
-    return null
-  }
-
+  // findEmptySpace 始终返回一个位置：画布内放得下就放，放不下则允许纵向溢出堆叠到最下方
   const newItem = {
     i: generateId(),
     x: emptySpace.x,
@@ -246,6 +166,7 @@ const addItemWithOption = (option, title, sizeValue = 'medium') => {
     category: '',
     title: title || '数据图表',
     static: false,
+    config,
   }
 
   layout.value.push(newItem)
@@ -257,6 +178,42 @@ const addItemWithOption = (option, title, sizeValue = 'medium') => {
     storage.set(props.storageKey, layout.value)
   }
   return newItem
+}
+
+/**
+ * 原位更新已有图表项（编辑模式：用户微调参数后重新查询，命中同一图表）。
+ * 仅原地改字段，交给 Vue 响应式 + grid-layout-plus 重排，勿整体重赋 layout.value。
+ * @param {string|number} id 目标 item.i
+ * @param {object} option 新的 ECharts option
+ * @param {string} title 新标题
+ * @param {string} sizeValue 'small' | 'medium' | 'large'（变化时按 !readonly 原位缩放）
+ * @param {object|null} config 新的前端配置快照
+ * @returns {object|null} 更新后的 item；找不到（已被删除）返回 null
+ */
+const updateItemOption = (id, option, title, sizeValue, config) => {
+  const item = layout.value.find((it) => it.i === id)
+  if (!item) return null
+
+  if (option !== undefined && option !== null) item.option = option
+  if (title !== undefined && title !== null) item.title = title
+  if (config !== undefined && config !== null) item.config = config
+
+  // 尺寸变更：未锁定布局时原位缩放（与手动拖拽缩放行为一致）
+  if (sizeValue && !props.readonly) {
+    const sizeConfig =
+      dashboardConfig.value.sizes.find((s) => s.value === sizeValue) || null
+    if (sizeConfig && (sizeConfig.w !== item.w || sizeConfig.h !== item.h)) {
+      item.w = sizeConfig.w
+      item.h = sizeConfig.h
+    }
+  }
+
+  emit(DASHBOARD_EVENTS.CONFIG_CHANGED, item)
+
+  if (props.autoSave) {
+    storage.set(props.storageKey, layout.value)
+  }
+  return item
 }
 
 const optimizeDashboardLayout = () => {
@@ -312,6 +269,15 @@ const handleChartClick = (item) => {
   emit(DASHBOARD_EVENTS.CHART_CLICKED, item)
 }
 
+// 点击画布空白处 → 取消选中（emit null）。
+// grid-layout-plus 根元素不接收点击事件，故绑在 .dashboard-canvas 上；
+// e.target === e.currentTarget 守卫确保只响应落在画布本身的点击
+// （图表点击已被 GridItem 的 @click.stop 拦截，不会冒泡到此）。
+const handleCanvasClick = (e) => {
+  if (e.target !== e.currentTarget) return
+  emit(DASHBOARD_EVENTS.CHART_CLICKED, null)
+}
+
 const clearLayout = () => {
   if (props.readonly) return
   if (confirm('确定要清空所有图表吗？此操作无法撤销。')) {
@@ -340,8 +306,8 @@ const exportLayout = () => {
 }
 
 defineExpose({
-  addItem: addDashboardItem,
   addItemWithOption,
+  updateItemOption,
   optimizeLayout: optimizeDashboardLayout,
   clearLayout,
   exportLayout,
@@ -353,89 +319,12 @@ defineExpose({
 
 <template>
   <div :class="['dashboard-container', customClass]">
-    <!-- 控制面板 -->
-    <div 
-      v-if="dashboardConfig.controlPanel.enabled" 
-      class="dashboard-control-panel"
-      :style="{ height: dashboardConfig.controlPanel.height }"
-    >
-      <h2 v-if="dashboardConfig.controlPanel.title">
-        {{ dashboardConfig.controlPanel.title }}
-      </h2>
-      
-      <div class="dashboard-controls" v-if="!readonly">
-        <div 
-          v-if="dashboardConfig.controlPanel.showDataSelector && dashboardConfig.dataSource.length > 0"
-          class="control-group"
-        >
-          <label>统计条目</label>
-          <select v-model="selectedCategory">
-            <option 
-              v-for="item in dashboardConfig.dataSource" 
-              :key="item.name" 
-              :value="item.name"
-            >{{ item.name }}</option>
-          </select>
-        </div>
-
-        <div 
-          v-if="dashboardConfig.controlPanel.showTypeSelector"
-          class="control-group"
-        >
-          <label>图表类型</label>
-          <select v-model="selectedChartType">
-            <option 
-              v-for="type in dashboardConfig.chartTypes" 
-              :key="type.value" 
-              :value="type.value"
-            >{{ type.label }}</option>
-          </select>
-        </div>
-
-        <div 
-          v-if="dashboardConfig.controlPanel.showSizeSelector"
-          class="control-group"
-        >
-          <label>窗口大小</label>
-          <select v-model="selectedSize">
-            <option 
-              v-for="size in dashboardConfig.sizes" 
-              :key="size.value" 
-              :value="size.value"
-            >{{ size.label }}</option>
-          </select>
-        </div>
-
-        <div class="control-actions">
-          <button @click="addDashboardItem" class="btn btn-primary">创建图表</button>
-          <button 
-            v-if="dashboardConfig.controlPanel.showOptimizeButton && layout.length > 0"
-            @click="optimizeDashboardLayout" 
-            class="btn btn-success"
-          >优化布局</button>
-          <button 
-            v-if="layout.length > 0"
-            @click="clearLayout" 
-            class="btn btn-warning"
-          >清空</button>
-          <button 
-            v-if="layout.length > 0"
-            @click="exportLayout" 
-            class="btn btn-info"
-          >导出</button>
-        </div>
-      </div>
-    </div>
-
     <!-- 主体画布 -->
-    <div 
-      class="dashboard-canvas" 
+    <div
+      class="dashboard-canvas"
       ref="canvasRef"
-      :style="{ 
-        height: dashboardConfig.controlPanel.enabled 
-          ? `calc(100% - ${dashboardConfig.controlPanel.height})` 
-          : '100%' 
-      }"
+      :style="{ height: '100%' }"
+      @click="handleCanvasClick"
     >
       <GridLayout
         v-model:layout="layout"
@@ -458,15 +347,16 @@ defineExpose({
           :i="item.i"
           :static="item.static || readonly"
           class="dashboard-grid-item"
-          @click="handleChartClick(item)"
+          @click.stop="handleChartClick(item)"
         >
-          <ChartWidget 
+          <ChartWidget
             :id="item.i"
-            :option="item.option" 
+            :option="item.option"
             :title="item.title"
             :readonly="readonly"
             :show-delete-button="showDeleteButton"
-            width="100%" 
+            :selected="item.i === selectedId"
+            width="100%"
             height="100%"
             @delete="confirmDelete"
           />
@@ -478,7 +368,7 @@ defineExpose({
         <div class="empty-content">
           <div class="empty-icon"><el-icon color="#6366F1"><DataBoard /></el-icon></div>
           <h3>暂无图表</h3>
-          <p v-if="!readonly">点击上方"创建图表"按钮开始添加图表</p>
+          <p v-if="!readonly">在右侧「数据源」面板配置数据并添加图表</p>
           <p v-else>当前仪表盘为空</p>
         </div>
       </div>
@@ -512,65 +402,6 @@ defineExpose({
   font-family: var(--dashboard-font-family, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif);
 }
 
-.dashboard-control-panel {
-  background: var(--dashboard-card-bg, #ffffff);
-  border-bottom: 1px solid var(--dashboard-border-color, #e4e8f1);
-  padding: 0 30px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 30, 90, 0.05);
-  z-index: 10;
-}
-
-.dashboard-control-panel h2 {
-  margin: 0 0 15px 0;
-  font-size: 1.5rem;
-  color: var(--dashboard-text-color-primary, #0d1f3c);
-  font-weight: 600;
-}
-
-.dashboard-controls {
-  display: flex;
-  gap: 20px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-}
-
-.control-group {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.control-group label {
-  font-size: 0.9rem;
-  color: var(--dashboard-text-color-secondary, #8c9ab0);
-  font-weight: 500;
-}
-
-.control-group select {
-  padding: 8px 12px;
-  border: 1px solid var(--dashboard-border-color, #e4e8f1);
-  border-radius: var(--dashboard-border-radius, 8px);
-  background: var(--dashboard-card-bg, white);
-  min-width: 120px;
-  font-size: 14px;
-  transition: border-color 0.2s;
-  outline: none;
-}
-
-.control-group select:focus {
-  border-color: var(--dashboard-primary-color, #3b7cff);
-}
-
-.control-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-left: auto;
-}
-
 .btn {
   height: 36px;
   padding: 0 16px;
@@ -585,18 +416,6 @@ defineExpose({
 
 .btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.btn-primary { background: var(--dashboard-primary-color, #3b7cff); color: white; }
-.btn-primary:hover:not(:disabled) { background: #5a93ff; }
-
-.btn-success { background: #36c4a0; color: white; }
-.btn-success:hover:not(:disabled) { background: #4fd4b0; }
-
-.btn-warning { background: #f5a623; color: white; }
-.btn-warning:hover:not(:disabled) { background: #f7b84a; }
-
-.btn-info { background: #8c9ab0; color: white; }
-.btn-info:hover:not(:disabled) { background: #a0adc0; }
 
 .btn-secondary { background: #f4f6fb; color: #8c9ab0; border: 1px solid #e4e8f1; }
 .btn-secondary:hover:not(:disabled) { background: #e8ecf4; color: #0d1f3c; }
@@ -708,9 +527,6 @@ defineExpose({
 }
 
 @media (max-width: 768px) {
-  .dashboard-control-panel { padding: 0 15px; }
-  .dashboard-controls { flex-direction: column; gap: 15px; align-items: stretch; }
-  .control-actions { margin-left: 0; }
   .dashboard-canvas { padding: 10px; }
 }
 </style>

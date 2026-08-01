@@ -96,7 +96,6 @@ export function buildDisplayOption(displayType, response, size = 'medium', style
  * @param {string|null} [style=null] CHART_STYLE 之一；缺省回落折线
  */
 function buildTimeseriesOption(response, size, responsive, style = null) {
-  const timeDim = response.dimensions[0]
   // 时间轴数据：取第一条 series 的每个点的第 0 维（各 series 共享时间轴）
   const timeAxis = response.data[0]?.data?.map((point) => point[0]) ?? []
 
@@ -139,8 +138,8 @@ function buildTimeseriesOption(response, size, responsive, style = null) {
       // 时序数据多为等间距采样（如 "00:00:00"），本身不含日历日期。
       // 统一用 category 轴：把时间串作为类别标签按索引对齐，避免 time 轴
       // 强加纪元/时区语义（曾导致所有点回落到 1970-01-01 08:00:00 即 epoch 0）。
+      // 不设置轴名（单位），保持图表简洁；维度单位（dimensions.unit）不在前端渲染
       type: 'category',
-      name: timeDim?.name ?? '',
       data: timeAxis,
       // 仅柱状留白，避免柱体贴轴原点；line/area/scatter 维持原 false 观感
       boundaryGap: resolved.type === 'bar',
@@ -200,16 +199,11 @@ function buildMapping2DOption(response, size, responsive, style = null) {
     grid: { ...responsive.grid },
     xAxis: {
       type: 'value',
-      name: xDim?.name ?? '',
-      nameLocation: 'middle',
-      nameGap: 28,
+      // 不设置轴名（单位）；维度名仅保留在 tooltip 中作为悬浮提示
       axisLabel: { ...responsive.xAxis?.axisLabel },
     },
     yAxis: {
       type: 'value',
-      name: yDim?.name ?? '',
-      nameLocation: 'middle',
-      nameGap: 36,
       axisLabel: { ...responsive.yAxis?.axisLabel },
     },
     series,
@@ -248,9 +242,10 @@ function buildPointCloud3DOption(response, size) {
         }: ${p.value[2]}`,
     },
     legend: { show: parameters.length > 1, top: 30 },
-    xAxis3D: { name: xDim?.name ?? 'x' },
-    yAxis3D: { name: yDim?.name ?? 'y' },
-    zAxis3D: { name: zDim?.name ?? 'z' },
+    // 三轴不设置轴名（单位）；维度名仅保留在 tooltip 中
+    xAxis3D: {},
+    yAxis3D: {},
+    zAxis3D: {},
     grid3D: {
       viewControl: {
         // 默认可拖拽旋转；autoRotate 太晃眼，关闭

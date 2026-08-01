@@ -26,7 +26,7 @@ export interface Aircraft {
   createdAt?: string
 }
 
-/** 架次（飞行任务）：单机 → 架次 → CSV数据表（一对一） */
+/** 架次（飞行任务）：单机 → 架次 → CSV数据表（一对多，一个架次可关联多张数据表） */
 export interface Sortie {
   sortieId: number
   aircraftNumber: string
@@ -94,7 +94,7 @@ export interface ConfigDataMapping {
   csvTableName: string
   dataTime: string
   createdAt: string
-  /** 关联架次ID（新模型下 CSV 与架次一对一，后端按需返回） */
+  /** 关联架次ID（一个架次可关联多条映射 / 多张 CSV 数据表，后端按需返回） */
   sortieId?: number
 }
 

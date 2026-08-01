@@ -84,12 +84,9 @@ export function findEmptySpace(layout, w, h, cols, maxRows) {
     }
   }
   
+  // 画布内已无空位：允许纵向溢出，堆叠到所有现有图表的最下方
   const maxY = layout.reduce((max, item) => Math.max(max, item.y + item.h), 0)
-  if (maxY + h <= maxRows) {
-    return { x: 0, y: maxY }
-  }
-  
-  return null
+  return { x: 0, y: maxY }
 }
 
 /**

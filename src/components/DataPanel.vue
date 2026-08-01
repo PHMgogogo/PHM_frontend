@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Upload, Warning, ArrowDown } from '@element-plus/icons-vue'
+import { Upload, Warning } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataMappingStore } from '@/stores/dataMapping'
 import { useConfigItemStore } from '@/stores/configItem'
@@ -10,7 +10,7 @@ import InferingDialog from '@/components/InferingDialog.vue'
 import SortieDialog from '@/components/SortieDialog.vue'
 import type { ConfigDataMapping, Sortie } from '@/types/entities'
 
-type SortieRow = Sortie & { mapping?: ConfigDataMapping }
+type SortieRow = Sortie & { mappings: ConfigDataMapping[] }
 
 const props = defineProps<{
   aircraftNumber: string
@@ -29,7 +29,7 @@ const csvSortieId = ref<number | undefined>(undefined)
 const csvParentItemId = ref<number | undefined>(undefined)
 const uploadRef = ref()
 
-// ---- 架次列表（含每架次一对一的 CSV 映射） ----
+// ---- 架次列表（每个架次可关联多张 CSV 数据表） ----
 const sorties = ref<Sortie[]>([])
 const sortieRows = ref<SortieRow[]>([])
 const sortiesLoading = ref(false)
@@ -49,14 +49,14 @@ async function loadSorties() {
   try {
     const list = await getSorties(props.aircraftNumber)
     sorties.value = list
-    // CSV 与架次一对一：并联查询每个架次的映射，取首条
+    // 一个架次可关联多张 CSV 数据表：并联查询每个架次的全部映射
     const enriched = await Promise.all(
       list.map(async (s) => {
         try {
           const maps = await getMappings({ sortieId: s.sortieId })
-          return { ...s, mapping: maps[0] } as SortieRow
+          return { ...s, mappings: maps } as SortieRow
         } catch {
-          return { ...s, mapping: undefined } as SortieRow
+          return { ...s, mappings: [] } as SortieRow
         }
       }),
     )
@@ -158,8 +158,8 @@ async function onSortieConfirm(payload: {
 async function handleDeleteSortie(row: SortieRow) {
   try {
     await ElMessageBox.confirm(
-      row.mapping
-        ? `确定删除架次「${row.sortieNumber || row.sortieId}」？该架次关联的数据表将一并删除，且不可恢复。`
+      row.mappings.length
+        ? `确定删除架次「${row.sortieNumber || row.sortieId}」？该架次关联的 ${row.mappings.length} 张数据表将一并删除，且不可恢复。`
         : `确定删除架次「${row.sortieNumber || row.sortieId}」？该操作不可恢复。`,
       '确认删除',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
@@ -180,12 +180,11 @@ async function handleDeleteSortie(row: SortieRow) {
 }
 
 /**
- * 仅删除该架次关联的 CSV 数据表，保留架次本身。
+ * 仅删除某张 CSV 数据表，保留架次本身（一个架次可有多张表，故需指定 mapping）。
  * 复用 dataMappingStore.dropCsvTable（自动补 `csv_` 前缀 + dropping 加载态）。
  */
-async function handleDropTable(row: SortieRow) {
-  if (!row.mapping) return
-  const tableName = row.mapping.csvTableName
+async function handleDropTable(row: SortieRow, mapping: ConfigDataMapping) {
+  const tableName = mapping.csvTableName
   try {
     await ElMessageBox.confirm(
       `确定删除数据表「${tableName}」并保留架次「${row.sortieNumber || row.sortieId}」？此操作不可恢复。`,
@@ -204,19 +203,12 @@ async function handleDropTable(row: SortieRow) {
   }
 }
 
-/** 下拉删除菜单派发：区分「仅删表」与「删架次」 */
-function onDeleteCommand(cmd: string, row: SortieRow) {
-  if (cmd === 'table') handleDropTable(row)
-  else handleDeleteSortie(row)
-}
-
 // ---- 去训练对话框 ----
 const trainingDialogVisible = ref(false)
 const trainingMapping = ref<ConfigDataMapping | null>(null)
 
-function handleGoToTraining(row: SortieRow) {
-  if (!row.mapping) return
-  trainingMapping.value = row.mapping
+function handleGoToTraining(mapping: ConfigDataMapping) {
+  trainingMapping.value = mapping
   trainingDialogVisible.value = true
 }
 
@@ -229,9 +221,8 @@ function onTrainingSuccess() {
 const inferingDialogVisible = ref(false)
 const inferingMapping = ref<ConfigDataMapping | null>(null)
 
-function handleGoToInfering(row: SortieRow) {
-  if (!row.mapping) return
-  inferingMapping.value = row.mapping
+function handleGoToInfering(mapping: ConfigDataMapping) {
+  inferingMapping.value = mapping
   inferingDialogVisible.value = true
 }
 
@@ -360,7 +351,7 @@ function onInferingSuccess() {
       </div>
     </div>
 
-    <!-- 架次管理（含每架次一对一的 CSV 数据） -->
+    <!-- 架次管理（每个架次可关联多张 CSV 数据表，展开查看） -->
     <div class="records-section">
       <div class="section-title sorties-title">
         <span>
@@ -376,9 +367,52 @@ function onInferingSuccess() {
         :data="sortieRows"
         size="small"
         stripe
+        row-key="sortieId"
         v-loading="sortiesLoading"
         empty-text="暂无架次"
       >
+        <!-- 展开行：该架次关联的全部 CSV 数据表（一个架次可有多张表） -->
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div v-if="row.mappings.length" class="sub-table-wrap">
+              <el-table :data="row.mappings" size="small" border>
+                <el-table-column label="数据表名" min-width="180">
+                  <template #default="{ row: m }">
+                    <span class="table-name-cell">{{ m.csvTableName }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="上传时间" width="180" align="center">
+                  <template #default="{ row: m }">
+                    <span class="time-text">{{ formatTime(m.createdAt) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="240" align="center">
+                  <template #default="{ row: m }">
+                    <div class="action-btns">
+                      <el-button type="primary" text size="small" @click="handleGoToTraining(m)">
+                        去训练
+                      </el-button>
+                      <el-button type="success" text size="small" @click="handleGoToInfering(m)">
+                        去推理
+                      </el-button>
+                      <el-button
+                        type="danger"
+                        text
+                        size="small"
+                        :loading="dataMappingStore.dropping"
+                        @click="handleDropTable(row, m)"
+                      >
+                        删表
+                      </el-button>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div v-else class="no-data-tag sub-empty">该架次暂无数据表</div>
+          </template>
+        </el-table-column>
+
         <el-table-column prop="sortieNumber" label="架次号" min-width="140">
           <template #default="{ row }">
             <span class="table-name-cell">{{ row.sortieNumber || row.sortieId }}</span>
@@ -390,57 +424,25 @@ function onInferingSuccess() {
             <span class="time-text">{{ row.startTime || '--' }} ~ {{ row.endTime || '--' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="数据表名" min-width="160">
+        <el-table-column label="数据表" min-width="140">
           <template #default="{ row }">
-            <span v-if="row.mapping" class="table-name-cell">{{ row.mapping.csvTableName }}</span>
+            <span v-if="row.mappings.length" class="table-count">
+              {{ row.mappings.length }} 个数据表
+            </span>
             <span v-else class="no-data-tag">暂无数据</span>
           </template>
         </el-table-column>
-        <el-table-column label="上传时间" width="180" align="center">
+        <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <span class="time-text">{{ row.mapping ? formatTime(row.mapping.createdAt) : '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="执行操作" width="240" align="center">
-          <template #default="{ row }">
-            <div class="action-btns">
-              <el-button v-if="row.mapping" type="primary" text size="small" @click="handleGoToTraining(row)">
-                去训练
-              </el-button>
-              <el-button v-if="row.mapping" type="success" text size="small" @click="handleGoToInfering(row)">
-                去推理
-              </el-button>
-              <el-dropdown
-                v-if="row.mapping"
-                trigger="click"
-                @command="(cmd: string) => onDeleteCommand(cmd, row)"
-              >
-                <el-button
-                  type="danger"
-                  text
-                  size="small"
-                  :loading="deletingSortie || dataMappingStore.dropping"
-                >
-                  删除<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="table">仅删数据表（保留架次）</el-dropdown-item>
-                    <el-dropdown-item command="sortie">删除架次及数据表</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <el-button
-                v-else
-                type="danger"
-                text
-                size="small"
-                :loading="deletingSortie"
-                @click="handleDeleteSortie(row)"
-              >
-                删除
-              </el-button>
-            </div>
+            <el-button
+              type="danger"
+              text
+              size="small"
+              :loading="deletingSortie"
+              @click="handleDeleteSortie(row)"
+            >
+              删除架次
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -601,6 +603,20 @@ function onInferingSuccess() {
 .no-data-tag {
   font-size: 12px;
   color: #c0c4cc;
+}
+
+.sub-table-wrap {
+  padding: 6px 16px 6px 48px;
+}
+
+.sub-empty {
+  padding-left: 48px;
+}
+
+.table-count {
+  font-size: 13px;
+  color: #1a6cf0;
+  font-weight: 500;
 }
 
 .action-btns {
