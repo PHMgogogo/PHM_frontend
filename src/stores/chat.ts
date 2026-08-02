@@ -11,7 +11,8 @@ const DEFAULT_OPTS = {
   user: 'opencode',
   pass: '',
 }
-
+const DEFAULT_PROVIDER="deepseeklocal"
+const DEFAULT_MODEL="deepseek-v4-pro"
 export interface MessagePart {
   id?: string
   type: string
@@ -132,7 +133,7 @@ export const useChatStore = defineStore('chat', () => {
       modelOptions.value = options
       if (!selectedModel.value) {
         const preferred =
-          options.find((o) => o.providerID === 'deepseek' && o.modelID === 'deepseek-v4-pro') ||
+          options.find((o) => o.providerID === DEFAULT_PROVIDER && o.modelID === DEFAULT_MODEL) ||
           options[0]
         if (preferred) selectedModel.value = preferred.value
       }
@@ -176,7 +177,7 @@ export const useChatStore = defineStore('chat', () => {
       modelOptions.value = options
       if (!selectedModel.value) {
         const preferred =
-          options.find((o) => o.providerID === 'deepseek' && o.modelID === 'deepseek-v4-pro') ||
+          options.find((o) => o.providerID === DEFAULT_PROVIDER && o.modelID === DEFAULT_MODEL) ||
           options[0]
         if (preferred) selectedModel.value = preferred.value
       }
