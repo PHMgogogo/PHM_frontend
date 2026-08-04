@@ -7,7 +7,7 @@
 
 import { createClient } from './client'
 
-const client = createClient({ baseURL: '/task' })
+const client = createClient({ baseURL: '/api' })
 
 /** display 接口的图表类型枚举 */
 export const DISPLAY_TYPE = {

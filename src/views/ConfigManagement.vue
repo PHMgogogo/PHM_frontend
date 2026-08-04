@@ -220,7 +220,7 @@ function treeNodeName(data: ConfigItem): string {
         <div class="toolbar-actions">
           <el-radio-group v-model="viewMode" size="default">
             <el-radio-button value="tree">树形</el-radio-button>
-            <el-radio-button value="graph">力导向图</el-radio-button>
+            <el-radio-button value="graph">构型图谱</el-radio-button>
           </el-radio-group>
           <el-button type="danger" @click="handleDeleteCurrentModel">
             删除当前构型

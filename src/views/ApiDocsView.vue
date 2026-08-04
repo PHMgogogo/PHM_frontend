@@ -9,16 +9,16 @@ const instanceId = String(route.params.instanceId)
 const specContent = ref<Record<string, unknown> | null>(null)
 
 // 实际调试用的后端地址
-const API_BASE = 'http://172.21.48.1:8001'
+const API_BASE = location.origin
 
 // 自行拉取 OpenAPI 规范，注入正确的 server 地址后再交给 Scalar 渲染
 watchEffect(async () => {
-  const resp = await fetch(`/instance/${instanceId}/openapi.json`)
+  const resp = await fetch(`/${instanceId}/openapi.json`)
   const raw = await resp.json()
   // 替换 servers 列表，让 Scalar 的服务器选择器可用
   raw.servers = [
-    { url: API_BASE + '/' + instanceId, description: '调试后端 (192.168.31.13:8001)' },
-    { url: '/instance/' + instanceId, description: 'Vite 代理 (相对路径)' },
+    { url: API_BASE + '/' + instanceId, description: '测试路径' },
+    // { url: '/' + instanceId, description: 'Vite 代理 (相对路径)' },
   ]
   specContent.value = raw
 })

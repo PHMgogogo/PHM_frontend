@@ -499,10 +499,10 @@ function handleSubmit() {
             </p>
           </div>
           <div class="form-group">
-            <label>数据映射</label>
+            <label>数据</label>
             <el-select
               v-model="selectedMappingId"
-              placeholder="选择数据映射"
+              placeholder="选择数据"
               :loading="mappingsLoading"
               :disabled="mappings.length === 0"
               style="width: 100%"
@@ -516,7 +516,7 @@ function handleSubmit() {
               />
             </el-select>
             <p v-if="mappings.length === 0 && !mappingsLoading" class="hint">
-              暂无映射，请先选择架次
+              暂无数据，请先选择架次
             </p>
           </div>
         </el-collapse-item>

@@ -24,7 +24,7 @@ const clientCache = new Map<string, ReturnType<typeof createClient>>()
 function getWorkerClient(instanceId: string) {
   const existing = clientCache.get(instanceId)
   if (existing) return existing
-  const client = createClient({ baseURL: `/instance/${instanceId}`, timeout: 60000 })
+  const client = createClient({ baseURL: `/${instanceId}`, timeout: 60000 })
   clientCache.set(instanceId, client)
   return client
 }
