@@ -3,6 +3,7 @@
 // ============================================================
 
 import { createClient } from './client'
+import { API_PREFIX } from '@/config/endpoints'
 import type {
   TaskResponse,
   TaskCreateRequest,
@@ -13,7 +14,7 @@ import type {
   ApiResponse,
 } from '@/types/entities'
 
-const client = createClient({ baseURL: '/api' })
+const client = createClient({ baseURL: API_PREFIX.TASK })
 
 export const taskApi = {
   /** 获取全部任务 */

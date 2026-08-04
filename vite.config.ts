@@ -79,7 +79,12 @@ export default defineConfig({
         target: 'http://192.168.31.13:8001',
         changeOrigin: true,
         // rewrite: (path) => path.replace(/^\/opencode/, ''),
-      }
+      },
+      "/document":{
+        target: 'http://192.168.31.178:8001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/document/, '/api'),
+      },
     },
   },
 })

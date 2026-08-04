@@ -1,4 +1,6 @@
-const DEFAULT_BASE = '/opencode'
+import { API_PREFIX } from '@/config/endpoints'
+
+const DEFAULT_BASE = API_PREFIX.OPENCODE
 
 export interface ConnOpts {
   base?: string

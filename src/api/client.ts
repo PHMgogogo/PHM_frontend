@@ -4,6 +4,8 @@
 // 使用工厂函数 createClient() 创建绑定不同 baseURL 的客户端实例，
 // 每个实例享有独立的超时控制、错误封装和请求方法。
 
+import { API_PREFIX } from '@/config/endpoints'
+
 export interface ClientConfig {
   /** 该实例的前缀，例如 '/api' 或 '/document'，需与 vite proxy 对齐 */
   baseURL: string
@@ -128,7 +130,7 @@ export function createClient(config: ClientConfig) {
 // 默认导出：向后兼容的单例（原有直接导入 get/post/del 的代码不受影响）
 // 同时保留工厂函数供多后端场景使用
 // ============================================================
-const defaultClient = createClient({ baseURL: '/api' })
+const defaultClient = createClient({ baseURL: API_PREFIX.CORE })
 
 export const get = defaultClient.get
 export const post = defaultClient.post
