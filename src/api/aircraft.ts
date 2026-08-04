@@ -3,9 +3,10 @@
 // ============================================================
 
 import { createClient } from './client'
+import { API_PREFIX } from '@/config/endpoints'
 import type { AircraftModel, Aircraft, Sortie, ConfigItem, ConfigDataMapping, ApiResponse } from '@/types/entities'
 
-const client = createClient({ baseURL: '/api' })
+const client = createClient({ baseURL: API_PREFIX.CORE })
 
 // ---- 构型 ----
 

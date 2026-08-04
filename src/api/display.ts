@@ -6,8 +6,9 @@
 // 并把 CSV 模块返回的"行式"结果转成前端期望的"序列式"图表数据。
 
 import { createClient } from './client'
+import { API_PREFIX } from '@/config/endpoints'
 
-const client = createClient({ baseURL: '/task' })
+const client = createClient({ baseURL: API_PREFIX.TASK })
 
 /** display 接口的图表类型枚举 */
 export const DISPLAY_TYPE = {

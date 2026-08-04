@@ -4,9 +4,10 @@ import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/task'
 import { instanceApi } from '@/api/instance'
 import { clearWorkerClient } from '@/api/instance-worker'
-import { opencodeApi } from '@/lib/opencode-api'
+import { opencodeApi } from '@/api/opencode'
 import { useChatStore } from '@/stores/chat'
 import type { Task } from '@/types/entities'
+import { API_PREFIX } from '@/config/endpoints'
 
 // ---- 工具函数 ----
 
@@ -156,7 +157,7 @@ export const useTaskStore = defineStore('task', () => {
       createStep.value = '正在连接工作区...'
       const workDir = convertPath(inst.file_path)
       const sessionOpts = {
-        base: '/opencode',
+        base: API_PREFIX.OPENCODE,
         dir: workDir,
         user: 'opencode',
       }
@@ -219,7 +220,7 @@ export const useTaskStore = defineStore('task', () => {
     if (task.sessionId) {
       try {
         await opencodeApi.deleteSession(
-          { base: '/opencode', dir: task.workDir, user: 'opencode' },
+          { base: API_PREFIX.OPENCODE, dir: task.workDir, user: 'opencode' },
           task.sessionId,
         )
       } catch (e) {
@@ -308,7 +309,7 @@ export const useTaskStore = defineStore('task', () => {
 
     const oldSid = task.sessionId
     const workDir = task.workDir
-    const sessionOpts = { base: '/opencode', dir: workDir, user: 'opencode' }
+    const sessionOpts = { base: API_PREFIX.OPENCODE, dir: workDir, user: 'opencode' }
 
     clearing.value = true
     try {

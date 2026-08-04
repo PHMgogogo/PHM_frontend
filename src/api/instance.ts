@@ -3,9 +3,10 @@
 // ============================================================
 
 import { createClient } from './client'
+import { API_PREFIX } from '@/config/endpoints'
 import type { InstanceResponse } from '@/types/entities'
 
-const client = createClient({ baseURL: '/api/pmgr', timeout: 60000 })
+const client = createClient({ baseURL: API_PREFIX.PMGR, timeout: 60000 })
 
 export const instanceApi = {
   /** 启动一个算法实例（GET /highlevel） */

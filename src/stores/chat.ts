@@ -1,12 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { opencodeApi } from '@/lib/opencode-api'
-import type { ConnOpts } from '@/lib/opencode-api'
+import { opencodeApi } from '@/api/opencode'
+import type { ConnOpts } from '@/api/opencode'
+import { API_PREFIX } from '@/config/endpoints'
 
 // 默认连接配置（来自 ConnectionConfig.vue 默认填充值）
 const DEFAULT_OPTS = {
-  base: '/opencode',
+  base: API_PREFIX.OPENCODE,
   dir: "/mnt/d/phm",
   user: 'opencode',
   pass: '',
@@ -106,7 +107,7 @@ export const useChatStore = defineStore('chat', () => {
     pendingQuestion.value = null
 
     // 设置动态连接选项
-    opts.value = { base: '/opencode', dir: workDir, user: 'opencode', pass: '' }
+    opts.value = { base: API_PREFIX.OPENCODE, dir: workDir, user: 'opencode', pass: '' }
 
     try {
       const [health, providersRes] = await Promise.all([
