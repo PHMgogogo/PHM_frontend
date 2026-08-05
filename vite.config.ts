@@ -6,6 +6,7 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 export default defineConfig({
+  base: '/phm',
   plugins: [
     AutoImport({
       resolvers: [ElementPlusResolver()],
@@ -61,22 +62,22 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://152.136.119.117:8080/',
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/instance': {
-        target: 'http://192.168.31.13:8001',
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/instance/, ''),
+        rewrite: (path) => path.replace(/^\/instance/, ''),
       },
       '/task': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/task/, '/api'),
       },
       "/opencode":{
-        target: 'http://192.168.31.13:8001',
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true,
         // rewrite: (path) => path.replace(/^\/opencode/, ''),
       },

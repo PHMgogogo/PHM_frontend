@@ -16,7 +16,7 @@ watchEffect(async () => {
   // 替换 servers 列表，让 Scalar 的服务器选择器可用
   raw.servers = [
     { url: DEBUG_BACKEND.URL + '/' + instanceId, description: DEBUG_BACKEND.LABEL },
-    { url: API_PREFIX.INSTANCE + '/' + instanceId, description: 'Vite 代理 (相对路径)' },
+    // { url: API_PREFIX.INSTANCE + '/' + instanceId, description: 'Vite 代理 (相对路径)' },
   ]
   specContent.value = raw
 })

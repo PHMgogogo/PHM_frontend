@@ -22,7 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.zcode
+.claude
 
+# document
 数据接口.md
 文档接口.md
 工作规划.md
@@ -30,3 +33,5 @@ API.md
 API_DOCUMENT.md
 sse设计.md
 progress-api-guide.md
+
+config
