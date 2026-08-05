@@ -76,6 +76,34 @@ function isStreamingPart(msgIdx: number, partIdx: number): boolean {
   return partIdx === lastTextPartIdx && partIdx !== -1
 }
 
+// ===== 等待状态：大模型已开始生成、但尚未输出首个 token =====
+// 一条助手消息是否已含可见内容（文本 / 思考 / 工具）
+function hasVisibleContent(msg: ChatMessage): boolean {
+  return msg.parts.some((p) => {
+    if (p.type === 'text') return !!p.text
+    if (p.type === 'reasoning') return !!p.text
+    if (p.type === 'tool') return true
+    return false
+  })
+}
+
+// 最后一条助手消息是否处于"等待流式输出"状态（繁忙、无内容、无错误）
+function isWaitingAssistant(msgIdx: number): boolean {
+  if (!props.sessionBusy) return false
+  if (msgIdx !== props.messages.length - 1) return false
+  const msg = props.messages[msgIdx]
+  if (!msg || msg.info.role !== 'assistant') return false
+  if (msg.info.error) return false
+  return !hasVisibleContent(msg)
+}
+
+// 助手气泡尚未创建（已发送、服务端尚未回送 assistant 消息）时的占位
+function showWaitingPlaceholder(): boolean {
+  if (!props.sessionBusy) return false
+  const last = props.messages[props.messages.length - 1]
+  return !last || last.info.role !== 'assistant'
+}
+
 // ===== 代码块复制按钮（事件委托）=====
 function onFeedClick(e: MouseEvent) {
   const target = (e.target as HTMLElement)?.closest?.('.code-copy-btn') as HTMLElement | null
@@ -215,6 +243,13 @@ function formatJson(obj: unknown) {
               </div>
             </template>
 
+            <!-- 等待流式输出开始：三点式 loading -->
+            <div v-if="isWaitingAssistant(msgIdx)" class="loading" aria-label="正在思考">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+
             <!-- 助手消息出错 -->
             <div v-if="msg.info.role === 'assistant' && msg.info.error" class="msg-error">
               <el-icon><Warning /></el-icon>
@@ -223,13 +258,17 @@ function formatJson(obj: unknown) {
           </div>
         </div>
 
-        <!-- 生成中占位 -->
-        <!-- <div v-if="sessionBusy" class="bubble bubble-bot">
+        <!-- 助手气泡尚未创建时的等待占位（三点式 loading） -->
+        <div v-if="showWaitingPlaceholder()" class="bubble bubble-bot">
           <div class="bubble-role">助手</div>
-          <div class="bubble-body generating">
-            <span class="typing-dot" /><span class="typing-dot" /><span class="typing-dot" />
+          <div class="bubble-body">
+            <div class="loading" aria-label="正在思考">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
           </div>
-        </div> -->
+        </div>
       </template>
 
       <div v-else class="empty-hint">正在初始化会话，请稍候…</div>
@@ -558,27 +597,25 @@ function formatJson(obj: unknown) {
   font-size: 13px;
 }
 
-/* 打字动画 */
-.generating {
-  flex-direction: row !important;
+/* 三点式 loading：流式输出前的等待状态 */
+.loading {
+  display: flex;
   align-items: center;
-  gap: 4px !important;
-  padding: 12px 16px !important;
+  gap: 6px;
 }
-
-.typing-dot {
-  width: 7px;
-  height: 7px;
+.loading span {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #1a6cf0;
-  display: inline-block;
-  animation: bounce 1.2s infinite ease-in-out;
+  background: #999;
+  display: inline-block; /* inline 元素不应用 width/height，需改为 inline-block */
+  animation: bounce 1s infinite;
 }
-.typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+.loading span:nth-child(2) { animation-delay: 0.2s; }
+.loading span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes bounce {
-  0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
 }
 
