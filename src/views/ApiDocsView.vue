@@ -3,22 +3,20 @@ import { ref, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { ApiReference } from '@scalar/api-reference'
 import '@scalar/api-reference/style.css'
+import { API_PREFIX, DEBUG_BACKEND } from '@/config/endpoints'
 
 const route = useRoute()
 const instanceId = String(route.params.instanceId)
 const specContent = ref<Record<string, unknown> | null>(null)
 
-// 实际调试用的后端地址
-const API_BASE = location.origin
-
 // 自行拉取 OpenAPI 规范，注入正确的 server 地址后再交给 Scalar 渲染
 watchEffect(async () => {
-  const resp = await fetch(`/${instanceId}/openapi.json`)
+  const resp = await fetch(`${API_PREFIX.INSTANCE}/${instanceId}/openapi.json`)
   const raw = await resp.json()
   // 替换 servers 列表，让 Scalar 的服务器选择器可用
   raw.servers = [
-    { url: API_BASE + '/' + instanceId, description: '测试路径' },
-    // { url: '/' + instanceId, description: 'Vite 代理 (相对路径)' },
+    { url: DEBUG_BACKEND.URL + '/' + instanceId, description: DEBUG_BACKEND.LABEL },
+    // { url: API_PREFIX.INSTANCE + '/' + instanceId, description: 'Vite 代理 (相对路径)' },
   ]
   specContent.value = raw
 })

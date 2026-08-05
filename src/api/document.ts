@@ -3,8 +3,9 @@
 // ============================================================
 
 import { createClient } from './client'
+import { API_PREFIX } from '@/config/endpoints'
 
-const client = createClient({ baseURL: '/api' })
+const client = createClient({ baseURL: API_PREFIX.DOCUMENT })
 
 // ---- 类型 ----
 
