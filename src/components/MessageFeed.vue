@@ -77,6 +77,36 @@ function isStreamingPart(msgIdx: number, partIdx: number): boolean {
 }
 
 // ===== 代码块复制按钮（事件委托）=====
+/**
+ * 复制文本到剪贴板。
+ * Clipboard API 仅在安全上下文（HTTPS / localhost）可用；通过局域网 IP 访问时
+ * navigator.clipboard 为 undefined，需降级到 execCommand('copy')，否则会同步抛错
+ * 且不会被后面的 .catch 捕获，导致复制按钮静默失效。
+ */
+function copyText(text: string): Promise<void> {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text)
+  }
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '-9999px'
+    ta.style.left = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    try {
+      if (document.execCommand('copy')) resolve()
+      else reject(new Error('execCommand copy failed'))
+    } catch (err) {
+      reject(err)
+    } finally {
+      document.body.removeChild(ta)
+    }
+  })
+}
+
 function onFeedClick(e: MouseEvent) {
   const target = (e.target as HTMLElement)?.closest?.('.code-copy-btn') as HTMLElement | null
   if (!target) return
@@ -88,8 +118,7 @@ function onFeedClick(e: MouseEvent) {
     target.textContent = '复制'
     target.classList.remove('copied')
   }
-  navigator.clipboard
-    .writeText(text)
+  copyText(text)
     .then(() => {
       target.textContent = '已复制'
       target.classList.add('copied')
