@@ -11,12 +11,26 @@ const props = defineProps({
   /** 可选初始单机号；用户可在输入框修改 */
   aircraftNumber: { type: String, default: '' },
   /**
-   * 编辑目标：{ id, config } | null。
+   * 编辑目标：{ id, config, currentSize? } | null。
    * - 非 null：进入编辑态，按 config 回填表单，提交时 emit('update-chart', { id, ...payload })
    * - null：新建态，提交时 emit('add-chart', payload)
    * 仅监听 id 变化触发回填（更新成功后刷新 config 不会重复回填）。
+   * currentSize：该图表当前实际栅格 { w, h }。编辑态据此前置「保持当前尺寸」选项，
+   *   并作为默认选中；提交时见 keepSize=true 向容器传 null，跳过 w/h 重置。
    */
   editTarget: { type: Object, default: null },
+  /**
+   * 窗口大小预设：[{ value, label, w, h }]。父级传 dashboardConfig.sizes；
+   * 缺省时用与之一致的兜底预设，保证面板独立可用。
+   */
+  sizePresets: {
+    type: Array,
+    default: () => [
+      { value: 'small', label: '小', w: 3, h: 10 },
+      { value: 'medium', label: '中', w: 6, h: 10 },
+      { value: 'large', label: '大', w: 9, h: 10 },
+    ],
+  },
 })
 
 const emit = defineEmits(['add-chart', 'update-chart', 'cancel-edit'])
@@ -76,11 +90,36 @@ const typeOptions = [
   { value: DISPLAY_TYPE.POINT_CLOUD_3D, label: '三维点云（3D）' },
 ]
 
-const sizeOptions = [
-  { value: 'small', label: '小' },
-  { value: 'medium', label: '中' },
-  { value: 'large', label: '大' },
-]
+// 窗口大小选项：编辑态始终前置「保持当前尺寸」——选中即保持图表实际 w/h 不变，
+// 不关心具体栅格数；下方预设用于「改成」目标尺寸。
+const sizeOptions = computed(() => {
+  const presets = props.sizePresets ?? []
+  const base = presets.length
+    ? presets.map((p) => ({ value: p.value, label: p.label }))
+    : [
+        { value: 'small', label: '小' },
+        { value: 'medium', label: '中' },
+        { value: 'large', label: '大' },
+      ]
+  if (mode.value !== 'edit' || !props.editTarget?.currentSize) return base
+  return [{ value: 'current', label: '保持当前尺寸' }, ...base]
+})
+
+/** 取宽度最接近 w 的预设 value（「保持当前尺寸」时用于图表内部字号档位选档） */
+function nearestPreset(w) {
+  const presets = props.sizePresets ?? []
+  if (presets.length === 0) return 'medium'
+  let best = presets[0]
+  let min = Math.abs(presets[0].w - w)
+  for (let i = 1; i < presets.length; i++) {
+    const d = Math.abs(presets[i].w - w)
+    if (d < min) {
+      min = d
+      best = presets[i]
+    }
+  }
+  return best.value
+}
 
 const styleOptions = [
   { value: CHART_STYLE.LINE, label: '折线' },
@@ -306,7 +345,7 @@ function resetForCreate() {
  * 直接调 getSorties/getMappings 赋值（不走 fetchSorties/fetchMappings，它们会 reset 下游）；
  * 末尾 await nextTick() 让排队的 watcher 在 restoring 仍为 true 时排空后再降标志。
  */
-async function loadConfig(cfg) {
+async function loadConfig(cfg, currentSize) {
   if (!cfg) return
   const my = ++restoreSeq
   restoring.value = true
@@ -338,7 +377,12 @@ async function loadConfig(cfg) {
     selectedZ.value = cfg.z || ''
     selectedType.value = cfg.type || DISPLAY_TYPE.SINGLE_TIMESERIES_2D
     selectedStyle.value = cfg.style || defaultStyleFor(selectedType.value)
-    selectedSize.value = cfg.size || 'medium'
+    // 编辑态默认「保持当前尺寸」（最高频意图：改图表但不动尺寸）；缺失 currentSize 时回退 cfg
+    if (currentSize) {
+      selectedSize.value = 'current'
+    } else {
+      selectedSize.value = cfg.size || 'medium'
+    }
     limit.value = cfg.limit ?? 0
     selectedTitle.value = cfg.title || ''
     await nextTick()
@@ -354,7 +398,7 @@ watch(
   () => props.editTarget?.id,
   (id, oldId) => {
     if (id && id !== oldId) {
-      loadConfig(props.editTarget.config)
+      loadConfig(props.editTarget.config, props.editTarget.currentSize)
     } else if (!id && oldId) {
       resetForCreate()
     }
@@ -406,6 +450,14 @@ function handleSubmit() {
     yMulti: [...selectedYMulti.value],
     z: selectedZ.value,
   }
+  // 「保持当前尺寸」：保持图表实际 w/h 不变（父级见 keepSize=true 时向容器传 null sizeValue，
+  // 容器守卫跳过 w/h 重置）。图表内部字号档位取最接近实际宽度的预设。
+  let keepSize = false
+  if (selectedSize.value === 'current' && props.editTarget?.currentSize) {
+    keepSize = true
+    payload.size = nearestPreset(props.editTarget.currentSize.w)
+  }
+  payload.keepSize = keepSize
   // 编辑态 → 原位更新（带 id）；新建态 → 新增。实际异步查询在父级 MonitorView 完成。
   if (mode.value === 'edit') {
     emit('update-chart', { id: props.editTarget.id, ...payload })

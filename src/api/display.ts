@@ -88,3 +88,77 @@ export interface DisplayResponse {
 export function queryDisplay(req: DisplayRequest) {
   return client.post<DisplayResponse>('/display/raw-data', req)
 }
+
+// ============================================================
+// 画布持久化：保存 / 加载当前画布快照
+// ============================================================
+// 画布 JSON 由前端定义，后端作为「不透明 blob」原样落盘 / 原样回传，
+// 不解析、不裁剪 option / config。详见后端接口契约 v1。
+
+/** 单张图表项（保存/加载时不透明；字段对齐 DashboardContainer 的 layout item） */
+export interface DisplayLayoutItem {
+  i: string | number
+  x: number
+  y: number
+  w: number
+  h: number
+  type?: string
+  category?: string
+  title?: string
+  static?: boolean
+  /** 该图表的查询配置快照（不透明，字段随迭代增减） */
+  config?: Record<string, unknown> | null
+  /** 完整 ECharts option，内含 series[].data 数值（不透明，体积大） */
+  option?: Record<string, unknown> | null
+  [key: string]: unknown
+}
+
+/** 画布快照（不透明 blob，后端原样存取） */
+export interface DisplayCanvas {
+  /** 前端自定义的快照格式版本号，便于以后升级做兼容 */
+  version: number
+  /** 画布级配置（栅格 / 尺寸预设） */
+  config: Record<string, unknown>
+  /** 图表项数组 */
+  layout: DisplayLayoutItem[]
+}
+
+/** POST /display/save 请求体（= 落盘内容） */
+export interface DisplaySaveRequest {
+  /** 画布标识，前端给定；后端按不透明字符串用作文件名 */
+  key: string
+  /** 画布快照（不透明） */
+  canvas: DisplayCanvas
+  /** 前端生成的保存时刻（ISO8601） */
+  timestamp: string
+}
+
+/** POST /display/save 响应体 */
+export interface DisplaySaveResponse {
+  key: string
+  /** 服务端落盘时刻（ISO8601） */
+  savedAt: string
+}
+
+/** GET /display/load 响应体 */
+export interface DisplayLoadResponse {
+  key: string
+  canvas: DisplayCanvas
+  savedAt: string
+}
+
+/**
+ * POST /display/save —— 保存（覆盖）当前画布快照。
+ * 同 key 再次保存即覆盖；后端把 canvas 原样落盘。
+ */
+export function saveDisplay(req: DisplaySaveRequest) {
+  return client.post<DisplaySaveResponse>('/display/save', req)
+}
+
+/**
+ * GET /display/load —— 读取指定 key 的画布快照。
+ * 不存在时后端返回 404，调用方需捕获并视为「无已保存画布」。
+ */
+export function loadDisplay(key: string) {
+  return client.get<DisplayLoadResponse>('/display/load', { key })
+}

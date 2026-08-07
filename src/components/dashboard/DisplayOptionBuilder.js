@@ -112,7 +112,6 @@ function buildTimeseriesOption(response, size, responsive, style = null) {
       itemStyle: { color },
     }
     if (isLineLike) {
-      base.smooth = true
       base.showSymbol = response.data[0]?.data?.length <= 60
       base.lineStyle = { width: 2, color }
       if (resolved.areaStyle) base.areaStyle = { opacity: 0.2 }

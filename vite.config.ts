@@ -62,29 +62,22 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8001',
+        target: 'http://192.168.31.178:8001',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/instance': {
-        target: 'http://127.0.0.1:8001',
+        target: 'http://192.168.31.178:8001',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/instance/, ''),
       },
-      '/task': {
-        target: 'http://127.0.0.1:8001',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/task/, '/api'),
-      },
       "/opencode":{
-        target: 'http://127.0.0.1:8001',
-        changeOrigin: true,
-        // rewrite: (path) => path.replace(/^\/opencode/, ''),
-      },
-      "/document":{
         target: 'http://192.168.31.178:8001',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/document/, '/api'),
+      },
+      "/task":{
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/task/, '/api'),
       },
     },
   },
