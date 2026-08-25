@@ -40,7 +40,7 @@ function buildUrl(base: string | undefined, path: string): string {
 async function req<T = unknown>(opts: ConnOpts, path: string, init?: RequestInit): Promise<T> {
   // 深拷贝：若 opts 是 Vue reactive proxy，解包为纯对象，避免传递 Proxy 给原生 API
   const opts_deepcopy: ConnOpts = JSON.parse(JSON.stringify(opts))
-  const timeout = opts_deepcopy.timeout ?? 15000
+  const timeout = opts_deepcopy.timeout ?? 60000
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeout)
 
