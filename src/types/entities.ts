@@ -276,3 +276,116 @@ export interface Task {
   createdAt: string
   updatedAt: string
 }
+
+// ---- 算法管理（对齐 algo/asgi.py 后端模型） ----
+
+/** 算法文件树节点：目录为嵌套对象，文件值为 null */
+export interface AlgorithmTree {
+  [key: string]: AlgorithmTree | null
+}
+
+/** GET /algorithms/{id} 返回的算法详情 */
+export interface AlgorithmDetail {
+  id: string
+  version: string
+  description: string
+  tree?: AlgorithmTree
+  base_on: string
+  ignores: string[]
+}
+
+/** POST /algorithms/{id}/cat 请求体 */
+export interface CatRequest {
+  path: string
+  offset?: number
+  length?: number
+  encoding?: string
+  fmt?: string | null
+}
+
+/** cat 返回的文件元信息 */
+export interface FileMetaInfo {
+  file_offset: number
+  file_chunk_length: number
+  file_total_length: number
+  file_type: 'text' | 'image'
+  chunk_content: string
+}
+
+/** 路由规则（UrlProxyRule） */
+export interface UrlProxyRule {
+  name: string
+  order: number
+  rule_type: 'EXACT' | 'PREFIX' | 'REGEX'
+  pattern: string
+  dest_index: number[]
+  dest_format?: string | null
+  rewrite_host?: string | null
+  editable?: boolean
+  timeout?: number | null
+  enable?: boolean
+  file_serve_root_path?: string | null
+  default_entrance?: string | null
+  cors?: boolean
+  file_serve_fallback?: string | null
+}
+
+/** 算法配置（模板） */
+export interface Template {
+  algorithm: AlgorithmDetail
+  entry: string
+  restart_always: boolean
+  id: string
+  is_temporary: boolean
+  restart_interval_seconds: number
+  volume: boolean
+  bind_listener: boolean
+  rules: UrlProxyRule[]
+  tags: string[]
+}
+
+/** 实例状态 */
+export type InstanceStatus = 'NOT_READY' | 'STOP' | 'RUNNING' | 'EXITED'
+
+/** GET /instances 返回的实例列表项 */
+export interface InstanceInfo {
+  id: string
+  status: InstanceStatus
+  template_id: string
+}
+
+/** GET /instances/{id} 返回的实例详情 */
+export interface InstanceDetail {
+  id: string
+  status: InstanceStatus
+  template_id: string
+  start_time: string | null
+  stop_time: string | null
+  logs: { out: string; err: string }
+  tree: AlgorithmTree
+  /** 实例所基于的模板快照（含代理规则） */
+  template?: Template
+}
+
+/** POST /instances 请求体 */
+export interface CreateInstanceRequest {
+  template_id: string
+  id?: string | null
+  entry?: string | null
+}
+
+/** 连接信息 */
+export interface ConnectionInfo {
+  fd: number
+  family: string
+  type: string
+  laddr: { ip: string; port: number } | null
+  raddr: { ip: string; port: number } | null
+  status: string
+}
+
+export interface ProcessConnection {
+  pid: number
+  name: string
+  conns: ConnectionInfo[]
+}

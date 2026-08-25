@@ -6,6 +6,8 @@ import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
 import ConfigManagement from '@/views/ConfigManagement.vue'
 import DocumentView from '@/views/DocumentView.vue'
 import MonitorView from '@/views/MonitorView.vue'
+import AlgorithmManagement from '@/views/AlgorithmManagement.vue'
+import InterfaceManagement from '@/views/InterfaceManagement.vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { Search } from '@element-plus/icons-vue'
 
@@ -117,6 +119,16 @@ const filteredAircrafts = computed(() => {
       <!-- 实时监控 -->
       <template v-else-if="activeMenu === 'monitor'">
         <MonitorView />
+      </template>
+
+      <!-- 算法管理 -->
+      <template v-else-if="activeMenu === 'algo'">
+        <AlgorithmManagement />
+      </template>
+
+      <!-- 接口管理 -->
+      <template v-else-if="activeMenu === 'interface'">
+        <InterfaceManagement />
       </template>
     </main>
   </div>

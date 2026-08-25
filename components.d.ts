@@ -64,6 +64,8 @@ declare module 'vue' {
     InferingDialog: typeof import('./src/components/InferingDialog.vue')['default']
     MessageFeed: typeof import('./src/components/MessageFeed.vue')['default']
     PlaneSelector: typeof import('./src/components/demo/PlaneSelector.vue')['default']
+    ProxyRuleEditor: typeof import('./src/components/ProxyRuleEditor.vue')['default']
+    ProxyRuleForm: typeof import('./src/components/ProxyRuleForm.vue')['default']
     ReleaseSupport: typeof import('./src/components/demo/ReleaseSupport.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

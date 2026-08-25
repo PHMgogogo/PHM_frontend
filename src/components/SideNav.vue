@@ -4,11 +4,13 @@ import airplaneIcon from '@/assets/airplane.svg'
 import knowledgeIcon from '@/assets/knowledgebase.svg'
 import configIcon from '@/assets/config.svg'
 import monitorIcon from '@/assets/monitor.svg'
+import algorithmIcon from '@/assets/algorithm.svg'
 import diagnosisIcon from '@/assets/diagnosis.svg'
 import healthIcon from '@/assets/health.svg'
 import trendIcon from '@/assets/trend.svg'
 import predictionIcon from '@/assets/predict.svg'
 import maintenanceIcon from '@/assets/maintenance.svg'
+import dataIcon from '@/assets/data.svg'
 
 defineProps<{
   activeMenu: string
@@ -32,6 +34,8 @@ const menus: MenuItem[] = [
   { key: 'knowledge', svg: knowledgeIcon, title: '知识库管理' },
   { key: 'config', svg: configIcon, title: '构型管理' },
   { key: 'monitor', svg: monitorIcon, title: '数据展示' },
+  { key: 'algo', svg: algorithmIcon, title: '算法管理' },
+  { key: 'interface', svg: dataIcon, title: '接口管理' },
 ]
 </script>
 
