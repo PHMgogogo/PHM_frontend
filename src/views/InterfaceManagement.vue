@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { gatewayApi } from '@/api/algorithm'
 import ProxyRuleEditor from '@/components/ProxyRuleEditor.vue'
@@ -17,6 +17,43 @@ const rules = ref<UrlProxyRule[]>([])
 const original = ref<UrlProxyRule[]>([])
 const loading = ref(false)
 const saving = ref(false)
+
+// ---- 路径匹配测试（输入即测，0.5s 防抖） ----
+const matchPath = ref('')
+const matching = ref(false)
+const matchResult = ref<{
+  rule: UrlProxyRule | null
+  dest: string
+  groups: string[]
+} | null>(null)
+let matchTimer: ReturnType<typeof setTimeout> | null = null
+
+async function runMatch() {
+  const path = matchPath.value.trim()
+  if (!path) {
+    matchResult.value = null
+    return
+  }
+  matching.value = true
+  try {
+    const [rule, dest, groups] = await gatewayApi.matchRule(path)
+    matchResult.value = { rule, dest, groups }
+  } catch (e) {
+    ElMessage.error(`匹配失败：${(e as Error).message}`)
+  } finally {
+    matching.value = false
+  }
+}
+
+/** 输入变化时触发：0.1s 防抖后自动匹配 */
+function onMatchInput() {
+  if (matchTimer) clearTimeout(matchTimer)
+  matchTimer = setTimeout(runMatch, 100)
+}
+
+onBeforeUnmount(() => {
+  if (matchTimer) clearTimeout(matchTimer)
+})
 
 async function fetchRules() {
   loading.value = true
@@ -91,6 +128,39 @@ onMounted(fetchRules)
         </div>
       </div>
 
+      <div class="match-panel">
+        <div class="match-title">路径匹配测试</div>
+        <div class="match-row">
+          <el-input
+            v-model="matchPath"
+            placeholder="输入 URL 路径，如 /api/aircraft/models"
+            clearable
+            :loading="matching"
+            @input="onMatchInput"
+          />
+        </div>
+        <div v-if="matchResult" class="match-result">
+          <div class="match-result-row">
+            <span class="match-label">命中规则</span>
+            <template v-if="matchResult.rule">
+              <el-tag type="success" size="small">{{ matchResult.rule.name }}</el-tag>
+              <span class="match-rule-pattern">{{ matchResult.rule.pattern }}</span>
+            </template>
+            <span v-else class="match-empty">无匹配规则</span>
+          </div>
+          <div class="match-result-row">
+            <span class="match-label">转发目标</span>
+            <span class="match-value">{{ matchResult.dest || '无' }}</span>
+          </div>
+          <div class="match-result-row">
+            <span class="match-label">匹配组</span>
+            <span class="match-value">
+              {{ matchResult.groups?.length ? matchResult.groups.join(', ') : '无' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div class="editor-panel" v-loading="loading">
         <ProxyRuleEditor v-model="rules" />
       </div>
@@ -154,5 +224,66 @@ onMounted(fetchRules)
   border: 1px solid #e0e8f5;
   border-radius: 10px;
   padding: 16px;
+}
+
+/* ---- 路径匹配测试 ---- */
+.match-panel {
+  flex-shrink: 0;
+  background: #fff;
+  border: 1px solid #e0e8f5;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.match-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0d1f3c;
+  margin-bottom: 12px;
+}
+
+.match-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.match-result {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eef2f8;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.match-result-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.match-label {
+  color: #6a7a90;
+  width: 70px;
+  flex-shrink: 0;
+}
+
+.match-value {
+  color: #0d1f3c;
+  word-break: break-all;
+}
+
+.match-rule-pattern {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  color: #6a7a90;
+  word-break: break-all;
+}
+
+.match-empty {
+  color: #bcc5d0;
 }
 </style>

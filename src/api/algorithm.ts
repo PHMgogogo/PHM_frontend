@@ -193,4 +193,12 @@ export const gatewayApi = {
   deleteRule(name: string) {
     return gatewayClient.del<void>(`/smgr/rules/${encodeURIComponent(name)}`)
   },
+
+  /** POST /smgr/rules/match — 匹配指定路径命中的规则 */
+  matchRule(path: string) {
+    return gatewayClient.post<[UrlProxyRule | null, string, string[]]>(
+      '/smgr/rules/match',
+      { path },
+    )
+  },
 }
