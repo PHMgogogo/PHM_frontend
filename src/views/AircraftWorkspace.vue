@@ -15,6 +15,7 @@ import DemoHealthView from '@/views/demo/DemoHealthView.vue'
 import DemoTrendView from '@/views/demo/DemoTrendView.vue'
 import DemoPredictionView from '@/views/demo/DemoPredictionView.vue'
 import DemoMaintenanceView from '@/views/demo/DemoMaintenanceView.vue'
+import PipelineWorkspace from '@/views/pipeline/PipelineWorkspace.vue'
 import taskIcon from '@/assets/task.svg'
 import dataIcon from '@/assets/data.svg'
 import chatIcon from '@/assets/chat.svg'
@@ -24,6 +25,7 @@ import healthIcon from '@/assets/health.svg'
 import trendIcon from '@/assets/trend.svg'
 import predictionIcon from '@/assets/predict.svg'
 import maintenanceIcon from '@/assets/maintenance.svg'
+import pipelineIcon from '@/assets/pipeline.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,9 +44,10 @@ const activeMenu = ref('task')
 const initializing = ref(true)
 const sidebarCollapsed = ref(false)
 const workspaceMenus = [
+  { key: 'chat', svg: chatIcon, title: '当前对话' },
   { key: 'task', svg: taskIcon, title: '会话管理' },
   { key: 'data', svg: dataIcon, title: '数据管理' },
-  { key: 'chat', svg: chatIcon, title: '当前对话' },
+  { key: 'pipeline', svg: pipelineIcon, title: '逻辑编排' },
   { key: 'monitor-old', svg: monitorIcon, title: '实时监控' },
   { key: 'diagnosis', svg: diagnosisIcon, title: '增强诊断' },
   { key: 'health', svg: healthIcon, title: '健康评估' },
@@ -139,6 +142,10 @@ function onNavigateToTasks() {
           v-if="activeMenu === 'chat'"
           :aircraft-number="aircraftNumber"
           @navigate-to-tasks="onNavigateToTasks"
+        />
+        <PipelineWorkspace
+          v-else-if="activeMenu === 'pipeline'"
+          :aircraft-number="aircraftNumber"
         />
         <TaskPanel
           v-else-if="activeMenu === 'task'"

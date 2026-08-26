@@ -352,6 +352,8 @@ export interface InstanceInfo {
   id: string
   status: InstanceStatus
   template_id: string
+  start_time: string | null
+  stop_time: string | null
   /** 实例所基于的模板快照（含代理规则、tags），临时/已删除模板也能拿到 */
   template?: Template
 }

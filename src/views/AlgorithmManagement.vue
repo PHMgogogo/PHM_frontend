@@ -870,6 +870,12 @@ onBeforeUnmount(() => {
               <el-tag :type="statusTagType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="启动时间" min-width="160">
+            <template #default="{ row }">{{ formatTime(row.start_time) }}</template>
+          </el-table-column>
+          <el-table-column label="停止时间" min-width="160">
+            <template #default="{ row }">{{ formatTime(row.stop_time) }}</template>
+          </el-table-column>
           <el-table-column label="标签" min-width="140">
             <template #default="{ row }">
               <div class="tag-list">

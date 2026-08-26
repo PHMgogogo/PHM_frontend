@@ -1,14 +1,15 @@
 // ============================================================
-// 全局事件优化：对 wheel / touch 事件默认启用 passive: true，
+// 全局事件优化：对 touch 事件默认启用 passive: true，
 // 消除 Element Plus 内部组件（el-input-number、el-scrollbar 等）
 // 的 Chrome "non-passive event listener" violation 警告。
-// 副作用：依赖 preventDefault() 的处理（如滚轮调整数值）不再
-// 阻止页面滚动，但这是与 Chrome 性能建议之间的合理折中。
+// 注意：wheel 事件不强制 passive —— LogicFlow 画布缩放/平移依赖
+// preventDefault()，若强制 passive 会触发
+// "Unable to preventDefault inside passive event listener invocation" 报错。
 // ============================================================
 ;(function patchPassiveListeners() {
   if (typeof window === 'undefined') return
   const original = EventTarget.prototype.addEventListener
-  const passiveEvents = new Set(['wheel', 'touchstart', 'touchmove', 'mousewheel'])
+  const passiveEvents = new Set(['touchstart', 'touchmove', 'mousewheel'])
   EventTarget.prototype.addEventListener = function (
     type: string,
     listener: EventListenerOrEventListenerObject,
