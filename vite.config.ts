@@ -79,6 +79,11 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/task/, '/api'),
       },
+      '/document': {
+        target: 'http://192.168.31.178:8001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/document/, '/api'),
+      },
     },
   },
 }))
