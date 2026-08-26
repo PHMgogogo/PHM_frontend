@@ -7,6 +7,32 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: () => import('@/views/HomeView.vue'),
+      children: [
+        {
+          // 算法管理：/algo 默认进入算法文件页
+          path: 'algo',
+          name: 'algo',
+          redirect: '/algo/files',
+        },
+        {
+          // 算法文件页，:id 为当前选中的算法 id（可选）
+          path: 'algo/files/:id?',
+          name: 'algo-files',
+          component: () => import('@/views/AlgorithmManagement.vue'),
+        },
+        {
+          // 算法配置（模板）页，:id 为当前选中的模板 id（可选）
+          path: 'algo/config/:id?',
+          name: 'algo-config',
+          component: () => import('@/views/AlgorithmManagement.vue'),
+        },
+        {
+          // 运行中算法（实例）页，:id 为当前选中的实例 id（可选）
+          path: 'algo/instances/:id?',
+          name: 'algo-instances',
+          component: () => import('@/views/AlgorithmManagement.vue'),
+        },
+      ],
     },
     {
       path: '/aircraft/:aircraftNumber',

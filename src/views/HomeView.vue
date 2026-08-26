@@ -1,22 +1,45 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import SideNav from '@/components/SideNav.vue'
 import AircraftCard from '@/components/AircraftCard.vue'
 import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
 import ConfigManagement from '@/views/ConfigManagement.vue'
 import DocumentView from '@/views/DocumentView.vue'
 import MonitorView from '@/views/MonitorView.vue'
-import AlgorithmManagement from '@/views/AlgorithmManagement.vue'
 import InterfaceManagement from '@/views/InterfaceManagement.vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { Search } from '@element-plus/icons-vue'
 
 const store = useAircraftStore()
+const route = useRoute()
+const router = useRouter()
 const activeMenu = ref('aircraft')
 const sidebarCollapsed = ref(false)
 const dialogVisible = ref(false)
 const searchQuery = ref('')
 const selectedModel = ref('')
+
+// 算法管理为独立路由（/algo/...），进入时高亮对应菜单
+watch(
+  () => route.path,
+  (path) => {
+    if (path.startsWith('/algo')) activeMenu.value = 'algo'
+  },
+  { immediate: true },
+)
+
+// 点击侧边栏菜单时同步 URL：
+// - 点击"算法管理"→ 跳转到算法文件页
+// - 在算法页点击其他菜单 → 回到首页
+watch(activeMenu, (menu) => {
+  const onAlgo = route.path.startsWith('/algo')
+  if (menu === 'algo' && !onAlgo) {
+    router.push('/algo/files')
+  } else if (menu !== 'algo' && onAlgo) {
+    router.push('/')
+  }
+})
 
 onMounted(() => {
   store.fetchAircrafts()
@@ -121,9 +144,9 @@ const filteredAircrafts = computed(() => {
         <MonitorView />
       </template>
 
-      <!-- 算法管理 -->
+      <!-- 算法管理（独立路由页面，保留侧边栏布局） -->
       <template v-else-if="activeMenu === 'algo'">
-        <AlgorithmManagement />
+        <router-view />
       </template>
 
       <!-- 接口管理 -->

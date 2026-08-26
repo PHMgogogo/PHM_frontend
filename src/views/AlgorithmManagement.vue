@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { algorithmApi } from '@/api/algorithm'
 import ProxyRuleEditor from '@/components/ProxyRuleEditor.vue'
@@ -13,6 +14,9 @@ import type {
   Template,
   UrlProxyRule,
 } from '@/types/entities'
+
+const route = useRoute()
+const router = useRouter()
 
 // ============================================================
 // 通用工具
@@ -52,10 +56,33 @@ function treeToNodes(tree: AlgorithmTree | undefined, basePath = ''): TreeNode[]
 }
 
 // ============================================================
-// Tab 1：算法文件
+// 路由驱动的 Tab 与选中项
 // ============================================================
 
-const activeTab = ref('files')
+/** 当前 tab 由路由决定：/algo/files | /algo/config | /algo/instances */
+const activeTab = computed(() => {
+  const name = route.name
+  if (name === 'algo-config') return 'config'
+  if (name === 'algo-instances') return 'instances'
+  return 'files'
+})
+
+/** 当前路由中的选中 id（算法/模板/实例） */
+const routeId = computed(() => (route.params.id as string | undefined) ?? '')
+
+/** 切换 tab：跳转到对应路由（id 为各 tab 独立，切换时不携带） */
+function switchTab(tab: string) {
+  const baseMap: Record<string, string> = {
+    files: '/algo/files',
+    config: '/algo/config',
+    instances: '/algo/instances',
+  }
+  router.push(baseMap[tab] ?? '/algo/files')
+}
+
+// ============================================================
+// Tab 1：算法文件
+// ============================================================
 
 const algorithms = ref<string[]>([])
 const algorithmsLoading = ref(false)
@@ -87,8 +114,16 @@ async function fetchAlgorithms() {
   }
 }
 
-/** 点击算法 → 加载详情 → 渲染文件树 */
+/** 点击算法 → 更新 URL → 加载详情 → 渲染文件树 */
 async function selectAlgorithm(id: string) {
+  if (routeId.value !== id) {
+    router.push(`/algo/files/${encodeURIComponent(id)}`)
+  } else {
+    await loadAlgorithm(id)
+  }
+}
+
+async function loadAlgorithm(id: string) {
   algorithmLoading.value = true
   try {
     const algo = await algorithmApi.getAlgorithm(id)
@@ -221,9 +256,13 @@ async function fetchTemplates() {
   }
 }
 
-/** 点击模板 → 展示详情 */
+/** 点击模板 → 更新 URL → 展示详情 */
 function selectTemplate(id: string) {
-  selectedTemplate.value = templateDetails.value[id] ?? null
+  if (routeId.value !== id) {
+    router.push(`/algo/config/${encodeURIComponent(id)}`)
+  } else {
+    selectedTemplate.value = templateDetails.value[id] ?? null
+  }
 }
 
 function openCreateTemplate() {
@@ -455,6 +494,11 @@ function handlePublishInstance(id: string) {
 }
 
 async function viewInstanceDetail(id: string) {
+  // 更新 URL，使实例详情可被分享/刷新
+  if (routeId.value !== id) {
+    router.push(`/algo/instances/${encodeURIComponent(id)}`)
+    return
+  }
   instanceDetailVisible.value = true
   instanceDetail.value = null
   instanceConnections.value = []
@@ -502,6 +546,11 @@ function formatTime(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+/** 判断模板是否存在于后端（动态/临时模板可能不存在，此时不应渲染为超链接） */
+function templateExists(id: string): boolean {
+  return templates.value.includes(id)
+}
+
 async function viewInstanceLogs(id: string) {
   logInstanceId.value = id
   logActiveTab.value = 'out'
@@ -529,6 +578,43 @@ async function loadLogs(kind: 'out' | 'err') {
 }
 
 // ============================================================
+// 路由变化 → 加载对应选中项
+// ============================================================
+
+/** 根据当前路由加载选中的算法/模板/实例（用于链接跳转、刷新、前进后退） */
+async function applyRouteSelection() {
+  const id = routeId.value
+  const tab = activeTab.value
+  if (!id) {
+    // 无 id：清空当前 tab 的选中项
+    if (tab === 'files') {
+      selectedAlgorithm.value = null
+      algorithmTree.value = []
+    } else if (tab === 'config') {
+      selectedTemplate.value = null
+    } else {
+      instanceDetailVisible.value = false
+      instanceDetail.value = null
+    }
+    return
+  }
+  if (tab === 'files') {
+    await loadAlgorithm(id)
+  } else if (tab === 'config') {
+    selectedTemplate.value = templateDetails.value[id] ?? null
+  } else {
+    await viewInstanceDetail(id)
+  }
+}
+
+watch(
+  () => [route.name, route.params.id] as const,
+  () => {
+    applyRouteSelection()
+  },
+)
+
+// ============================================================
 // 生命周期
 // ============================================================
 
@@ -538,6 +624,8 @@ onMounted(async () => {
   await fetchInstances()
   // 实例状态轮询
   pollTimer = setInterval(fetchInstances, 5000)
+  // 若 URL 中带 id（如刷新/链接跳转），加载对应选中项
+  await applyRouteSelection()
 })
 
 onBeforeUnmount(() => {
@@ -551,7 +639,7 @@ onBeforeUnmount(() => {
       <h2 class="page-title">算法管理</h2>
     </div>
 
-    <el-tabs v-model="activeTab" class="algo-tabs">
+    <el-tabs :model-value="activeTab" class="algo-tabs" @tab-change="switchTab">
       <!-- ============ Tab 1：算法文件 ============ -->
       <el-tab-pane label="算法文件" name="files">
         <div class="tab-toolbar">
@@ -666,7 +754,14 @@ onBeforeUnmount(() => {
               <div class="algo-info">
                 <div class="algo-info-row">
                   <span class="algo-info-label">算法</span>
-                  <span class="algo-info-value">{{ selectedTemplate.algorithm?.id ?? '-' }}</span>
+                  <router-link
+                    v-if="selectedTemplate.algorithm?.id"
+                    :to="`/algo/files/${encodeURIComponent(selectedTemplate.algorithm.id)}`"
+                    class="algo-link"
+                  >
+                    {{ selectedTemplate.algorithm.id }}
+                  </router-link>
+                  <span v-else class="algo-info-value">-</span>
                 </div>
                 <div class="algo-info-row">
                   <span class="algo-info-label">启动命令</span>
@@ -758,7 +853,18 @@ onBeforeUnmount(() => {
 
         <el-table :data="instances" v-loading="instancesLoading" class="algo-table">
           <el-table-column prop="id" label="实例 ID" min-width="220" />
-          <el-table-column prop="template_id" label="模板 ID" min-width="180" />
+          <el-table-column label="模板 ID" min-width="180">
+            <template #default="{ row }">
+              <router-link
+                v-if="templateExists(row.template_id)"
+                :to="`/algo/config/${encodeURIComponent(row.template_id)}`"
+                class="algo-link"
+              >
+                {{ row.template_id }}
+              </router-link>
+              <span v-else class="algo-info-value">{{ row.template_id }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="状态" width="120" align="center">
             <template #default="{ row }">
               <el-tag :type="statusTagType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
@@ -768,7 +874,7 @@ onBeforeUnmount(() => {
             <template #default="{ row }">
               <div class="tag-list">
                 <el-tag
-                  v-for="tag in templateDetails[row.template_id]?.tags ?? []"
+                  v-for="tag in row.template?.tags ?? templateDetails[row.template_id]?.tags ?? []"
                   :key="tag"
                   size="small"
                   type="info"
@@ -776,7 +882,12 @@ onBeforeUnmount(() => {
                 >
                   {{ tag }}
                 </el-tag>
-                <span v-if="!(templateDetails[row.template_id]?.tags?.length)" class="tag-empty">-</span>
+                <span
+                  v-if="!(row.template?.tags?.length ?? templateDetails[row.template_id]?.tags?.length)"
+                  class="tag-empty"
+                >
+                  -
+                </span>
               </div>
             </template>
           </el-table-column>
@@ -956,7 +1067,16 @@ onBeforeUnmount(() => {
         <template v-if="instanceDetail">
           <el-descriptions :column="2" border>
             <el-descriptions-item label="实例 ID">{{ instanceDetail.id }}</el-descriptions-item>
-            <el-descriptions-item label="模板 ID">{{ instanceDetail.template_id }}</el-descriptions-item>
+            <el-descriptions-item label="模板 ID">
+              <router-link
+                v-if="templateExists(instanceDetail.template_id)"
+                :to="`/algo/config/${encodeURIComponent(instanceDetail.template_id)}`"
+                class="algo-link"
+              >
+                {{ instanceDetail.template_id }}
+              </router-link>
+              <span v-else class="algo-info-value">{{ instanceDetail.template_id }}</span>
+            </el-descriptions-item>
             <el-descriptions-item label="状态">
               <el-tag :type="statusTagType(instanceDetail.status)" size="small">
                 {{ statusText(instanceDetail.status) }}
@@ -1194,6 +1314,19 @@ onBeforeUnmount(() => {
   color: #0d1f3c;
   line-height: 22px;
   word-break: break-all;
+}
+
+/* 算法/模板/实例 id 超链接 */
+.algo-link {
+  font-size: 13px;
+  color: #1a6cf0;
+  line-height: 22px;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.algo-link:hover {
+  text-decoration: underline;
 }
 
 .algo-info-empty {

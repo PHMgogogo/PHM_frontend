@@ -5,11 +5,6 @@ import knowledgeIcon from '@/assets/knowledgebase.svg'
 import configIcon from '@/assets/config.svg'
 import monitorIcon from '@/assets/monitor.svg'
 import algorithmIcon from '@/assets/algorithm.svg'
-import diagnosisIcon from '@/assets/diagnosis.svg'
-import healthIcon from '@/assets/health.svg'
-import trendIcon from '@/assets/trend.svg'
-import predictionIcon from '@/assets/predict.svg'
-import maintenanceIcon from '@/assets/maintenance.svg'
 import dataIcon from '@/assets/data.svg'
 
 defineProps<{
@@ -44,7 +39,7 @@ const menus: MenuItem[] = [
     <div class="logo-area">
       <!-- <span class="logo-icon">🛩️</span> -->
       <img src="@/assets/logo.svg" class="logo-icon" alt="PHM Logo" />
-      <span v-show="!collapsed" class="logo-text">PHM 平台</span>
+      <span v-show="!collapsed" class="logo-text">eOIPHM</span>
     </div>
     <ul class="menu-list">
       <li
