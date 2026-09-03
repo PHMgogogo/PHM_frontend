@@ -41,7 +41,14 @@
 import { ref } from 'vue'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 
-defineProps({ node: Object })
+interface HealthNode {
+  label: string
+  score: number
+  status: 'normal' | 'warning' | 'fault'
+  children?: HealthNode[]
+}
+
+defineProps<{ node: HealthNode }>()
 defineEmits(['select'])
 
 const expanded = ref(true)

@@ -73,7 +73,7 @@
                 </el-descriptions>
                 <div style="font-size: 12px; color: #8c9ab0; margin-bottom: 6px">检查通过情况趋势（1=通过，0=不通过）：</div>
                 <TimeSeriesChart
-                  :series-data="{ '通过情况': selectedPM.trendData.map((d: any, i: number) => ({ t: d.time, v: d.pass })) }"
+                  :series-data="{ '通过情况': selectedPM.trendData.map((d: any) => ({ t: d.time, v: d.pass })) }"
                   :limits="{ '通过情况': 0.5 }"
                   x-label="时间片"
                   height="260px"

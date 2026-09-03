@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
+test-results/
+playwright-report/
 
 # Editor directories and files
 .vscode/*
@@ -34,4 +37,4 @@ API_DOCUMENT.md
 sse设计.md
 progress-api-guide.md
 
-config
+/config/

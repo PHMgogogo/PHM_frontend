@@ -237,7 +237,7 @@
     </el-dialog>
 </template>
 <script lang="ts" setup>
-import { computed, onMounted, ref, toRaw, watch, nextTick, inject } from 'vue'
+import { computed, onMounted, ref, watch, nextTick, inject } from 'vue'
 import CodeMirror from 'vue-codemirror6'
 import { python } from '@codemirror/lang-python'
 import { NodeData } from '../NodeData';
@@ -271,13 +271,6 @@ class NodeType {
     category: string = ""
 }
 let bindingNodeId: string
-function snakeToPascal(str: string): string {
-    return str
-        .split("_")
-        .filter(Boolean)
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join("");
-}
 const nodeTypes = ref<NodeType[]>()
 const nodeSchema = ref<any>()
 const groupedNodeTypes = computed(() => {

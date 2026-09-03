@@ -2,9 +2,9 @@
   <div ref="containerRef" class="flow" :class="{ focused: canvasFocused }" tabindex="-1"></div>
 </template>
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, toRaw } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
-import LogicFlow, { costByPoints } from '@logicflow/core'
+import LogicFlow from '@logicflow/core'
 import '@logicflow/core/dist/index.css'
 import Node from "./Node.vue"
 import { register, VueNodeModel } from '@logicflow/vue-node-registry'
@@ -33,7 +33,7 @@ class PipelineNodeModel extends VueNodeModel {
   }
 
   getDefaultAnchor(): Model.AnchorConfig[] {
-    const { x, y, width, height } = this
+    const { x, y, width } = this
     return [
       { x: x + width / 2, y: y, id: `${this.id}_1` },
       { x: x - width / 2, y: y, id: `${this.id}_3` },

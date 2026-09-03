@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import { renderToString } from 'katex'
 import hljs from 'highlight.js/lib/core'
 import javascript from 'highlight.js/lib/languages/javascript'
@@ -92,7 +93,7 @@ function highlightCode(code: string, langRaw: string): string {
 }
 
 const md = new MarkdownIt({
-  html: true,
+  html: false,
   breaks: true,
   linkify: true,
   highlight: highlightCode,
@@ -120,6 +121,44 @@ function setCached(text: string, html: string) {
   RENDER_CACHE.set(text, html)
 }
 
+function sanitizeRenderedHtml(html: string): string {
+  const clean = DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true, mathMl: true, svg: true },
+    FORBID_TAGS: [
+      'script',
+      'iframe',
+      'object',
+      'embed',
+      'form',
+      'input',
+      'textarea',
+      'select',
+      'option',
+      'meta',
+      'link',
+      'style',
+    ],
+    FORBID_ATTR: ['srcdoc', 'formaction'],
+  })
+
+  const template = document.createElement('template')
+  template.innerHTML = clean
+  for (const anchor of template.content.querySelectorAll('a')) {
+    const href = anchor.getAttribute('href')
+    if (href) {
+      try {
+        const protocol = new URL(href, window.location.href).protocol
+        if (!['http:', 'https:', 'mailto:'].includes(protocol)) anchor.removeAttribute('href')
+      } catch {
+        anchor.removeAttribute('href')
+      }
+    }
+    if (anchor.hasAttribute('href')) anchor.setAttribute('target', '_blank')
+    anchor.setAttribute('rel', 'noopener noreferrer')
+  }
+  return template.innerHTML
+}
+
 /**
  * 渲染 Markdown 文本为 HTML，支持：
  * - 标准 Markdown（标题、加粗、斜体、列表、表格、代码块、链接等）
@@ -137,23 +176,23 @@ export function renderMarkdown(text: string): string {
 
   // 1. 保护 $$...$$ 块级公式
   let processed = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
-    const id = `KATEX_${mathBlocks.size}`
+    const id = `PHM_KATEX_${mathBlocks.size}`
     mathBlocks.set(id, { math: math.trim(), display: true })
-    return `<span data-katex-id="${id}"></span>`
+    return `PHMKATEXTOKEN${id}END`
   })
 
   // 2. 保护 $...$ 行内公式（不匹配 $$）
   processed = processed.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, math) => {
-    const id = `KATEX_${mathBlocks.size}`
+    const id = `PHM_KATEX_${mathBlocks.size}`
     mathBlocks.set(id, { math: math.trim(), display: false })
-    return `<span data-katex-id="${id}"></span>`
+    return `PHMKATEXTOKEN${id}END`
   })
 
   // 3. 渲染 Markdown
   let html = md.render(processed)
 
   // 4. 还原公式为 KaTeX HTML
-  html = html.replace(/<span data-katex-id="([^"]+)"><\/span>/g, (_, id) => {
+  html = html.replace(/PHMKATEXTOKEN([A-Z0-9_]+)END/g, (_, id: string) => {
     const info = mathBlocks.get(id)
     if (!info) return ''
     try {
@@ -169,8 +208,9 @@ export function renderMarkdown(text: string): string {
     }
   })
 
-  setCached(text, html)
-  return html
+  const sanitized = sanitizeRenderedHtml(html)
+  setCached(text, sanitized)
+  return sanitized
 }
 
 /**
