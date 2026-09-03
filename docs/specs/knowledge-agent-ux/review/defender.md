@@ -1,9 +1,9 @@
 # Defender 报告 — Knowledge Agent UX
 
-**评审对象**: `docs/specs/knowledge-agent-ux/review/critic.md`  
-**评审日期**: 2026-09-02  
-**设计基线**: `design.md` v1  
-**裁决结果**: 11 项事实均成立；3 Critical、6 High、2 Medium 全部 `accepted`
+- **评审对象**: `docs/specs/knowledge-agent-ux/review/critic.md`
+- **评审日期**: 2026-09-02
+- **设计基线**: `design.md` v1
+- **裁决结果**: 11 项事实均成立；3 Critical、6 High、2 Medium 全部 `accepted`
 
 ## 裁决表
 

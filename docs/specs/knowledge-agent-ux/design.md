@@ -1,10 +1,10 @@
 # Knowledge Agent UX Design
 
-**Version**: v2（critic/defender gate accepted）  
-**Date**: 2026-09-02  
-**Requirements**: [requirements.md](requirements.md)  
-**Implementation repository**: `PHM_frontend` only  
-**Adversarial review**: 3 Critical / 6 High / 2 Medium，全部 accepted；见 `review/`
+- **Version**: v2（critic/defender gate accepted）
+- **Date**: 2026-09-02
+- **Requirements**: [requirements.md](requirements.md)
+- **Implementation repository**: `PHM_frontend` only
+- **Adversarial review**: 3 Critical / 6 High / 2 Medium，全部 accepted；见 `review/`
 
 ## 1. Design Summary
 

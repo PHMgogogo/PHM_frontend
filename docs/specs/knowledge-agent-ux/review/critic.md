@@ -1,10 +1,10 @@
 # Critic Review — Knowledge Agent UX
 
-**Reviewer**: `knowledge_critic`（独立上下文）  
-**Review mode**: Full + FMEA + STRIDE  
-**Design reviewed**: `design.md` v1  
-**Date**: 2026-09-02  
-**Result**: 3 Critical / 6 High / 2 Medium
+- **Reviewer**: `knowledge_critic`（独立上下文）
+- **Review mode**: Full + FMEA + STRIDE
+- **Design reviewed**: `design.md` v1
+- **Date**: 2026-09-02
+- **Result**: 3 Critical / 6 High / 2 Medium
 
 > 本报告按独立 critic 已完成的证据审查与严重性结论归档；主 Agent 仅将原始发现规范化为项目要求的 8 字段格式，没有降低严重性。
 

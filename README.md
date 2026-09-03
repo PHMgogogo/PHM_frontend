@@ -23,15 +23,15 @@
 | 可视化 | D3 | ^7.9 | 构型项目力导向图 |
 | 布局 | grid-layout-plus | ^1.1 | 数据看板可拖拽栅格 |
 | 文档 | @scalar/api-reference | ^1.60 | 算法实例 OpenAPI 文档渲染 |
-| 渲染 | markdown-it / katex / highlight.js | ^14 / ^0.17 / ^11 | 对话 Markdown / 公式 / 代码高亮 |
+| 渲染 | markdown-it / katex / highlight.js / DOMPurify | ^14 / ^0.17 / ^11 / ^3.4 | 对话 Markdown / 公式 / 代码高亮 / 输出净化 |
 
 ---
 
 ## 快速开始
 
 ```bash
-# 安装依赖
-npm install
+# 按 lockfile 安装依赖
+npm ci
 
 # 启动开发服务器（默认 http://localhost:5173）
 npm run dev
@@ -44,6 +44,12 @@ npm run build:check
 
 # 仅构建
 npm run build
+
+# 单元/契约/安全回归
+npm run test:unit
+
+# Playwright 用户流程（自动启动只读与 mutation-mock 两个隔离开发服务）
+npm run test:e2e
 
 # 预览生产构建
 npm run preview
@@ -83,17 +89,20 @@ src/
 │   ├── instance.ts            #   算法实例进程管理（pmgr）
 │   ├── instance-worker.ts     #   实例内模型操作（load/train/infer/state…）
 │   ├── display.ts             #   数据看板图表查询
-│   ├── document.ts            #   知识库文档 + 混合检索
+│   ├── document.ts            #   知识库文档 + 三类低层检索
+│   ├── knowledge-agent.ts     #   RAG Agent POST SSE / 历史 / 反馈
 │   └── opencode.ts            #   OpenCode HTTP + SSE 封装（对话服务）
 ├── config/
-│   └── endpoints.ts           #   统一 API 端点前缀（API_PREFIX，与 vite proxy 对齐）
+│   ├── endpoints.ts           #   统一 API 端点前缀（API_PREFIX，与 vite proxy 对齐）
+│   └── knowledge.ts           #   严格布尔、缺省关闭的 mutation UI capability
 ├── stores/                    # Pinia
 │   ├── aircraft.ts            #   机型 / 单机列表
 │   ├── configItem.ts          #   构型项目树
 │   ├── dataMapping.ts         #   CSV 上传 / 分析 / 删除
 │   ├── task.ts                #   会话任务全生命周期（跨服务编排）
 │   ├── chat.ts                #   OpenCode 连接 / 会话 / 消息 / SSE
-│   ├── knowledge.ts           #   知识库文档
+│   ├── knowledge.ts           #   知识库文档生命周期与轮询
+│   ├── knowledge-agent.ts     #   独立 RAG Agent 会话与流状态
 │   ├── demoAppStore.ts        #   演示用飞机 / 机队选择（Mock）
 │   └── app.ts                 #   全局 UI 选中态
 ├── views/
@@ -101,7 +110,7 @@ src/
 │   ├── AircraftWorkspace.vue  # 单机工作区（9 个菜单）
 │   ├── ConfigManagement.vue   # 构型管理（构型项目树 / 力导向图）
 │   ├── MonitorView.vue        # 数据展示（可配置看板）
-│   ├── DocumentView.vue       # 知识库管理
+│   ├── DocumentView.vue       # 知识中心（文档 / 检索 / Agent）
 │   ├── ApiDocsView.vue        # 算法实例接口文档（Scalar）
 │   └── demo/                  # 6 个 PHM 演示页（纯 Mock）
 ├── components/
@@ -112,6 +121,7 @@ src/
 │   ├── SortieDialog.vue                   # 架次
 │   ├── TrainingDialog.vue, InferingDialog.vue   # 去训练 / 去推理
 │   ├── ConfigForceGraph.vue               # 构型力导向图（D3）
+│   ├── knowledge/                         # 知识中心文档、检索、Agent、来源与会话组件
 │   ├── dashboard/                         # 数据看板（栅格 + ECharts）
 │   └── demo/                              # 演示组件
 ├── mock/demo/                 # 演示 Mock 数据（planes/realtime/health/...）
@@ -143,7 +153,7 @@ src/
 | 菜单 | 组件 | 说明 |
 |---|---|---|
 | ✈️ 飞行器管理 | 内嵌卡片网格 | 单机列表，按构型筛选 + 关键字搜索，点击卡片进入工作区 |
-| 📚 知识库管理 | [DocumentView](src/views/DocumentView.vue) | 文档上传与管理 |
+| 📚 知识库管理 | [DocumentView](src/views/DocumentView.vue) | 文档生命周期、检索验证与知识库 Agent |
 | 🔧 构型管理 | [ConfigManagement](src/views/ConfigManagement.vue) | 构型项目树管理 |
 | 📡 数据展示 | [MonitorView](src/views/MonitorView.vue) | 可配置数据看板 |
 
@@ -168,9 +178,15 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 支持新建构型项目、删除项目（级联删除子项）、删除整个构型。
 
-#### 1.3 知识库管理
+#### 1.3 知识中心
 
-上传与管理知识库文档（支持 `.md` / `.txt` / `.pdf`）。展示文档大小、分块数、上传时间；每 3 秒轮询文档列表；支持删除。底层 `document.ts` 同时提供混合检索能力（dense 向量 + BM25，RRF 融合）供对话侧调用。
+知识中心将 RAG 能力组织成三个保持挂载的任务区：
+
+- **文档库**：真实展示 `processing / indexed / failed / unknown` 生命周期、服务端文档总数、当前页分块、分页与当前页搜索。能力开启时支持 `.md / .txt / .pdf / .docx / .pptx / .html / .htm` 串行多文件上传、409 重复提示和离页任务详情对账；缺省只读，`processing/unknown` 永不可删除。
+- **检索验证**：提供混合、纯向量、纯关键词三类低层检索，展示来源、正文、主分数、检索/重排分数和耗时。该区明确不调用 LLM；缺失分数显示“未提供”，服务端主 `score=0` 显示“未确认（服务返回 0）”。
+- **知识库 Agent**：独立于飞机工作区 OpenCode 会话，支持 Thinking/Fast、POST SSE 阶段与 token、取消/中断重试、结构化回答、最终路由/置信度/拒答、纯文本来源和授权后的反馈。最终可信状态只采信 `done`；不会展示或持久化原始 reasoning。
+
+“本设备会话”只在 `localStorage` 保存最多 20 个 `{id, seenAt}`，不保存问题、回答、来源或 metadata，也不调用无 owner 约束的全局 session 列表。历史接口仅恢复正文，因此旧回答不会伪造引用或反馈能力。
 
 #### 1.4 数据展示（可配置看板）
 
@@ -267,7 +283,7 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 | `/instance` | `INSTANCE` | `http://192.168.31.13:8001` | 去掉 `/instance` | 算法实例 Worker（模型 load/train/infer/state） | instance-worker |
 | `/task` | `TASK` | `http://127.0.0.1:8000` | `/task` → `/api` | 任务 / 图表展示代理 | display |
 | `/opencode` | `OPENCODE` | `http://192.168.31.13:8001` | 不重写 | OpenCode 对话服务（HTTP + SSE） | opencode |
-| `/document` | `DOCUMENT` | `http://192.168.31.178:8001` | `/document` → `/api` | 文档检索服务（文档上传 / 列表 / 删除 / 混合检索） | document |
+| `/document` | `RAG` / `DOCUMENT`（兼容） | `${VITE_RAG_PROXY_TARGET:-http://127.0.0.1:8000}` | `/document` → `/api` | RAG（文档 / 检索 / Agent / 历史 / 反馈） | document / knowledge-agent |
 
 接口域概览（详细字段见各 `src/api/*.ts`，算法实例动态接口见 Scalar 文档页）：
 
@@ -282,9 +298,46 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 | 实例管理 | `GET /highlevel`（启动）、`DELETE /highlevel/{id}`、`GET /highlevel/{id}/restart` |
 | 实例 Worker | `POST /load\|/unload\|/save\|/train\|/infer`、`GET /state/{n}`、`GET /stop`、`GET /wait` |
 | 数据展示 | `POST /display/raw-data` |
-| 知识库 | `POST /documents/upload`、`GET /documents`、`DELETE /documents/{id}`、`POST /retrieval[/dense\|/sparse]` |
+| 知识中心 | `POST /documents/upload`、`GET /documents[/{id}]`、`DELETE /documents/{id}`、`POST /retrieval[/dense\|/sparse]`、`POST /chat/stream`、`GET /chat/history/{id}`、`POST /feedback` |
 
-> 修改后端**真实地址（IP / 端口）**改 `vite.config.ts` 的 proxy `target`——[endpoints.ts](src/config/endpoints.ts) 只负责前端可见的相对前缀；接口文件头部注释里的 IP 若与实际代理不一致，**以 `vite.config.ts` 为准**。
+> PHM 既有服务的真实地址仍由 `vite.config.ts` 的 proxy `target` 管理；RAG 开发地址优先用 `VITE_RAG_PROXY_TARGET` 配置，缺省为 `http://127.0.0.1:8000`。[endpoints.ts](src/config/endpoints.ts) 只负责浏览器可见的相对前缀。
+
+### RAG capability 与生产代理
+
+下列变量必须严格等于小写字符串 `true` 才会显示对应写入 UI；缺失、`TRUE`、`1` 或带空格的值都会关闭能力：
+
+| 变量 | 作用 | 缺省 |
+|---|---|---|
+| `VITE_RAG_UPLOAD_ENABLED` | 文档上传 | `false` |
+| `VITE_RAG_DELETE_ENABLED` | 文档删除请求 | `false` |
+| `VITE_RAG_FEEDBACK_ENABLED` | 点赞、点踩、标记与纠正 | `false` |
+| `VITE_RAG_SESSION_DELETE_ENABLED` | 远端会话删除的预留独立门禁；当前普通 UI 不提供该操作 | `false` |
+
+这些变量只控制用户界面，**不是权限边界**。生产环境启用任何写能力前，同源网关/RAG 服务端必须按 path + method 完成身份认证、角色/owner 授权、审计、限流、上传大小以及 CSRF/SameSite 验收；不得把 `ADMIN_API_KEY`、token 或其他密钥写入 `VITE_*`、源码、URL 或浏览器存储。文档删除接口当前只证明服务接受了请求，在后端具备跨索引一致删除契约前不得开启 `VITE_RAG_DELETE_ENABLED`。
+
+生产部署必须把浏览器 `/document/*` 转发到 RAG `/api/*`。以 Nginx 为例，SSE 路径需要关闭响应缓冲和缓存，并给生成流足够的读取时间：
+
+```nginx
+location /document/ {
+    proxy_pass http://127.0.0.1:8000/api/;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 300s;
+    client_max_body_size 52m;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+部署后使用无缓冲客户端验证 `session/status` 等早期事件确实先于 `done` 到达；命令中的域名和认证方式按实际网关替换：
+
+```bash
+curl -N -X POST 'https://example.internal/document/chat/stream' \
+  -H 'Content-Type: application/json' \
+  --data '{"message":"检查知识库连通性","stream":true,"include_sources":true,"mode":"thinking"}'
+```
 
 ---
 
@@ -313,7 +366,8 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 | `dataMappingStore` | CSV 上传 / 分析 / 删表流程 | 真实后端 |
 | `taskStore` | 会话任务全生命周期，跨 3 个服务编排；当前会话按单机经 cookie（`phm_current_task`）持久化 | 真实后端 |
 | `chatStore` | OpenCode 连接 / 会话 / 消息 / SSE 订阅 / 增量合并 | OpenCode |
-| `knowledgeStore` | 知识库文档管理 | 真实后端 |
+| `knowledgeStore` | 文档生命周期、分页、上传队列与条件轮询 | RAG |
+| `knowledgeAgentStore` | Thinking/Fast POST SSE、最终可信状态、本设备会话与反馈 | RAG |
 | `demoAppStore` | 演示飞机 / 机队选择 | 纯 Mock |
 | `appStore` | 全局 UI 选中态 | 纯前端 |
 
@@ -321,13 +375,13 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 ## 构建优化
 
-生产构建通过 `rollupOptions.output.manualChunks` 拆分 vendor 包（element-plus / element-plus-icons / echarts / d3 / vendor-utils），并降低 `chunkSizeWarningLimit`，控制首屏主包体积；同时抑制 element-plus → @vueuse/core 传递依赖的 `INVALID_ANNOTATION` 警告。
+生产构建通过 `rollupOptions.output.manualChunks` 拆分 vendor 包（element-plus / element-plus-icons / echarts / d3 / vendor-utils）；知识中心由首页按需异步加载，避免 Markdown/KaTeX/Agent 代码进入默认首页业务 chunk。同时抑制 element-plus → @vueuse/core 传递依赖的 `INVALID_ANNOTATION` 警告。
 
 ---
 
 ## 开发注意事项
 
 - **路由前缀冲突**：vue-router 路径不可使用 `/api`、`/instance`、`/task`、`/opencode`、`/document` 开头，否则被代理拦截。
-- **端点配置**：所有代理前缀集中维护在 [src/config/endpoints.ts](src/config/endpoints.ts) 的 `API_PREFIX`，须与 `vite.config.ts` 的 `server.proxy` key 保持一致；**修改后端真实地址（IP/端口）改 `vite.config.ts` 的 proxy `target`，而非 endpoints.ts**。
+- **端点配置**：所有代理前缀集中维护在 [src/config/endpoints.ts](src/config/endpoints.ts) 的 `API_PREFIX`，须与 `vite.config.ts` 的 `server.proxy` key 保持一致；RAG 开发地址通过 `VITE_RAG_PROXY_TARGET` 配置，其余既有服务按 `vite.config.ts` 的 proxy `target` 配置。
 - **新增接口**：在 `src/api/` 对应域文件中添加，`baseURL` 一律取自 `API_PREFIX`（如 `API_PREFIX.CORE`）；跨实例请求用 `instance-worker.ts` 的 `instanceWorkerBase(id)` 按实例缓存客户端。
 - **演示模块**：6 个演示页签与真实业务完全解耦，仅依赖 `src/mock/demo/`；新增真实功能应走 store + api，不要混入演示数据。

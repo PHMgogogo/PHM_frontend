@@ -1,10 +1,10 @@
 # Knowledge Agent UX Requirements
 
-**Feature**: `knowledge-agent-ux`  
-**Status**: Confirmed  
-**Target repository**: `PHM_frontend`  
-**Target branch**: `feat/knowledge-agent-ux`  
-**Baseline**: `origin/dev@91b7b03f6b72fc64fcc4595dc4c96b42bb0698bb`
+- **Feature**: `knowledge-agent-ux`
+- **Status**: Confirmed
+- **Target repository**: `PHM_frontend`
+- **Target branch**: `feat/knowledge-agent-ux`
+- **Baseline**: `origin/dev@91b7b03f6b72fc64fcc4595dc4c96b42bb0698bb`
 
 ## 1. Context
 
