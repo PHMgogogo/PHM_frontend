@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SideNav from '@/components/SideNav.vue'
 import AircraftCard from '@/components/AircraftCard.vue'
 import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
 import ConfigManagement from '@/views/ConfigManagement.vue'
-import DocumentView from '@/views/DocumentView.vue'
 import MonitorView from '@/views/MonitorView.vue'
 import InterfaceManagement from '@/views/InterfaceManagement.vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { Search } from '@element-plus/icons-vue'
+
+const DocumentView = defineAsyncComponent(() => import('@/views/DocumentView.vue'))
 
 const store = useAircraftStore()
 const route = useRoute()
