@@ -312,54 +312,6 @@ watch(inferenceForm, () => {
     inferenceCsvFile.value !== null
 }, { deep: true })
 
-// ---- 面板切换 ----
-function toggleConfigPanel(task: Task) {
-  if (expandedTaskId.value === task.id) {
-    closeConfigPanel()
-  } else {
-    openConfigPanel(task)
-  }
-}
-
-function openConfigPanel(task: Task) {
-  closeConfigPanel()
-  expandedTaskId.value = task.id
-
-  // 填充 Section A
-  basicInfoForm.name = task.name
-  basicInfoForm.description = task.description
-  basicInfoForm.isGlobal = task.isGlobal
-  originalBasicInfo.name = task.name
-  originalBasicInfo.description = task.description
-  originalBasicInfo.isGlobal = task.isGlobal
-  basicInfoDirty.value = false
-
-  // 重置 Section B 共用
-  modelFile.value = null
-
-  // 重置训练
-  trainingForm.dataColumn = ''
-  trainingForm.labelColumn = ''
-  trainingForm.epoch = 10
-  trainingForm.batchSize = 32
-  trainingForm.learningRate = 0.001
-  trainingForm.device = 'CPU'
-  trainingForm.backgroundRun = true
-  trainingCsvFile.value = null
-  trainingDirty.value = false
-
-  // 重置推理
-  inferenceForm.dataColumn = ''
-  inferenceForm.labelColumn = ''
-  inferenceForm.batchSize = 32
-  inferenceForm.device = 'CPU'
-  inferenceForm.backgroundRun = true
-  inferenceCsvFile.value = null
-  inferenceDirty.value = false
-
-  activeMode.value = 'train'
-}
-
 function closeConfigPanel() {
   expandedTaskId.value = null
 }

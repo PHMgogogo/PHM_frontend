@@ -1,36 +1,33 @@
-// ============================================================
-// 文档管理 & 知识库检索 API（对应 /document 代理）
-// ============================================================
+// 文档管理与低层检索 API（/document -> RAG /api）。
 
-import { createClient } from './client'
+import { ApiError, createClient, type RequestOptions } from './client'
 import { API_PREFIX } from '@/config/endpoints'
+import {
+  normalizeDocumentDetail,
+  normalizeDocumentList,
+  normalizeRetrievalResponse,
+  type DocumentItem,
+  type DocumentListResponse,
+  type DocumentStatus,
+  type RetrievalResponse,
+  type RetrievalResultItem,
+} from '@/utils/knowledge-normalize'
 
-const client = createClient({ baseURL: API_PREFIX.DOCUMENT })
+const client = createClient({ baseURL: API_PREFIX.RAG })
 
-// ---- 类型 ----
-
-export type DocumentStatus = 'processing' | 'completed'
-
-export interface DocumentItem {
-  id: string
-  filename: string
-  status: DocumentStatus
-  chunks: number
-  created_at: number
-  size_bytes: number
-  file_hash: string
+export type {
+  DocumentItem,
+  DocumentListResponse,
+  DocumentStatus,
+  RetrievalResponse,
+  RetrievalResultItem,
 }
 
 export interface DocumentUploadResponse {
   id: string
   filename: string
-  status: 'processing' | 'duplicate'
+  status: 'processing'
   message: string
-}
-
-export interface DocumentListResponse {
-  documents: DocumentItem[]
-  total: number
 }
 
 export interface DocumentDeleteResponse {
@@ -48,82 +45,119 @@ export interface RetrievalRequest {
   top_k?: number
 }
 
-export interface RetrievalResultItem {
-  content: string
-  source: string
-  title: string
-  score: number
-}
-
-export interface RetrievalResponse {
-  query: string
-  results: RetrievalResultItem[]
-  total: number
-  retrieval_time_ms: number
-}
-
-// ---- 3.1 上传文档 ----
-
-/** 上传文档到知识库，后台自动分块、向量化并存入 Milvus */
-export function uploadDocument(file: File) {
-  const fd = new FormData()
-  fd.append('file', file)
-  return client.upload<DocumentUploadResponse>('/documents/upload', fd)
-}
-
-// ---- 3.2 文档列表 ----
+export type RetrievalStrategy = 'hybrid' | 'dense' | 'sparse'
 
 export interface DocumentListParams {
   skip?: number
   limit?: number
 }
 
-/** 获取已上传文档列表 */
-export function getDocumentList(params?: DocumentListParams) {
+function recordOf(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function normalizeUploadResponse(value: unknown): DocumentUploadResponse {
+  const record = recordOf(value)
+  if (
+    !record ||
+    typeof record.id !== 'string' ||
+    typeof record.filename !== 'string' ||
+    record.status !== 'processing'
+  ) {
+    throw new Error('上传响应格式无效')
+  }
+  return {
+    id: record.id.slice(0, 256),
+    filename: record.filename.slice(0, 1_024),
+    status: 'processing',
+    message: typeof record.message === 'string' ? record.message.slice(0, 2_000) : '',
+  }
+}
+
+export async function uploadDocument(file: File, options?: RequestOptions) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await client.upload<unknown>('/documents/upload', formData, options)
+  return normalizeUploadResponse(response)
+}
+
+export async function getDocumentList(
+  params?: DocumentListParams,
+  options?: RequestOptions,
+): Promise<DocumentListResponse> {
   const query: Record<string, string> = {}
   if (params?.skip !== undefined) query.skip = String(params.skip)
   if (params?.limit !== undefined) query.limit = String(params.limit)
-  return client.get<DocumentListResponse>('/documents', query)
+  const response = await client.get<unknown>('/documents', query, options)
+  const normalized = normalizeDocumentList(response)
+  if (!normalized) {
+    throw new ApiError('文档列表响应格式无效', undefined, undefined, 'invalid-response')
+  }
+  return normalized
 }
 
-// ---- 3.3 文档详情 ----
-
-/** 获取单个文档详情 */
-export function getDocumentDetail(docId: string) {
-  return client.get<DocumentItem>(`/documents/${docId}`)
+export async function getDocumentDetail(
+  docId: string,
+  options?: RequestOptions,
+): Promise<DocumentItem> {
+  const response = await client.get<unknown>(
+    `/documents/${encodeURIComponent(docId)}`,
+    undefined,
+    options,
+  )
+  const normalized = normalizeDocumentDetail(response)
+  if (!normalized) throw new Error('文档详情响应格式无效')
+  return normalized
 }
 
-// ---- 3.4 删除文档 ----
-
-/** 删除文档（同步清理 Milvus 向量库与 BM25 索引） */
-export function deleteDocument(docId: string) {
-  return client.del<DocumentDeleteResponse>(`/documents/${docId}`)
+export async function deleteDocument(
+  docId: string,
+  options?: RequestOptions,
+): Promise<DocumentDeleteResponse> {
+  const response = await client.del<unknown>(
+    `/documents/${encodeURIComponent(docId)}`,
+    options,
+  )
+  const record = recordOf(response)
+  if (!record || record.status !== 'success' || typeof record.message !== 'string') {
+    throw new ApiError('删除响应格式无效', undefined, undefined, 'invalid-response')
+  }
+  return { status: record.status, message: record.message.slice(0, 2_000) }
 }
 
-// ---- 3.5 重建索引 ----
-
-/** 重新扫描 md/ 目录并重建向量索引（后台异步） */
-export function reindexDocuments() {
-  return client.post<ReindexResponse>('/documents/reindex')
+export async function reindexDocuments(options?: RequestOptions): Promise<ReindexResponse> {
+  const response = await client.post<unknown>('/documents/reindex', undefined, options)
+  const record = recordOf(response)
+  if (!record || record.status !== 'success' || typeof record.message !== 'string') {
+    throw new ApiError('重建索引响应格式无效', undefined, undefined, 'invalid-response')
+  }
+  return { status: record.status, message: record.message.slice(0, 2_000) }
 }
 
-// ---- 5.1 混合检索（dense + BM25，RRF 融合） ----
-
-/** 混合检索：dense 向量 + BM25 关键词，RRF 融合排序 */
-export function hybridRetrieval(params: RetrievalRequest) {
-  return client.post<RetrievalResponse>('/retrieval', params)
+export async function runRetrieval(
+  strategy: RetrievalStrategy,
+  params: RetrievalRequest,
+  options?: RequestOptions,
+): Promise<RetrievalResponse> {
+  const suffix = strategy === 'hybrid' ? '' : `/${strategy}`
+  const response = await client.post<unknown>(`/retrieval${suffix}`, params, options)
+  const normalized = normalizeRetrievalResponse(response)
+  if (!normalized) {
+    throw new ApiError('检索响应格式无效', undefined, undefined, 'invalid-response')
+  }
+  return normalized
 }
 
-// ---- 5.2 纯向量检索 ----
-
-/** 纯向量检索：仅 embedding 余弦相似度 */
-export function denseRetrieval(params: RetrievalRequest) {
-  return client.post<RetrievalResponse>('/retrieval/dense', params)
+export function hybridRetrieval(params: RetrievalRequest, options?: RequestOptions) {
+  return runRetrieval('hybrid', params, options)
 }
 
-// ---- 5.3 纯关键词检索 ----
+export function denseRetrieval(params: RetrievalRequest, options?: RequestOptions) {
+  return runRetrieval('dense', params, options)
+}
 
-/** 纯关键词检索：仅 BM25 词频匹配（适用于 GJB 编号、零件号、故障代码等精确查询） */
-export function sparseRetrieval(params: RetrievalRequest) {
-  return client.post<RetrievalResponse>('/retrieval/sparse', params)
+export function sparseRetrieval(params: RetrievalRequest, options?: RequestOptions) {
+  return runRetrieval('sparse', params, options)
 }
