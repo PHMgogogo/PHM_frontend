@@ -99,4 +99,3 @@
 - 小于 768px 的全局侧栏仍按 requirements 的 Out of Scope 处理；本功能只保证对话组件自身不新增裁切。
 - 受控 `ReadableStream` 验证浏览器端跨 frame 顺序；真实网络抖动仍由既有 SSE parser、终态所有权和 E2E 契约共同覆盖。
 - 截图按要求人工复核，不引入脆弱的像素级 snapshot 门禁。
-

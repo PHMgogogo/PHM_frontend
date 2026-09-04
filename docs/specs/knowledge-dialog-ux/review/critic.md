@@ -103,4 +103,3 @@
 - 后端 RAG 热路径、`shared_state`、judge、检索与持久化均不涉及。
 - v1 保持共享 DOMPurify renderer、feedback capability fail-closed、raw reasoning 不下发，未发现新增 XSS sink 或权限边界。
 - `confidence: null/undefined` 继续显示“未评估”，没有将不可用误报为 0。
-
