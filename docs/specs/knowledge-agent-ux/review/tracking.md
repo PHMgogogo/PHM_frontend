@@ -1,6 +1,6 @@
 # Review Tracking — Knowledge Agent UX
 
-- **Status**: Implementation verified; merge gate passed
+- **Status**: Implementation and integration re-audit verified; two-round merge gate passed
 - **Design baseline**: `design.md` v2
 - **Review result**: 3 Critical / 6 High / 2 Medium，全部由 defender `accepted`
 
@@ -19,6 +19,23 @@
 | F-KA-009 | High | REQ-KA-011/044 | accepted | off-page detail reconcile + bounded backoff + generation-safe dispose | `bb93fe2` | `knowledge-polling.test.ts` | 3/6/12/24/30 + 5 次后 tracking_error | closed |
 | F-KA-010 | Medium | REQ-KA-023/027 | accepted | Fast no intent stage；done final authority | `bb93fe2`, `c8535ff` | Fast degraded + final-route Playwright | no fake stage；general route hides sources | closed |
 | F-KA-011 | Medium | REQ-KA-003/040/045 | accepted | byte chunk unit responsibility；production no-buffer contract/smoke | `3adbf87`, `bb93fe2` | byte/CRLF/EOF unit + cold-cache Playwright | README proxy/smoke contract | closed |
+
+## Integration Re-audit Closure (2026-09-04)
+
+| Finding ID | Severity | Symptom | Fix commit | Verification / permanent regression | Status |
+|---|---|---|---|---|---|
+| F-KA-RA-01 | High | 2xx malformed envelope could be consumed as success | `8a5b80e` | `knowledge-api-contract.test.ts` + malformed-envelope Playwright | closed |
+| F-KA-RA-02 | Critical | empty/invalid `done` or early EOF could present an unverified completion | `8a5b80e` | `knowledge-normalize.test.ts` + EOF/interrupted Playwright | closed |
+| F-KA-RA-03 | Critical | failed or incomplete history could look like a complete empty session | `8a5b80e` | history retry/incomplete Playwright | closed |
+| F-KA-RA-04 | High | late list/poll responses could overwrite the user's requested page | `8a5b80e` | `knowledge-store-recovery.test.ts` + pagination ownership Playwright | closed |
+| F-KA-RA-05 | High | duplicate/registered-ingestion failure/delete refresh states were conflated | `8a5b80e` | upload continuation, ingestion failure and guarded-delete Playwright | closed |
+| F-KA-RA-06 | High | stale retrieval could win, and handoff could use an unexecuted draft query | `8a5b80e` | retrieval ownership unit + verified-query handoff Playwright | closed |
+| F-KA-RA-07 | High | repeated feedback actions could duplicate requests or accept invalid IDs | `8a5b80e` | strict feedback contract + single-flight Playwright | closed |
+| F-KA-RA-08 | High | blocked localStorage could break a completed answer or imply false registration | `8a5b80e` | `local-sessions.test.ts` + blocked-storage Playwright | closed |
+| F-KA-RA-09 | Medium | document/retrieval/source/history/correction overlays could overflow at 768 px | `8a5b80e` | responsive geometry Playwright + live screenshots | closed |
+
+The live uvicorn → Vite proxy → Chromium audit and the permanent frontend/backend matrices each passed twice
+without executable changes between their two final runs. Commands and log paths are archived in `tasks.md` §11.
 
 ## Merge Gate
 

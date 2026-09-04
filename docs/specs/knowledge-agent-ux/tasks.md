@@ -124,3 +124,32 @@
 - `npm run test:e2e` → exit 0（2026-09-03），readonly 与 mutation-mock 两个隔离项目共 7 tests passed。日志：`/tmp/phm-knowledge-e2e-final.log`。
 - `git diff --numstat origin/dev -- src/api/opencode.ts src/stores/chat.ts src/components/ChatPanel.vue src/components/MessageFeed.vue` → empty，OpenCode 协议与关键 UI 未修改。
 - `npm audit --omit=dev` 报告 3 moderate / 1 high，均来自基线已有的 LogicFlow/uuid 与 Vite/PostCSS/nanoid 依赖链；未运行破坏性或跨范围的自动依赖升级。审计快照：`/tmp/phm-npm-audit.json`。
+
+## 11. Integration Re-audit (2026-09-04)
+
+- [x] **T-901** 以独立 critic/defender 复核 PHM 前端与 RAG OpenAPI/SSE/错误契约，新增发现进入 tracking 矩阵。[REQ-KA-039—REQ-KA-045]
+- [x] **T-902** 先固化失败测试：严格 2xx envelope、空 done、历史失败重试、分页 ownership、上传恢复、删除刷新、反馈 single-flight 与检索 ownership。[REQ-KA-011—REQ-KA-018, REQ-KA-030—REQ-KA-032, REQ-KA-040, REQ-KA-042]
+- [x] **T-903** 修复文档分页/删除/上传恢复状态机，并保持 mutation 缺省关闭。[REQ-KA-011—REQ-KA-014, REQ-KA-041]
+- [x] **T-904** 修复检索 latest-request ownership、响应 query 一致性和严格 envelope。[REQ-KA-015—REQ-KA-018, REQ-KA-042]
+- [x] **T-905** 修复历史错误可见性、反馈 single-flight/严格响应和非法 done 终态。[REQ-KA-024, REQ-KA-030—REQ-KA-032, REQ-KA-042—REQ-KA-043]
+- [x] **T-906** 用真实 PHM Vite `/document` 代理连接 RAG hermetic uvicorn，验证 multipart、hybrid retrieval、Thinking/Fast SSE、history 与 feedback，并保存截图；一次性脚本验收后删除。[REQ-KA-002—REQ-KA-003, REQ-KA-040, REQ-KA-045]
+- [x] **T-907** 补 768 px 文档库/检索/抽屉几何断言和截图复核。[REQ-KA-036, REQ-KA-040]
+- [x] **T-908** 从最终代码状态连续运行两轮 typecheck、unit、build、完整 Playwright 及 RAG 契约测试，均无新增失败后关闭本轮复核。[REQ-KA-038—REQ-KA-040]
+
+### Integration Re-audit Evidence
+
+- Red → green：严格 contract v2 与 UI 状态契约分别由
+  `/tmp/phm-contract-v2-unit-red.log`、`/tmp/phm-contract-v2-playwright-red.log`、
+  `/tmp/phm-integration-reaudit-unit-red.log` 和 `/tmp/phm-history-retry-red.log` 复现；实现后对应
+  `*-green*.log` 全部通过。
+- 复核期追加四项回归：poll 刷新取消用户翻页、检索交接误用未执行草稿、localStorage 写失败抛出、
+  设备存储不可用时保存文案失真。红证据分别为 `/tmp/phm-poll-page-ownership-red.log`、
+  `/tmp/phm-verified-query-handoff-red.log`、`/tmp/phm-local-storage-red.log`、
+  `/tmp/phm-local-storage-playwright-red.log`；对应 green 日志均已固化。
+- 真实联调：隔离 RAG uvicorn → PHM Vite `/document` → Chromium 连续两轮通过，均为 1/1；
+  日志 `/tmp/phm-live-final-round1.log`、`/tmp/phm-live-final-round2.log`。覆盖 multipart、三种检索、
+  Thinking/Fast SSE、sources、history、feedback 与 768 px 抽屉；一次性 spec 已删除。
+- 最终固定实现 `8a5b80e` 连续两轮通过：`vue-tsc` exit 0；12 files / 51 unit tests；生产 build
+  8966 modules；完整 Playwright 27/27。日志为 `/tmp/phm-final-{typecheck,unit,build,playwright}-round{1,2}.log`。
+- 同一后端可执行状态连续两轮为 1210 passed / 6 skipped，见
+  `/tmp/fch-backend-full-final-round1.log`、`/tmp/fch-backend-full-final-round2.log`；无产品代码改动发生在两轮之间。
