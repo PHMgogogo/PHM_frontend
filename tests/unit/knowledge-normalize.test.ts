@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   KnowledgePayloadLimitError,
+  normalizeChatHistory,
   normalizeDocumentList,
   normalizeKnowledgeStreamEvent,
   normalizePublicMetadata,
@@ -20,11 +21,13 @@ describe('knowledge runtime normalization', () => {
         },
       ],
     })
-    expect(result.documents[0]?.status).toBe('unknown')
+    expect(result?.documents[0]?.status).toBe('unknown')
   })
 
   it('drops raw reasoning and all unknown metadata at the SSE boundary', () => {
     const normalized = normalizePublicMetadata({
+      contract_version: 2,
+      history_persisted: false,
       route: 'rag',
       message_id: 'm-1',
       trace_id: 't-1',
@@ -35,12 +38,50 @@ describe('knowledge runtime normalization', () => {
     })
 
     expect(normalized).toEqual({
+      contract_version: 2,
+      history_persisted: false,
       route: 'rag',
       message_id: 'm-1',
       trace_id: 't-1',
       confidence: 0.8,
     })
     expect(JSON.stringify(normalized)).not.toContain('SECRET')
+  })
+
+  it('keeps persistence and history completeness as explicit tri-state values', () => {
+    expect(normalizePublicMetadata({ history_persisted: null })).toEqual({
+      history_persisted: null,
+    })
+    expect(normalizePublicMetadata({ history_persisted: 'true' })).toEqual({})
+
+    expect(
+      normalizeChatHistory({
+        contract_version: 2,
+        session_id: 'session-v2',
+        messages: [],
+        total_messages: 0,
+        complete: false,
+        degraded: true,
+        backend: 'fallback',
+      }),
+    ).toMatchObject({
+      contract_version: 2,
+      complete: false,
+      degraded: true,
+      backend: 'fallback',
+    })
+    expect(
+      normalizeChatHistory({
+        session_id: 'legacy-session',
+        messages: [],
+        total_messages: 0,
+      }),
+    ).toMatchObject({
+      contract_version: null,
+      complete: null,
+      degraded: null,
+      backend: 'unknown',
+    })
   })
 
   it('normalizes done sources and applies source count/content bounds', () => {
@@ -75,11 +116,38 @@ describe('knowledge runtime normalization', () => {
         },
       ],
     })
-    expect(response.results[0]).toMatchObject({
+    expect(response?.results[0]).toMatchObject({
       score: 0,
       retrieval_score: null,
       rerank_score: null,
     })
+  })
+
+  it('rejects malformed top-level envelopes instead of inventing empty successes', () => {
+    expect(normalizeDocumentList('<html>proxy error</html>')).toBeNull()
+    expect(normalizeDocumentList({ documents: [] })).toBeNull()
+    expect(normalizeRetrievalResponse({})).toBeNull()
+    expect(normalizeChatHistory({ session_id: 'session-1' })).toBeNull()
+  })
+
+  it('rejects an empty or structurally incomplete done event', () => {
+    expect(normalizeKnowledgeStreamEvent({ type: 'done' })).toBeNull()
+    expect(
+      normalizeKnowledgeStreamEvent({
+        type: 'done',
+        full_response: '   ',
+        sources: [],
+        metadata: {},
+      }),
+    ).toBeNull()
+    expect(
+      normalizeKnowledgeStreamEvent({
+        type: 'done',
+        full_response: 'answer',
+        sources: 'not-an-array',
+        metadata: {},
+      }),
+    ).toBeNull()
   })
 
   it.each(['token', 'done'])('rejects an oversized %s answer without echoing its body', (type) => {

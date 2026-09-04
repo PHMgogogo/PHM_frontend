@@ -37,6 +37,24 @@ async function handleDelete(document: DocumentItem): Promise<void> {
   }
 }
 
+async function handleDeleteAndRetry(item: UploadQueueItem): Promise<void> {
+  if (!item.documentId || item.state !== 'failed') return
+  try {
+    await ElMessageBox.confirm(
+      `确定先向服务请求删除「${item.file.name}」的失败登记，再重新上传本地文件？删除响应不代表所有索引已完成清理。`,
+      '确认删除后重传',
+      {
+        confirmButtonText: '删除后重传',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+    await store.deleteAndRetryUpload(item)
+  } catch {
+    // 用户取消确认。
+  }
+}
+
 function status(document: DocumentItem) {
   return documentStatusPresentation(document.status)
 }
@@ -132,7 +150,9 @@ function queueTone(item: UploadQueueItem): 'success' | 'warning' | 'danger' | 'i
       >
         <el-icon class="upload-icon"><UploadFilled /></el-icon>
         <div class="upload-title">拖拽或点击选择资料</div>
-        <div class="upload-hint">MD / TXT / PDF / DOCX / PPTX / HTML，单文件不超过 50 MiB</div>
+        <div class="upload-hint">
+          客户端可提交 MD / TXT / PDF / DOCX / PPTX / HTML，浏览器上限 50 MiB；服务端可能采用更严格的格式或大小限制。
+        </div>
       </el-upload>
     </div>
 
@@ -153,12 +173,28 @@ function queueTone(item: UploadQueueItem): 'success' | 'warning' | 'danger' | 'i
           <span class="queue-message">{{ item.message }}</span>
           <div class="queue-actions">
             <el-button
-              v-if="['failed', 'tracking_error'].includes(item.state)"
+              v-if="item.state === 'failed' && !item.documentId"
               text
               type="primary"
               @click="store.retryUpload(item)"
             >
               重试上传
+            </el-button>
+            <el-button
+              v-if="item.state === 'failed' && item.documentId && store.capabilities.deleteDocument"
+              text
+              type="primary"
+              @click="handleDeleteAndRetry(item)"
+            >
+              删除后重传
+            </el-button>
+            <el-button
+              v-if="item.state === 'tracking_error' && item.documentId"
+              text
+              type="primary"
+              @click="store.recheckUpload(item)"
+            >
+              重新检查
             </el-button>
             <el-button
               v-if="!['uploading', 'processing'].includes(item.state)"

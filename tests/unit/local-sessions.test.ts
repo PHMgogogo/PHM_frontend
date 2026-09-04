@@ -37,4 +37,20 @@ describe('device-local RAG session registry', () => {
     localStorage.setItem(LOCAL_SESSION_STORAGE_KEY, '{bad-json')
     expect(readLocalSessions(localStorage)).toEqual([])
   })
+
+  it('does not break the chat flow or claim a change when storage writes are blocked', () => {
+    const original = [{ id: 'session-existing', seenAt: 123 }]
+    const blockedStorage = {
+      getItem: () => JSON.stringify(original),
+      setItem: () => {
+        throw new DOMException('blocked', 'QuotaExceededError')
+      },
+      removeItem: () => {
+        throw new DOMException('blocked', 'SecurityError')
+      },
+    }
+
+    expect(rememberLocalSession(blockedStorage, 'session-new', 456)).toEqual(original)
+    expect(forgetLocalSession(blockedStorage, 'session-existing')).toEqual(original)
+  })
 })

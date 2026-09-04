@@ -1,6 +1,6 @@
 // 文档管理与低层检索 API（/document -> RAG /api）。
 
-import { createClient, type RequestOptions } from './client'
+import { ApiError, createClient, type RequestOptions } from './client'
 import { API_PREFIX } from '@/config/endpoints'
 import {
   normalizeDocumentDetail,
@@ -91,7 +91,11 @@ export async function getDocumentList(
   if (params?.skip !== undefined) query.skip = String(params.skip)
   if (params?.limit !== undefined) query.limit = String(params.limit)
   const response = await client.get<unknown>('/documents', query, options)
-  return normalizeDocumentList(response)
+  const normalized = normalizeDocumentList(response)
+  if (!normalized) {
+    throw new ApiError('文档列表响应格式无效', undefined, undefined, 'invalid-response')
+  }
+  return normalized
 }
 
 export async function getDocumentDetail(
@@ -108,12 +112,28 @@ export async function getDocumentDetail(
   return normalized
 }
 
-export function deleteDocument(docId: string, options?: RequestOptions) {
-  return client.del<DocumentDeleteResponse>(`/documents/${encodeURIComponent(docId)}`, options)
+export async function deleteDocument(
+  docId: string,
+  options?: RequestOptions,
+): Promise<DocumentDeleteResponse> {
+  const response = await client.del<unknown>(
+    `/documents/${encodeURIComponent(docId)}`,
+    options,
+  )
+  const record = recordOf(response)
+  if (!record || record.status !== 'success' || typeof record.message !== 'string') {
+    throw new ApiError('删除响应格式无效', undefined, undefined, 'invalid-response')
+  }
+  return { status: record.status, message: record.message.slice(0, 2_000) }
 }
 
-export function reindexDocuments(options?: RequestOptions) {
-  return client.post<ReindexResponse>('/documents/reindex', undefined, options)
+export async function reindexDocuments(options?: RequestOptions): Promise<ReindexResponse> {
+  const response = await client.post<unknown>('/documents/reindex', undefined, options)
+  const record = recordOf(response)
+  if (!record || record.status !== 'success' || typeof record.message !== 'string') {
+    throw new ApiError('重建索引响应格式无效', undefined, undefined, 'invalid-response')
+  }
+  return { status: record.status, message: record.message.slice(0, 2_000) }
 }
 
 export async function runRetrieval(
@@ -123,7 +143,11 @@ export async function runRetrieval(
 ): Promise<RetrievalResponse> {
   const suffix = strategy === 'hybrid' ? '' : `/${strategy}`
   const response = await client.post<unknown>(`/retrieval${suffix}`, params, options)
-  return normalizeRetrievalResponse(response)
+  const normalized = normalizeRetrievalResponse(response)
+  if (!normalized) {
+    throw new ApiError('检索响应格式无效', undefined, undefined, 'invalid-response')
+  }
+  return normalized
 }
 
 export function hybridRetrieval(params: RetrievalRequest, options?: RequestOptions) {

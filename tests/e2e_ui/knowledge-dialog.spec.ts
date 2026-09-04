@@ -70,10 +70,17 @@ async function boundingBox(locator: Locator) {
 }
 
 async function expectInside(child: Locator, parent: Locator): Promise<void> {
-  const childBox = await boundingBox(child)
-  const parentBox = await boundingBox(parent)
-  expect(childBox.x).toBeGreaterThanOrEqual(parentBox.x - 1)
-  expect(childBox.x + childBox.width).toBeLessThanOrEqual(parentBox.x + parentBox.width + 1)
+  await expect
+    .poll(async () => {
+      const childBox = await child.boundingBox()
+      const parentBox = await parent.boundingBox()
+      if (!childBox || !parentBox) return false
+      return (
+        childBox.x >= parentBox.x - 1 &&
+        childBox.x + childBox.width <= parentBox.x + parentBox.width + 1
+      )
+    })
+    .toBe(true)
 }
 
 async function installControlledStream(page: Page): Promise<void> {
@@ -437,6 +444,69 @@ test('keeps every dialog control inside the panel at 768px', async ({ page }) =>
   const userBodyBox = await boundingBox(user.locator('.message-body'))
   const userAvatarBox = await boundingBox(user.locator('.message-avatar'))
   expect(userAvatarBox.x).toBeGreaterThan(userBodyBox.x + userBodyBox.width)
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true)
+})
+
+test('@mutations keeps source, history, and correction overlays inside 768px', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'phm.knowledge.local-sessions.v1',
+      JSON.stringify([{ id: 'responsive-session', seenAt: Date.now() }]),
+    )
+  })
+  await page.route((url) => url.pathname === '/document/chat/stream', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: sse({
+        ...finalEvent('窄屏浮层回答'),
+        metadata: {
+          ...finalEvent('').metadata,
+          message_id: 'responsive-message',
+          trace_id: 'responsive-trace',
+        },
+      }),
+    })
+  })
+  await page.route(
+    (url) => url.pathname === '/document/chat/history/responsive-session',
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          session_id: 'responsive-session',
+          messages: [],
+          total_messages: 0,
+        }),
+      })
+    },
+  )
+  await prepareKnowledgeAgent(page)
+  await sendQuestion(page, '窄屏浮层')
+  const answer = page.locator('.agent-message.assistant[data-run-state="completed"]')
+
+  await answer.getByRole('button', { name: '查看 1 条依据' }).click()
+  let overlay = page.getByRole('dialog', { name: '回答依据' })
+  await expect(overlay).toBeVisible()
+  await expectInside(overlay, page.locator('body'))
+  await overlay.locator('.el-drawer__close-btn').click()
+
+  await page.getByRole('button', { name: '本设备会话' }).click()
+  overlay = page.getByRole('dialog', { name: '本设备会话' })
+  await expect(overlay).toBeVisible()
+  await expectInside(overlay, page.locator('body'))
+  await overlay.locator('.el-drawer__close-btn').click()
+
+  await answer.getByRole('button', { name: '纠正' }).click()
+  overlay = page.getByRole('dialog', { name: '提供纠正答案' })
+  await expect(overlay).toBeVisible()
+  await expectInside(overlay, page.locator('body'))
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

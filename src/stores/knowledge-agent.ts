@@ -82,7 +82,12 @@ function identifier(prefix: string): string {
 }
 
 function browserStorage(): Storage | null {
-  return typeof window === 'undefined' ? null : window.localStorage
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
 }
 
 function stageFromNode(name: string): AgentStageKey | null {
@@ -108,6 +113,7 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
   const localSessions = ref<LocalSessionReference[]>([])
   const historyLoading = ref(false)
   const historyError = ref('')
+  const historyWarning = ref('')
 
   const ownership = new RunOwnership()
   let activeRun: ActiveRun | null = null
@@ -221,7 +227,6 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
     switch (event.type) {
       case 'session': {
         sessionId.value = event.session_id
-        rememberSession(event.session_id)
         const updated = ownership.updateSession(token, event.session_id)
         if (updated && activeRun) activeRun.token = updated
         return updated ?? token
@@ -255,6 +260,13 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
         message.processingTimeMs = event.processing_time_ms ?? undefined
         message.metadata = event.metadata
         message.preliminaryRoute = undefined
+        if (
+          event.metadata.contract_version === 2 &&
+          event.metadata.history_persisted === true &&
+          token.sessionId
+        ) {
+          rememberSession(token.sessionId)
+        }
         submitTerminal(token, 'completed', '回答完成')
         break
       case 'error':
@@ -362,10 +374,11 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
     messages.value = []
     runState.value = 'idle'
     historyError.value = ''
+    historyWarning.value = ''
   }
 
-  async function openLocalSession(id: string): Promise<void> {
-    if (!localSessions.value.some((item) => item.id === id)) return
+  async function openLocalSession(id: string): Promise<boolean> {
+    if (!localSessions.value.some((item) => item.id === id)) return false
     cancelActive()
     historyGeneration += 1
     const owner = historyGeneration
@@ -373,9 +386,10 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
     historyController = new AbortController()
     historyLoading.value = true
     historyError.value = ''
+    historyWarning.value = ''
     try {
       const history = await getChatHistory(id, historyController.signal)
-      if (owner !== historyGeneration) return
+      if (owner !== historyGeneration) return false
       sessionId.value = id
       messages.value = history.messages.map((message) => ({
         id: identifier('history'),
@@ -387,11 +401,18 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
       }))
       runState.value = 'idle'
       rememberSession(id)
+      if (history.contract_version !== 2 || history.complete === null) {
+        historyWarning.value = '服务端未声明历史完整性，当前记录可能不完整'
+      } else if (!history.complete || history.degraded) {
+        historyWarning.value = '当前仅恢复了部分会话历史，请稍后重试以获取完整记录'
+      }
+      return true
     } catch (error) {
-      if (owner !== historyGeneration) return
+      if (owner !== historyGeneration) return false
       if (!(error instanceof ApiError && error.kind === 'cancelled')) {
         historyError.value = error instanceof Error ? error.message : '加载会话历史失败'
       }
+      return false
     } finally {
       if (owner === historyGeneration) historyLoading.value = false
     }
@@ -418,6 +439,7 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
       !sessionId.value ||
       !metadata?.message_id ||
       !metadata.trace_id ||
+      message.feedbackState === 'submitting' ||
       message.feedbackState === 'submitted'
     ) {
       return false
@@ -457,6 +479,7 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
     historyController?.abort()
     historyController = null
     historyLoading.value = false
+    historyWarning.value = ''
   }
 
   return {
@@ -468,6 +491,7 @@ export const useKnowledgeAgentStore = defineStore('knowledge-agent', () => {
     localSessions,
     historyLoading,
     historyError,
+    historyWarning,
     running,
     send,
     retryMessage,

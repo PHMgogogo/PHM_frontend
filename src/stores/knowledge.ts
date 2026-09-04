@@ -30,6 +30,14 @@ export interface UploadQueueItem {
   message?: string
 }
 
+interface ActiveListRequest {
+  id: number
+  targetPage: number
+  controller: AbortController
+  scheduleAfter: boolean
+  promise: Promise<boolean>
+}
+
 const SUPPORTED_EXTENSIONS = new Set(['md', 'txt', 'pdf', 'docx', 'pptx', 'html', 'htm'])
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const POLL_DELAYS = [3_000, 6_000, 12_000, 24_000, 30_000] as const
@@ -66,7 +74,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   let disposed = true
   let lifecycleController = new AbortController()
   let pollTimer: ReturnType<typeof setTimeout> | null = null
-  let listPromise: Promise<boolean> | null = null
+  let activeListRequest: ActiveListRequest | null = null
+  let listRequestId = 0
   let pollInFlight = false
   let failureIndex = 0
   const detailFailures = new Map<string, number>()
@@ -102,37 +111,74 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }, delay)
   }
 
-  async function fetchDocumentsInternal(scheduleAfter = true): Promise<boolean> {
-    if (listPromise) return listPromise
+  function fetchDocumentsInternal(
+    scheduleAfter = true,
+    requestedPage = page.value,
+  ): Promise<boolean> {
+    const targetPage = Math.max(1, Math.floor(requestedPage))
+    if (activeListRequest?.targetPage === targetPage) {
+      activeListRequest.scheduleAfter ||= scheduleAfter
+      return activeListRequest.promise
+    }
+
+    activeListRequest?.controller.abort()
     const owner = generation
-    listPromise = (async () => {
-      loading.value = true
+    const requestId = ++listRequestId
+    const controller = new AbortController()
+    loading.value = true
+    const promise = (async () => {
       try {
         const response = await getDocumentList(
-          { skip: (page.value - 1) * pageSize.value, limit: pageSize.value },
-          { signal: lifecycleController.signal },
+          { skip: (targetPage - 1) * pageSize.value, limit: pageSize.value },
+          { signal: controller.signal },
         )
-        if (owner !== generation || disposed) return false
+        if (
+          owner !== generation ||
+          disposed ||
+          activeListRequest?.id !== requestId
+        ) {
+          return false
+        }
+        const lastPage = Math.max(1, Math.ceil(response.total / pageSize.value))
+        if (targetPage > lastPage) {
+          serverTotal.value = response.total
+          return fetchDocumentsInternal(scheduleAfter, lastPage)
+        }
         documents.value = response.documents
         serverTotal.value = response.total
+        page.value = targetPage
         listError.value = ''
         stale.value = false
         return true
       } catch (error) {
-        if (owner !== generation || disposed) return false
+        if (
+          owner !== generation ||
+          disposed ||
+          activeListRequest?.id !== requestId
+        ) {
+          return false
+        }
         if (!(error instanceof ApiError && error.kind === 'cancelled')) {
           listError.value = `知识库服务不可达：${errorMessage(error)}`
           stale.value = documents.value.length > 0
         }
         return false
-      } finally {
-        if (owner === generation) loading.value = false
       }
     })().finally(() => {
-      listPromise = null
-      if (scheduleAfter && owner === generation) schedulePoll()
+      if (owner !== generation || activeListRequest?.id !== requestId) return
+      const shouldSchedule = activeListRequest.scheduleAfter
+      activeListRequest = null
+      loading.value = false
+      if (shouldSchedule && !disposed) schedulePoll()
     })
-    return listPromise
+    activeListRequest = {
+      id: requestId,
+      targetPage,
+      controller,
+      scheduleAfter,
+      promise,
+    }
+    return promise
   }
 
   async function reconcileProcessingQueue(owner: number): Promise<boolean> {
@@ -152,7 +198,11 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         if (detail.status === 'indexed' || detail.status === 'failed') {
           item.state = detail.status
           item.message =
-            detail.status === 'indexed' ? `已索引 ${detail.chunks} 个分块` : '后台处理失败'
+            detail.status === 'indexed'
+              ? `已索引 ${detail.chunks} 个分块`
+              : KNOWLEDGE_CAPABILITIES.deleteDocument
+                ? '后台处理失败，请确认删除登记后重传'
+                : '后台处理失败，请联系运维处理'
         } else if (detail.status === 'unknown') {
           item.state = 'tracking_error'
           item.message = '服务返回未知状态，请手动刷新'
@@ -185,7 +235,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     pollInFlight = true
     pollTimer = null
     try {
-      const listSucceeded = await fetchDocumentsInternal(false)
+      const targetPage = activeListRequest?.targetPage ?? page.value
+      const listSucceeded = await fetchDocumentsInternal(false, targetPage)
       const detailSucceeded = await reconcileProcessingQueue(owner)
       if (owner !== generation || disposed) return
       if (listSucceeded && detailSucceeded) failureIndex = 0
@@ -254,11 +305,48 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   function retryUpload(item: UploadQueueItem): void {
     if (!KNOWLEDGE_CAPABILITIES.upload || disposed) return
-    if (item.documentId) detailFailures.delete(item.documentId)
-    item.documentId = undefined
+    if (item.state !== 'failed' || item.documentId) return
     item.message = undefined
     item.state = 'queued'
     void processUploadQueue(generation)
+  }
+
+  async function recheckUpload(item: UploadQueueItem): Promise<boolean> {
+    if (disposed || item.state !== 'tracking_error' || !item.documentId) return false
+    detailFailures.delete(item.documentId)
+    item.state = 'processing'
+    item.message = '正在重新检查服务端状态'
+    await pollCycle(generation)
+    return true
+  }
+
+  async function deleteAndRetryUpload(item: UploadQueueItem): Promise<boolean> {
+    if (
+      disposed ||
+      !KNOWLEDGE_CAPABILITIES.upload ||
+      !KNOWLEDGE_CAPABILITIES.deleteDocument ||
+      item.state !== 'failed' ||
+      !item.documentId
+    ) {
+      return false
+    }
+    const owner = generation
+    const documentId = item.documentId
+    try {
+      await deleteDocument(documentId, { signal: lifecycleController.signal })
+      if (owner !== generation || disposed) return false
+      detailFailures.delete(documentId)
+      item.documentId = undefined
+      item.message = '原登记已请求删除，准备重新上传'
+      item.state = 'queued'
+      void processUploadQueue(owner)
+      return true
+    } catch (error) {
+      if (!(error instanceof ApiError && error.kind === 'cancelled')) {
+        ElMessage.error(`删除后重传失败：${errorMessage(error)}`)
+      }
+      return false
+    }
   }
 
   function dismissUpload(localIdentifier: string): void {
@@ -272,8 +360,12 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     if (!canDeleteDocument(document.status, KNOWLEDGE_CAPABILITIES.deleteDocument)) return false
     try {
       await deleteDocument(document.id, { signal: lifecycleController.signal })
-      await fetchDocumentsInternal(false)
-      ElMessage.success('服务已接受删除请求，登记列表已刷新')
+      const refreshed = await fetchDocumentsInternal(false)
+      if (refreshed) {
+        ElMessage.success('服务已接受删除请求，登记列表已刷新')
+      } else {
+        ElMessage.warning('服务已接受删除请求，但列表刷新失败；当前显示的是旧数据')
+      }
       return true
     } catch (error) {
       if (!(error instanceof ApiError && error.kind === 'cancelled')) {
@@ -286,8 +378,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   }
 
   async function setPage(nextPage: number): Promise<void> {
-    page.value = Math.max(1, nextPage)
-    await fetchDocuments()
+    await fetchDocumentsInternal(true, nextPage)
   }
 
   async function init(): Promise<void> {
@@ -306,7 +397,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     generation += 1
     clearPollTimer()
     lifecycleController.abort()
-    listPromise = null
+    activeListRequest?.controller.abort()
+    activeListRequest = null
+    listRequestId += 1
+    loading.value = false
     pollInFlight = false
     uploadRunning.value = false
     detailFailures.clear()
@@ -330,6 +424,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     fetchDocuments,
     uploadFiles,
     retryUpload,
+    recheckUpload,
+    deleteAndRetryUpload,
     dismissUpload,
     remove,
     setPage,

@@ -155,7 +155,15 @@ export async function getChatHistory(
 }
 
 export function submitFeedback(request: FeedbackRequest, signal?: AbortSignal) {
-  return client.post<{ status: string; id: string }>('/feedback', request, { signal })
+  return client.post<unknown>('/feedback', request, { signal }).then((response) => {
+    const record = response && typeof response === 'object' && !Array.isArray(response)
+      ? (response as Record<string, unknown>)
+      : null
+    if (!record || record.status !== 'ok' || typeof record.id !== 'string' || !record.id.trim()) {
+      throw new ApiError('反馈响应格式无效', undefined, undefined, 'invalid-response')
+    }
+    return { status: 'ok' as const, id: record.id.slice(0, 256) }
+  })
 }
 
 export function deleteRemoteSession(sessionId: string, signal?: AbortSignal) {

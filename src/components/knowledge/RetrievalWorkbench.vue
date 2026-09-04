@@ -18,6 +18,7 @@ const error = ref('')
 const stale = ref(false)
 const result = ref<RetrievalResponse | null>(null)
 let controller: AbortController | null = null
+let requestId = 0
 
 const strategyDescription = computed(() => {
   const descriptions: Record<RetrievalStrategy, string> = {
@@ -34,32 +35,47 @@ async function search(): Promise<void> {
     error.value = '请输入要验证的检索问题'
     return
   }
+  const owner = ++requestId
   controller?.abort()
-  controller = new AbortController()
+  const requestController = new AbortController()
+  controller = requestController
   loading.value = true
   error.value = ''
   try {
-    result.value = await runRetrieval(
+    const response = await runRetrieval(
       strategy.value,
       { query: normalizedQuery, top_k: topK.value },
-      { signal: controller.signal },
+      { signal: requestController.signal },
     )
+    if (owner !== requestId) return
+    if (response.query !== normalizedQuery) {
+      throw new ApiError('检索响应与当前查询不一致', undefined, undefined, 'invalid-response')
+    }
+    result.value = response
     stale.value = false
   } catch (requestError) {
+    if (owner !== requestId) return
     if (requestError instanceof ApiError && requestError.kind === 'cancelled') return
     error.value = requestError instanceof Error ? requestError.message : '检索服务暂时不可用'
     stale.value = result.value !== null
   } finally {
-    loading.value = false
+    if (owner === requestId) {
+      loading.value = false
+      if (controller === requestController) controller = null
+    }
   }
 }
 
 function handToAgent(): void {
-  const normalizedQuery = query.value.trim()
-  if (normalizedQuery) emit('analyze', normalizedQuery)
+  const verifiedQuery = result.value?.query.trim()
+  if (verifiedQuery) emit('analyze', verifiedQuery)
 }
 
-onUnmounted(() => controller?.abort())
+onUnmounted(() => {
+  requestId += 1
+  controller?.abort()
+  controller = null
+})
 </script>
 
 <template>

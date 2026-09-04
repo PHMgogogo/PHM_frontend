@@ -254,19 +254,20 @@ type KnowledgeStreamEvent =
 
 - 新对话：清空当前消息及 session ID；首条请求不传 ID，以 SSE `session` 为准。
 - 会话列表：绝不调用无 owner 范围的 `GET /document/sessions`；本地 `localStorage` 只保存 SSE `session` 事件得到的最多 20 个 `{id, seenAt}`，不保存标题、问题、回答、source、metadata、trace/message ID。
+- `localStorage` 读写均是非关键 best-effort 边界；访问或写入失败不得从 SSE `done` 冒泡、不得把服务端已完成回答改成 error，也不得在内存列表中虚报登记。服务明确保存但设备登记失败时显示“服务已保存 · 本设备未登记”。
 - 历史：只允许对本地 registry 内 ID 调用 `GET /document/chat/history/{id}?limit=50`。
 - 默认移除：仅忘记本地 ID，不调用远端 DELETE；抽屉明确命名“本设备会话”。
 - 远端删除：独立 capability，缺省关闭；只有已鉴权 owner 契约的部署才允许调用。
 - 历史接口没有旧 metadata/sources/message_id/trace_id；加载后消息标记 `historical=true`，不提供引用和反馈按钮。
-- 某个本地历史请求失败只影响该会话，不阻塞发起新对话。
+- 某个本地历史请求失败只影响该会话，不阻塞发起新对话；抽屉保持打开并展示错误，只有请求成功且 owner 仍为当前选择时才切换会话并关闭抽屉。
 
 ### 5.7 Feedback contract
 
-只有 feedback capability 开启，且同时具备 `sessionId`、`metadata.message_id`、`metadata.trace_id` 的新回答可反馈。请求体包含原回答；`CORRECTION` 还必须包含非空 `corrected_answer`。成功后消息进入 `submitted`，按钮禁用；失败保持可重试。因 correction 会写 RAG memory，feedback 与文档上传同样被视为 mutation。
+只有 feedback capability 开启，且同时具备 `sessionId`、`metadata.message_id`、`metadata.trace_id` 的新回答可反馈。请求体包含原回答；`CORRECTION` 还必须包含非空 `corrected_answer`。状态只能从 `idle|failed` 进入 `submitting`；提交期间所有反馈入口禁用，成功后进入 `submitted`，响应 envelope 无效或请求失败则进入 `failed` 并保留纠正文案。因 correction 会写 RAG memory，feedback 与文档上传同样被视为 mutation。
 
 ### 5.8 Runtime normalization and public metadata
 
-外部 JSON 先作为 `unknown` 进入纯 normalizer：documents、retrieval、history、SSE event、done sources/metadata 均不直接 type assertion。未知文档状态映射为 `unknown`，不映射 indexed；数组和字符串均有数量/长度上限。
+外部 JSON 先作为 `unknown` 进入纯 normalizer：documents、retrieval、history、SSE event、done sources/metadata 和 mutation response 均不直接 type assertion。顶层 envelope 必须严格具备后端 response model 的必填字段；HTML、`{}` 或字段类型错误的 2xx 作为 `ApiError(kind=invalid-response)`，保留当前可用状态而不是归一化为空成功。合法 envelope 内的单项可以有界跳过。未知文档状态映射为 `unknown`，不映射 indexed；数组和字符串均有数量/长度上限。`done` 必须包含非空 `full_response`，否则跳过该帧并在 EOF 进入 interrupted，保留已经接收的 token。
 
 `normalizePublicMetadata(raw)` 仅复制：`route`、`prompt_profile`、`force_rag`、`message_id`、`trace_id`、有限 `confidence/intent_confidence`、`confidence_level`、`refused`、`source_count`、归一化 `structured_answer/section_labels`。`reasoning`、`intent_reasoning` 和所有未知字段在 callback 内立即丢弃，raw frame/metadata 不缓存、不持久化、不打印。
 
@@ -294,7 +295,9 @@ Store state：
 - `uploadQueue`
 - 单一 `pollTimer` + `fetchInFlight`
 
-轮询规则：单一 coordinator 每轮先单飞刷新可见列表，再对 queue 中所有 processing document ID 串行调用 detail endpoint，不依赖当前页。成功周期约 3 秒；网络/列表失败且仍需跟踪时使用 3/6/12/24/30 秒有界退避。detail 变 indexed/failed 时推进 queue 并刷新列表；404/持续非法响应进入 `tracking_error`。dispose 先递增 generation，再 clear timer、abort in-flight；任何迟到 finally 都不得重新调度。
+列表请求捕获目标 page/request ID；相同目标单飞，不同目标先 abort 旧 controller 并使旧 request ID 失效。只有最新响应能原子提交 `documents/serverTotal/page/error/loading`。失败分页不改变当前页；响应 total 使目标页越界时自动请求有效末页。
+
+轮询规则：单一 coordinator 每轮先单飞刷新可见列表，再对 queue 中所有 processing document ID 串行调用 detail endpoint，不依赖当前页。若用户分页请求正在进行，轮询必须加入该 `targetPage` 请求，不能按旧的已提交页取消或覆盖用户意图。成功周期约 3 秒；网络/列表失败且仍需跟踪时使用 3/6/12/24/30 秒有界退避。detail 变 indexed/failed 时推进 queue 并刷新列表；404/持续非法响应进入 `tracking_error`。只有无 `documentId` 的传输失败项可以直接重传；已登记 failed 必须经确认删除后重传，tracking_error 只能重新查询。dispose 先递增 generation，再 clear timer、abort in-flight；任何迟到 finally 都不得重新调度。
 
 `canDeleteDocument(status, capability)` 只有在 delete capability 开启且 status 为 indexed/failed 时返回 true；processing/unknown 永远 false。
 
@@ -369,7 +372,8 @@ token 先累计到非响应式字符串；同一动画帧最多把一次合并�
 - 策略旁给简短适用场景；顶部固定声明“不调用 LLM”。
 - 结果卡片保留换行、正文折叠、来源/标题和各类分数。
 - 空、错误、loading 分离；错误不清空上一次查询输入。
-- “交给 Agent 分析”只复制 query 并切换 tab，不把结果写入 Agent sources。
+- “交给 Agent 分析”只复制最近一次成功响应的 `result.query` 并切换 tab，不把结果写入 Agent sources；输入框中尚未执行的草稿不得冒充已验证 query。
+- 每次检索捕获 request ID、query、strategy、top-k 快照；新请求先使旧 owner 失效，只有最新请求且响应 query 与请求一致时才可写 result/error/loading。
 
 ### 7.4 Knowledge Agent
 
@@ -388,6 +392,7 @@ token 先累计到非响应式字符串；同一动画帧最多把一次合并�
 | endpoint config missing | build/typecheck fail closed | — | 修复跟踪文件，不运行时猜地址 |
 | document list unavailable | 显示“知识库服务不可达” | 保留上次文档，标记为旧数据 | 手动刷新；有 processing 时延后重试 |
 | one upload fails | 仅该队列项失败 | 后续队列继续 | 用户重试该 File；若 backend 已登记 failed，先确认删除 |
+| upload tracking unavailable | 显示“跟踪异常”，不误导为重新上传 | 保留 document ID 与原文件 | 重新检查 detail/list；持续失败联系运维 |
 | duplicate 409 | 标记“已存在”，展示 detail | 不插入伪文档 | 无需自动重试 |
 | processing never completes | 持续显示处理中，不伪装成功 | detail 对账 + 有界退避 | 用户可刷新/联系运维；processing 不允许删除 |
 | retrieval empty | “未找到匹配证据” | 保留 query/strategy/top-k | 调整查询或交给 Agent |
@@ -404,6 +409,7 @@ token 先累计到非响应式字符串；同一动画帧最多把一次合并�
 | mutation capability off | 页面只读/反馈不可用说明 | 读取和问答不受影响 | 部署完成真实授权后显式开启 |
 | parser/resource limit | “响应超过安全限制”并终止 | 保留已安全接收的部分正文 | 缩小请求/服务修复后重试 |
 | feedback failure | 按钮恢复并提示 | 纠正文案保留 | 重试 |
+| mutation returns malformed 2xx | 按响应无效处理，不显示成功 | 保留卡片/反馈/纠正文案 | 服务修复后重试 |
 
 该矩阵遵守核心语义：不可用、未知和 `None` 永远不转成 0 或成功。
 
@@ -458,7 +464,8 @@ token 先累计到非响应式字符串；同一动画帧最多把一次合并�
 | API errors | 409 detail、FastAPI detail、timeout/network 友好文案 | REQ-KA-010/018 |
 | Markdown security | script/event/javascript URL 被移除；KaTeX/code 保留 | REQ-KA-033/034 |
 | ownership/privacy | stale run no-op、first-terminal-wins、metadata allowlist、只存本地 session ID | REQ-KA-029/030/042/043 |
-| polling/capability | off-page detail 对账、退避/单飞/dispose；所有 mutation 缺省 false | REQ-KA-011/041/044 |
+| polling/capability | off-page detail 对账、退避/单飞/dispose、轮询加入用户目标页；所有 mutation 缺省 false | REQ-KA-011/041/044 |
+| strict envelopes | documents/retrieval/history/done/feedback/delete 的畸形 2xx 不得成为空成功 | REQ-KA-012/013/018/030/032/042 |
 
 ### 11.2 Playwright (`tests/e2e_ui`)
 
@@ -466,7 +473,7 @@ token 先累计到非响应式字符串；同一动画帧最多把一次合并�
 
 1. 文档页真实呈现 processing/indexed/failed，processing 消失后停止轮询。
 2. 多文件上传中一个 409、一个成功，后续文件仍执行。
-3. 三策略请求路径与 top_k 正确，结果显示 raw/retrieval/rerank/time；空结果与错误可重试。
+3. 三策略请求路径与 top_k 正确，结果显示 raw/retrieval/rerank/time；空结果与错误可重试；交给 Agent 的是最近一次已验证响应 query，而非未执行草稿。
 4. Thinking 流返回完整多事件 SSE，阶段、token、done、动态结构化标签和来源正确；任意 byte/UTF-8/CRLF chunk 已由 unit parser 测试负责。
 5. `confidence=null` 显示未评估；`refused=true`/`route=degraded` 显示警示。
 6. EOF-before-done 保留部分回答并可重试；取消不显示服务错误。
@@ -475,6 +482,11 @@ token 先累计到非响应式字符串；同一动画帧最多把一次合并�
 9. 恶意模型 Markdown 与来源内容不执行 `window.__xss`。
 10. OpenCode 入口仍可进入，既有关键 DOM/交互不被知识中心改动破坏。
 11. 缺省只读、processing 永不可删、删除 200 不出现强一致文案；early rag + done general_chat 以 done 为准。
+12. 21 条以上数据分页、慢请求快速切页、失败回滚与末页删除夹紧；旧响应没有写权限。
+13. 传输失败可重传、已登记 failed 只能确认删除后重传、tracking_error 只能重新检查。
+14. 四类反馈、空纠正、失败后保留纠正、畸形 2xx 与 deferred 双击 single-flight。
+15. token 后畸形/空 done 保留部分正文并进入 interrupted；列表、检索、历史畸形 2xx 显示可重试错误。
+16. 768 px 下文档分页/队列、检索控件/结果、来源/历史抽屉与纠正对话框均不越界。
 
 ### 11.3 Quality commands
 

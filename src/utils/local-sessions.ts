@@ -41,18 +41,28 @@ export function rememberLocalSession(
   seenAt = Date.now(),
 ): LocalSessionReference[] {
   const safeId = id.trim().slice(0, 256)
-  if (!safeId) return readLocalSessions(storage)
+  const current = readLocalSessions(storage)
+  if (!safeId) return current
   const next = [
     { id: safeId, seenAt },
-    ...readLocalSessions(storage).filter((item) => item.id !== safeId),
+    ...current.filter((item) => item.id !== safeId),
   ].slice(0, LOCAL_SESSION_LIMIT)
-  storage.setItem(LOCAL_SESSION_STORAGE_KEY, JSON.stringify(next))
-  return next
+  try {
+    storage.setItem(LOCAL_SESSION_STORAGE_KEY, JSON.stringify(next))
+    return next
+  } catch {
+    return current
+  }
 }
 
 export function forgetLocalSession(storage: StorageLike, id: string): LocalSessionReference[] {
-  const next = readLocalSessions(storage).filter((item) => item.id !== id)
-  if (next.length === 0) storage.removeItem(LOCAL_SESSION_STORAGE_KEY)
-  else storage.setItem(LOCAL_SESSION_STORAGE_KEY, JSON.stringify(next))
-  return next
+  const current = readLocalSessions(storage)
+  const next = current.filter((item) => item.id !== id)
+  try {
+    if (next.length === 0) storage.removeItem(LOCAL_SESSION_STORAGE_KEY)
+    else storage.setItem(LOCAL_SESSION_STORAGE_KEY, JSON.stringify(next))
+    return next
+  } catch {
+    return current
+  }
 }

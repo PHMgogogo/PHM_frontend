@@ -8,6 +8,7 @@ defineProps<{
   currentSessionId: string | null
   loading: boolean
   error: string
+  warning: string
 }>()
 
 const emit = defineEmits<{
@@ -41,6 +42,14 @@ function shortId(id: string): string {
       新对话
     </el-button>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+    <el-alert
+      v-else-if="warning"
+      class="history-warning"
+      :title="warning"
+      type="warning"
+      :closable="false"
+      show-icon
+    />
     <el-empty v-if="sessions.length === 0" description="本设备还没有知识库会话" />
     <div v-else v-loading="loading" class="session-list">
       <article
@@ -68,6 +77,7 @@ function shortId(id: string): string {
 
 <style scoped>
 .new-session { width: 100%; margin: 14px 0; }
+.history-warning { margin-bottom: 12px; }
 .session-list { display: grid; gap: 9px; }
 .session-list article { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; border: 1px solid #e5eaf2; border-radius: 10px; padding: 6px 8px 6px 12px; }
 .session-list article.active { border-color: #7caaf8; background: #f3f7ff; }

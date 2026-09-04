@@ -35,6 +35,23 @@ const feedbackAvailable = computed(
     Boolean(metadata.value?.message_id && metadata.value.trace_id) &&
     props.message.feedbackState !== 'submitted',
 )
+const feedbackSubmitting = computed(() => props.message.feedbackState === 'submitting')
+const persistenceWarning = computed(() => {
+  if (props.message.historical || !isFinal.value) return ''
+  if (
+    metadata.value?.contract_version === 2 &&
+    metadata.value.history_persisted === true
+  ) {
+    return ''
+  }
+  if (
+    metadata.value?.contract_version === 2 &&
+    metadata.value.history_persisted === false
+  ) {
+    return '本次回答未保存到会话历史；刷新页面后可能无法恢复'
+  }
+  return '无法确认本次回答是否已保存；当前会话暂不登记到本设备列表'
+})
 
 const structuredSections = computed(() => {
   const answer = metadata.value?.structured_answer
@@ -155,6 +172,13 @@ function routeLabel(route?: string): string {
           :closable="false"
           show-icon
         />
+        <el-alert
+          v-if="persistenceWarning"
+          :title="persistenceWarning"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
         <div class="trust-row">
           <el-tag :type="metadata?.route === 'degraded' ? 'warning' : 'info'" effect="plain">
             {{ routeLabel(metadata?.route) }}
@@ -184,16 +208,37 @@ function routeLabel(route?: string): string {
           查看 {{ message.sources.length }} 条依据
         </el-button>
         <template v-if="feedbackAvailable">
-          <el-button text :icon="StarFilled" @click="emit('feedback', message, 'THUMBS_UP')">
+          <el-button
+            text
+            :icon="StarFilled"
+            :disabled="feedbackSubmitting"
+            @click="emit('feedback', message, 'THUMBS_UP')"
+          >
             有帮助
           </el-button>
-          <el-button text :icon="Warning" @click="emit('feedback', message, 'THUMBS_DOWN')">
+          <el-button
+            text
+            :icon="Warning"
+            :disabled="feedbackSubmitting"
+            @click="emit('feedback', message, 'THUMBS_DOWN')"
+          >
             无帮助
           </el-button>
-          <el-button text :icon="Flag" @click="emit('feedback', message, 'FLAG')">
+          <el-button
+            text
+            :icon="Flag"
+            :disabled="feedbackSubmitting"
+            @click="emit('feedback', message, 'FLAG')"
+          >
             标记
           </el-button>
-          <el-button text @click="emit('feedback', message, 'CORRECTION')">纠正</el-button>
+          <el-button
+            text
+            :disabled="feedbackSubmitting"
+            @click="emit('feedback', message, 'CORRECTION')"
+          >
+            纠正
+          </el-button>
         </template>
         <span v-else-if="message.feedbackState === 'submitted'" class="feedback-note">反馈已提交</span>
         <span v-else-if="!message.historical && !feedbackEnabled" class="feedback-note">

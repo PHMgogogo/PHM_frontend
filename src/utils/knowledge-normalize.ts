@@ -52,6 +52,8 @@ export interface StructuredAnswer {
 }
 
 export interface PublicKnowledgeMetadata {
+  contract_version?: number
+  history_persisted?: boolean | null
   route?: string
   prompt_profile?: string
   force_rag?: boolean
@@ -64,7 +66,7 @@ export interface PublicKnowledgeMetadata {
   source_count?: number
   structured_answer?: StructuredAnswer | null
   section_labels?: string[]
-  error?: string
+  degradation_code?: string
 }
 
 export type KnowledgeStreamEvent =
@@ -95,9 +97,13 @@ export interface HistoricalMessage {
 }
 
 export interface ChatHistoryResponse {
+  contract_version: number | null
   session_id: string
   messages: HistoricalMessage[]
   total_messages: number
+  complete: boolean | null
+  degraded: boolean | null
+  backend: string
 }
 
 export const KNOWLEDGE_NORMALIZATION_LIMITS = Object.freeze({
@@ -146,6 +152,10 @@ function nonNegativeInteger(value: unknown, fallback = 0): number {
   return normalized === null ? fallback : Math.max(0, Math.floor(normalized))
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
 function stringArray(value: unknown, limit: number, itemLimit: number): string[] {
   if (!Array.isArray(value)) return []
   return value
@@ -175,16 +185,19 @@ function normalizeDocument(value: unknown): DocumentItem | null {
   }
 }
 
-export function normalizeDocumentList(value: unknown): DocumentListResponse {
+export function normalizeDocumentList(value: unknown): DocumentListResponse | null {
   const record = recordOf(value)
-  const rawDocuments = Array.isArray(record?.documents) ? record.documents : []
+  if (!record || !Array.isArray(record.documents) || !isNonNegativeInteger(record.total)) {
+    return null
+  }
+  const rawDocuments = record.documents
   const documents = rawDocuments
     .slice(0, KNOWLEDGE_NORMALIZATION_LIMITS.documents)
     .map(normalizeDocument)
     .filter((item): item is DocumentItem => item !== null)
   return {
     documents,
-    total: nonNegativeInteger(record?.total, documents.length),
+    total: record.total,
   }
 }
 
@@ -208,18 +221,28 @@ function normalizeRetrievalItem(value: unknown): RetrievalResultItem | null {
   }
 }
 
-export function normalizeRetrievalResponse(value: unknown): RetrievalResponse {
+export function normalizeRetrievalResponse(value: unknown): RetrievalResponse | null {
   const record = recordOf(value)
-  const rawResults = Array.isArray(record?.results) ? record.results : []
+  if (
+    !record ||
+    typeof record.query !== 'string' ||
+    !Array.isArray(record.results) ||
+    !isNonNegativeInteger(record.total) ||
+    finite(record.retrieval_time_ms) === null ||
+    (record.retrieval_time_ms as number) < 0
+  ) {
+    return null
+  }
+  const rawResults = record.results
   const results = rawResults
     .slice(0, KNOWLEDGE_NORMALIZATION_LIMITS.retrievalResults)
     .map(normalizeRetrievalItem)
     .filter((item): item is RetrievalResultItem => item !== null)
   return {
-    query: text(record?.query, 10_000),
+    query: text(record.query, 10_000),
     results,
-    total: nonNegativeInteger(record?.total, results.length),
-    retrieval_time_ms: finite(record?.retrieval_time_ms) ?? 0,
+    total: record.total,
+    retrieval_time_ms: record.retrieval_time_ms as number,
   }
 }
 
@@ -245,6 +268,14 @@ export function normalizePublicMetadata(value: unknown): PublicKnowledgeMetadata
   const record = recordOf(value)
   if (!record) return {}
   const result: PublicKnowledgeMetadata = {}
+
+  if (isNonNegativeInteger(record.contract_version)) {
+    result.contract_version = record.contract_version
+  }
+  if (record.history_persisted === null) result.history_persisted = null
+  else if (typeof record.history_persisted === 'boolean') {
+    result.history_persisted = record.history_persisted
+  }
 
   const route = text(record.route, 128)
   if (route) result.route = route
@@ -278,8 +309,8 @@ export function normalizePublicMetadata(value: unknown): PublicKnowledgeMetadata
   }
   const labels = stringArray(record.section_labels, 6, 128)
   if (labels.length) result.section_labels = labels
-  const error = text(record.error, 2_000)
-  if (error) result.error = error
+  const degradationCode = text(record.degradation_code, 128)
+  if (degradationCode) result.degradation_code = degradationCode
   return result
 }
 
@@ -314,7 +345,15 @@ export function normalizeKnowledgeStreamEvent(value: unknown): KnowledgeStreamEv
         force_rag: record.force_rag === true,
       }
     case 'done': {
-      const rawSources = Array.isArray(record.sources) ? record.sources : []
+      if (
+        typeof record.full_response !== 'string' ||
+        !record.full_response.trim() ||
+        !Array.isArray(record.sources) ||
+        !recordOf(record.metadata)
+      ) {
+        return null
+      }
+      const rawSources = record.sources
       const sources = rawSources
         .slice(0, KNOWLEDGE_NORMALIZATION_LIMITS.sources)
         .map(normalizeSource)
@@ -336,8 +375,14 @@ export function normalizeChatHistory(value: unknown): ChatHistoryResponse | null
   const record = recordOf(value)
   if (!record) return null
   const sessionId = text(record.session_id, 256)
-  if (!sessionId) return null
-  const rawMessages = Array.isArray(record.messages) ? record.messages : []
+  if (
+    !sessionId ||
+    !Array.isArray(record.messages) ||
+    !isNonNegativeInteger(record.total_messages)
+  ) {
+    return null
+  }
+  const rawMessages = record.messages
   const messages: HistoricalMessage[] = []
   for (const rawMessage of rawMessages.slice(-KNOWLEDGE_NORMALIZATION_LIMITS.historyMessages)) {
     const message = recordOf(rawMessage)
@@ -351,8 +396,14 @@ export function normalizeChatHistory(value: unknown): ChatHistoryResponse | null
     })
   }
   return {
+    contract_version: isNonNegativeInteger(record.contract_version)
+      ? record.contract_version
+      : null,
     session_id: sessionId,
     messages,
-    total_messages: nonNegativeInteger(record.total_messages, messages.length),
+    total_messages: record.total_messages,
+    complete: typeof record.complete === 'boolean' ? record.complete : null,
+    degraded: typeof record.degraded === 'boolean' ? record.degraded : null,
+    backend: text(record.backend, 128) || 'unknown',
   }
 }

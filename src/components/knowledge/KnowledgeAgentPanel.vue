@@ -39,12 +39,31 @@ const sessionDrawerVisible = ref(false)
 const correctionVisible = ref(false)
 const correctionText = ref('')
 const correctionTarget = ref<KnowledgeMessage | null>(null)
+const correctionSubmitting = computed(
+  () => correctionTarget.value?.feedbackState === 'submitting',
+)
 const showScrollToLatest = computed(
   () => !stickToBottom.value && bottomDistancePx.value > 72,
+)
+const currentSessionRemembered = computed(
+  () =>
+    Boolean(store.sessionId) &&
+    store.localSessions.some((session) => session.id === store.sessionId),
 )
 function latestMessage(): KnowledgeMessage | undefined {
   return store.messages[store.messages.length - 1]
 }
+const sessionRegistrationLabel = computed(() => {
+  if (currentSessionRemembered.value) return '已在本设备登记'
+  if (store.running) return '等待服务确认保存'
+  const last = latestMessage()
+  if (last?.role === 'assistant' && last.runState === 'completed') {
+    if (last.metadata?.history_persisted === true) return '服务已保存 · 本设备未登记'
+    if (last.metadata?.history_persisted === false) return '服务未保存'
+    return '保存状态未知'
+  }
+  return '本设备未登记'
+})
 
 const latestLayoutSignature = computed(() => {
   const last = latestMessage()
@@ -206,9 +225,10 @@ async function submitCorrection(): Promise<void> {
 }
 
 async function openSession(id: string): Promise<void> {
-  sessionDrawerVisible.value = false
+  const opened = await store.openLocalSession(id)
+  if (!opened) return
+  if (!store.historyWarning) sessionDrawerVisible.value = false
   resetScrollContext()
-  await store.openLocalSession(id)
   await scheduleScrollToBottom()
 }
 
@@ -329,7 +349,8 @@ onBeforeUnmount(() => {
     <footer class="composer" data-testid="agent-composer">
       <div class="composer-context">
         <span v-if="store.sessionId" class="session-chip">
-          当前会话：{{ store.sessionId.slice(0, 8) }}… · 仅 ID 保存于本设备
+          当前会话：{{ store.sessionId.slice(0, 8) }}… ·
+          {{ sessionRegistrationLabel }}
         </span>
         <span class="mode-context">
           {{ store.mode === 'fast' ? 'Fast · 快速查证' : 'Thinking · 完整诊断' }}
@@ -372,6 +393,7 @@ onBeforeUnmount(() => {
       :current-session-id="store.sessionId"
       :loading="store.historyLoading"
       :error="store.historyError"
+      :warning="store.historyWarning"
       @open="openSession"
       @forget="store.forgetSession"
       @new="startNewConversation"
@@ -389,7 +411,12 @@ onBeforeUnmount(() => {
       />
       <template #footer>
         <el-button @click="correctionVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!correctionText.trim()" @click="submitCorrection">
+        <el-button
+          type="primary"
+          :loading="correctionSubmitting"
+          :disabled="!correctionText.trim() || correctionSubmitting"
+          @click="submitCorrection"
+        >
           提交纠正
         </el-button>
       </template>

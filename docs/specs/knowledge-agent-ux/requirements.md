@@ -82,15 +82,15 @@ PHM 前端当前把知识库能力收敛为文档上传、列表与删除，但 
 
 #### REQ-KA-011 — Conditional polling
 
-**WHEN** 至少一个文档处于 `processing`，**THE SYSTEM SHALL** 以约 3 秒周期刷新文档状态；**WHEN** 不再存在处理中文档或页面离开，**THE SYSTEM SHALL** 停止轮询，且同一时刻最多一个列表请求在途。
+**WHEN** 至少一个文档处于 `processing`，**THE SYSTEM SHALL** 以约 3 秒周期刷新文档状态；**WHEN** 不再存在处理中文档或页面离开，**THE SYSTEM SHALL** 停止轮询，且同一时刻最多一个具有写状态权限的列表请求在途。**WHEN** 用户在列表请求期间切换分页，**THE SYSTEM SHALL** 取消或废弃旧请求，并只把最新目标页的响应与页码原子提交；目标页失败时保留原页码和原页数据。
 
 #### REQ-KA-012 — Document failure recovery affordance
 
-**WHEN** 文档处于 `failed`，**THE SYSTEM SHALL** 说明其未进入可检索状态；只有安全删除能力已显式启用时才允许用户请求删除后重新上传，不得提供后端并不存在的原地重试承诺。
+**WHEN** 上传传输失败且尚无服务端 `document_id`，**THE SYSTEM SHALL** 允许重传原文件。**WHEN** 已登记文档的后台处理进入 `failed`，**THE SYSTEM SHALL** 说明其未进入可检索状态；只有安全删除能力已显式启用时才允许用户确认“删除后重传”，不得提供后端并不存在的原地重试承诺。**WHEN** 状态跟踪进入 `tracking_error`，**THE SYSTEM SHALL** 只允许重新查询服务端状态，不得重新 POST 原文件。
 
 #### REQ-KA-013 — Destructive document action
 
-**WHERE** 独立的安全删除能力已显式启用，**WHEN** `indexed` 或 `failed` 文档被用户确认删除，**THE SYSTEM SHALL** 调用删除接口并在响应后重新读取列表；页面只能表述“服务已接受删除请求/登记列表已刷新”，不得承诺当前后端 200 无法证明的多索引强一致清理。`processing`、未知状态或能力关闭时绝不能发送 DELETE。
+**WHERE** 独立的安全删除能力已显式启用，**WHEN** `indexed` 或 `failed` 文档被用户确认删除，**THE SYSTEM SHALL** 调用删除接口并在响应后重新读取列表；只有重新读取成功时才可表述“登记列表已刷新”，刷新失败时必须说明当前仍是旧数据。删除末页最后一项后页码必须收敛到仍有效的末页。页面不得承诺当前后端 200 无法证明的多索引强一致清理；`processing`、未知状态、用户取消确认或能力关闭时绝不能发送 DELETE。
 
 #### REQ-KA-014 — Honest collection statistics
 
@@ -112,7 +112,7 @@ PHM 前端当前把知识库能力收敛为文档上传、列表与删除，但 
 
 #### REQ-KA-018 — Retrieval terminal states
 
-**WHEN** 检索返回空结果、网络错误或服务错误，**THE SYSTEM SHALL** 分别展示空证据提示和可重试错误状态，并保留用户查询与策略选择。
+**WHEN** 检索返回空结果、网络错误或服务错误，**THE SYSTEM SHALL** 分别展示空证据提示和可重试错误状态，并保留用户查询与策略选择。**WHEN** 多次检索请求重叠，**THE SYSTEM SHALL** 仅允许最新请求更新结果、错误和 loading，且响应 query 必须与该请求快照一致。
 
 #### REQ-KA-019 — Continue from retrieval to Agent
 
@@ -162,7 +162,7 @@ PHM 前端当前把知识库能力收敛为文档上传、列表与删除，但 
 
 #### REQ-KA-030 — Session lifecycle
 
-**WHEN** 用户使用知识库 Agent，**THE SYSTEM SHALL** 支持新建会话，并采用服务端 `session` 事件返回的 ID；历史抽屉只能列出本浏览器曾收到的最多 20 个 session ID，并明确标注“本设备会话”。系统不得调用无 owner 范围的全局 `/sessions` 列表；默认移除只清理本地 ID，不调用远端删除。
+**WHEN** 用户使用知识库 Agent，**THE SYSTEM SHALL** 支持新建会话，并采用服务端 `session` 事件返回的 ID；历史抽屉只能列出本浏览器曾收到的最多 20 个 session ID，并明确标注“本设备会话”。系统不得调用无 owner 范围的全局 `/sessions` 列表；默认移除只清理本地 ID，不调用远端删除。**IF** 历史加载失败或响应无效，**THE SYSTEM SHALL** 保持抽屉及错误可见并允许重试，成功后才切换会话和关闭抽屉。**IF** 浏览器存储被策略或配额阻止，**THE SYSTEM SHALL** 保持已完成回答的成功状态，不得虚报本设备登记成功。
 
 #### REQ-KA-031 — Historical metadata limitation
 
@@ -170,7 +170,7 @@ PHM 前端当前把知识库能力收敛为文档上传、列表与删除，但 
 
 #### REQ-KA-032 — Feedback loop
 
-**WHERE** 部署已显式启用并在网关授权反馈写能力，**WHEN** 新生成的回答携带 `message_id` 和 `trace_id`，**THE SYSTEM SHALL** 支持点赞、点踩、标记和填写纠正内容，并在成功后防止同一回答重复提交；能力关闭时只说明反馈不可用，不得发送写请求。
+**WHERE** 部署已显式启用并在网关授权反馈写能力，**WHEN** 新生成的回答携带 `message_id` 和 `trace_id`，**THE SYSTEM SHALL** 支持点赞、点踩、标记和填写纠正内容；同一回答在提交中和成功后均不得重复发送。**IF** 反馈响应无效或失败，**THE SYSTEM SHALL** 恢复可重试状态并保留尚未成功的纠正文案；能力关闭时只说明反馈不可用，不得发送写请求。
 
 ### 3.6 Security, Accessibility, and UX
 
@@ -206,7 +206,7 @@ PHM 前端当前把知识库能力收敛为文档上传、列表与删除，但 
 
 #### REQ-KA-040 — Playwright user journeys
 
-**WHEN** 本功能提交，**THE SYSTEM SHALL** 在 `tests/e2e_ui/` 以确定性网络 mock 覆盖文档状态/重复上传、三类检索、Agent 流式阶段/来源/拒答、会话/反馈和 XSS 不执行等关键流程。
+**WHEN** 本功能提交，**THE SYSTEM SHALL** 在 `tests/e2e_ui/` 以确定性网络 mock 覆盖文档状态/分页/重复上传/失败恢复/删除、三类检索及并发归属、Agent 流式阶段/来源/拒答、会话/四类反馈和 XSS 不执行等关键流程，并覆盖 768 px 下文档库、检索台与对话抽屉的关键几何边界。
 
 ### 3.8 Review-driven Trust Boundaries
 
@@ -216,7 +216,7 @@ PHM 前端当前把知识库能力收敛为文档上传、列表与删除，但 
 
 #### REQ-KA-042 — Runtime normalization and resource bounds
 
-**WHEN** 前端消费文档、检索、历史或 SSE 网络数据，**THE SYSTEM SHALL** 先经过运行时 normalizer；未知状态不得映射成功，`reasoning/intent_reasoning` 与未知 metadata 字段必须在 SSE 边界立即丢弃。SSE frame/pending buffer、总输入、事件数、累计回答和来源数量/长度必须有显式上限，超限以可重试错误安全终止且不得记录原文。
+**WHEN** 前端消费文档、检索、历史或 SSE 网络数据，**THE SYSTEM SHALL** 先经过运行时 normalizer；列表、检索、历史和 mutation 的顶层 envelope 缺少后端必填字段时必须作为 `invalid-response` 失败，不能降级为空成功。未知状态不得映射成功，`reasoning/intent_reasoning` 与未知 metadata 字段必须在 SSE 边界立即丢弃；`done.full_response` 必须是非空字符串，非法终帧不得覆盖已接收 token 或提交完成态。SSE frame/pending buffer、总输入、事件数、累计回答和来源数量/长度必须有显式上限，超限以可重试错误安全终止且不得记录原文。
 
 #### REQ-KA-043 — Run ownership and first-terminal-wins
 
