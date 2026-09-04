@@ -82,6 +82,7 @@ function analyzeWithAgent(query: string): void {
       </div>
       <div v-show="activeTab === 'agent'" role="tabpanel" aria-label="知识库 Agent">
         <KnowledgeAgentPanel
+          :active="activeTab === 'agent'"
           :suggested-query="suggestedQuery"
           :suggestion-nonce="suggestionNonce"
         />

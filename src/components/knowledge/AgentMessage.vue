@@ -20,6 +20,13 @@ const emit = defineEmits<{
 const renderedContent = computed(() => renderMarkdown(props.message.content))
 const isFinal = computed(() => props.message.runState === 'completed')
 const metadata = computed(() => props.message.metadata)
+const createdDateTime = computed(() => new Date(props.message.createdAt).toISOString())
+const createdTime = computed(() =>
+  new Date(props.message.createdAt).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }),
+)
 const confidence = computed(() => confidencePresentation(metadata.value?.confidence))
 const feedbackAvailable = computed(
   () =>
@@ -62,22 +69,29 @@ function routeLabel(route?: string): string {
 </script>
 
 <template>
-  <article :class="['agent-message', message.role]" :data-run-state="message.runState">
-    <div class="message-avatar">
+  <article
+    :class="['agent-message', message.role]"
+    :data-run-state="message.runState"
+    :aria-label="message.role === 'user' ? '你的消息' : '知识库 Agent 消息'"
+  >
+    <div class="message-avatar" aria-hidden="true">
       <span v-if="message.role === 'user'">你</span>
       <el-icon v-else><ChatDotRound /></el-icon>
     </div>
     <div class="message-body">
-      <div class="message-heading">
-        <strong>{{ message.role === 'user' ? '用户' : '知识库 Agent' }}</strong>
-        <span>{{ new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}</span>
+      <div :class="['message-heading', { 'user-heading': message.role === 'user' }]">
+        <strong v-if="message.role === 'assistant'">知识库 Agent</strong>
+        <time :datetime="createdDateTime">{{ createdTime }}</time>
       </div>
 
       <template v-if="message.role === 'assistant'">
-        <div v-if="message.stages?.length" class="stage-row" aria-label="执行阶段">
-          <span v-for="stage in message.stages" :key="stage.key" class="stage-pill">
-            <i />{{ stage.label }}
-          </span>
+        <div v-if="message.stages?.length" class="execution-block">
+          <span class="section-kicker">执行过程</span>
+          <div class="stage-row" aria-label="执行阶段">
+            <span v-for="stage in message.stages" :key="stage.key" class="stage-pill">
+              <i />{{ stage.label }}
+            </span>
+          </div>
         </div>
 
         <el-alert
@@ -103,7 +117,13 @@ function routeLabel(route?: string): string {
       </template>
 
       <div v-if="message.content" class="markdown-body" v-html="renderedContent" />
-      <div v-else-if="message.role === 'assistant' && !['error', 'cancelled'].includes(message.runState || '')" class="answer-placeholder">
+      <div
+        v-else-if="
+          message.role === 'assistant' &&
+          ['connecting', 'running'].includes(message.runState || '')
+        "
+        class="answer-placeholder"
+      >
         正在等待首个回答片段…
       </div>
 
@@ -120,6 +140,7 @@ function routeLabel(route?: string): string {
       </el-collapse>
 
       <div v-if="message.role === 'assistant' && isFinal" class="trust-panel">
+        <span class="section-kicker">回答状态</span>
         <el-alert
           v-if="metadata?.route === 'degraded'"
           title="本回答来自降级路径，请在服务恢复后重试"
@@ -195,15 +216,18 @@ function routeLabel(route?: string): string {
 
 <style scoped>
 .agent-message { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; align-items: start; }
-.agent-message.user { margin-left: min(18%, 160px); }
+.agent-message.user { grid-template-columns: minmax(0, 1fr) 36px; }
 .message-avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; color: #1a6cf0; background: #edf4ff; font-size: 12px; font-weight: 700; }
-.user .message-avatar { color: #fff; background: #1a6cf0; }
-.message-body { min-width: 0; background: #fff; border: 1px solid #e7ecf4; border-radius: 4px 14px 14px; padding: 15px 17px; box-shadow: 0 6px 18px rgba(13,31,60,.035); }
-.user .message-body { background: #edf4ff; border-color: #d9e7ff; border-radius: 14px 4px 14px 14px; }
+.user .message-avatar { grid-column: 2; grid-row: 1; color: #fff; background: linear-gradient(135deg,#1769e8,#3f84f5); box-shadow: 0 5px 14px rgba(26,108,240,.2); }
+.message-body { min-width: 0; width: min(100%,1040px); background: #fff; border: 1px solid #e7ecf4; border-radius: 4px 14px 14px; padding: 15px 17px; box-shadow: 0 6px 18px rgba(13,31,60,.035); }
+.user .message-body { grid-column: 1; grid-row: 1; justify-self: end; width: fit-content; max-width: min(72%,760px); background: linear-gradient(145deg,#eaf3ff,#f2f7ff); border-color: #cfe0fb; border-radius: 15px 4px 15px 15px; box-shadow: 0 6px 18px rgba(26,108,240,.07); }
 .message-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+.message-heading.user-heading { justify-content: flex-end; margin-bottom: 5px; }
 .message-heading strong { color: #233653; font-size: 13px; }
-.message-heading span { color: #9ba6b7; font-size: 11px; }
-.stage-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.message-heading time { color: #9ba6b7; font-size: 10px; }
+.execution-block { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; margin: 0 0 13px; border: 1px solid #edf1f7; border-radius: 10px; background: #f8fafd; }
+.section-kicker { flex: 0 0 auto; color: #8794a8; font-size: 10px; font-weight: 600; letter-spacing: .04em; }
+.stage-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .stage-pill { display: inline-flex; align-items: center; gap: 5px; color: #617089; background: #f4f6fa; border-radius: 999px; padding: 4px 8px; font-size: 11px; }
 .stage-pill i { width: 6px; height: 6px; border-radius: 50%; background: #1a6cf0; }
 .live-status { display: flex; align-items: center; gap: 8px; color: #687893; font-size: 12px; margin-bottom: 10px; }
@@ -216,14 +240,17 @@ function routeLabel(route?: string): string {
 .markdown-body :deep(pre.code-block) { overflow-x: auto; border-radius: 10px; background: #101827; color: #e7edf8; }
 .markdown-body :deep(.code-header) { display: flex; justify-content: space-between; padding: 7px 10px; background: rgba(255,255,255,.06); }
 .markdown-body :deep(pre code) { display: block; padding: 12px; }
+.markdown-body :deep(img) { display: block; max-width: 100%; height: auto; margin: 12px 0; border: 1px solid #e4eaf3; border-radius: 10px; }
 .structured-answer { margin-top: 14px; }
 .structured-answer section { border-left: 3px solid #d9e7ff; padding-left: 12px; margin: 12px 0; }
 .structured-answer h4 { color: #1f4e95; margin: 0 0 5px; }
 .structured-answer p, .structured-answer ul { color: #465873; margin: 0; line-height: 1.65; }
-.trust-panel { display: grid; gap: 9px; margin-top: 14px; }
+.trust-panel { display: grid; gap: 9px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf0f5; }
 .trust-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; color: #8793a5; font-size: 11px; }
-.message-actions { border-top: 1px solid #edf0f5; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 13px; padding-top: 7px; }
+.message-actions { border-top: 1px solid #edf0f5; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 11px; padding-top: 8px; }
 .feedback-note { color: #8c98aa; font-size: 11px; padding: 0 8px; }
 @keyframes pulse { 50% { opacity: .45; } }
-@media (max-width: 700px) { .agent-message.user { margin-left: 0; } .agent-message { grid-template-columns: 30px minmax(0, 1fr); gap: 8px; } .message-avatar { width: 30px; height: 30px; } .message-body { padding: 13px; } }
+@media (max-width: 900px) { .user .message-body { max-width: 88%; } }
+@media (max-width: 700px) { .agent-message { grid-template-columns: 30px minmax(0, 1fr); gap: 8px; } .agent-message.user { grid-template-columns: minmax(0, 1fr) 30px; } .message-avatar { width: 30px; height: 30px; } .message-body { padding: 13px; } .user .message-body { max-width: 94%; } .execution-block { display: grid; gap: 6px; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 </style>
