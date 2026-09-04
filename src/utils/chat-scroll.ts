@@ -25,6 +25,15 @@ export function isNearBottom(
   return bottomDistance(metrics) <= Math.max(0, threshold)
 }
 
+export function didMoveAwayFromBottom(
+  previous: ScrollMetrics | null,
+  current: ScrollMetrics,
+  threshold = DEFAULT_STICK_THRESHOLD,
+): boolean {
+  if (!previous || isNearBottom(current, threshold)) return false
+  return current.scrollTop < previous.scrollTop
+}
+
 export class BottomScrollScheduler {
   private frameId: number | null = null
   private generation = 0

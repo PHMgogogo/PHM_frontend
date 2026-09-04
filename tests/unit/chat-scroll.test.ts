@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   BottomScrollScheduler,
   bottomDistance,
+  didMoveAwayFromBottom,
   isNearBottom,
   type ScrollMetrics,
 } from '@/utils/chat-scroll'
@@ -20,6 +21,28 @@ describe('chat scroll metrics', () => {
     expect(isNearBottom(metrics(71))).toBe(true)
     expect(isNearBottom(metrics(72))).toBe(true)
     expect(isNearBottom(metrics(73))).toBe(false)
+  })
+
+  it('distinguishes an upward user scroll from layout growth', () => {
+    const anchored = metrics(0)
+    expect(
+      didMoveAwayFromBottom(anchored, {
+        ...anchored,
+        scrollTop: anchored.scrollTop - 180,
+      }),
+    ).toBe(true)
+    expect(
+      didMoveAwayFromBottom(anchored, {
+        ...anchored,
+        scrollHeight: anchored.scrollHeight + 318,
+      }),
+    ).toBe(false)
+    expect(
+      didMoveAwayFromBottom(anchored, {
+        ...anchored,
+        clientHeight: anchored.clientHeight - 80,
+      }),
+    ).toBe(false)
   })
 })
 

@@ -10,7 +10,13 @@ import {
 } from '@element-plus/icons-vue'
 import type { FeedbackType } from '@/api/knowledge-agent'
 import { useKnowledgeAgentStore, type KnowledgeMessage } from '@/stores/knowledge-agent'
-import { BottomScrollScheduler, bottomDistance, isNearBottom } from '@/utils/chat-scroll'
+import {
+  BottomScrollScheduler,
+  bottomDistance,
+  didMoveAwayFromBottom,
+  isNearBottom,
+  type ScrollMetrics,
+} from '@/utils/chat-scroll'
 import AgentMessage from './AgentMessage.vue'
 import SessionDrawer from './SessionDrawer.vue'
 import SourceDrawer from './SourceDrawer.vue'
@@ -74,6 +80,7 @@ const scrollScheduler = new BottomScrollScheduler(
   (frameId) => window.cancelAnimationFrame(frameId),
 )
 let resizeObserver: ResizeObserver | null = null
+let lastScrollMetrics: ScrollMetrics | null = null
 
 function isPanelActive(): boolean {
   return props.active !== false
@@ -82,12 +89,19 @@ function isPanelActive(): boolean {
 function refreshScrollState(userIntent = false): void {
   const element = feed.value
   if (!element) return
-  bottomDistancePx.value = bottomDistance(element)
-  if (isNearBottom(element)) {
+  const currentMetrics: ScrollMetrics = {
+    scrollHeight: element.scrollHeight,
+    scrollTop: element.scrollTop,
+    clientHeight: element.clientHeight,
+  }
+  const movedAway = userIntent && didMoveAwayFromBottom(lastScrollMetrics, currentMetrics)
+  lastScrollMetrics = currentMetrics
+  bottomDistancePx.value = bottomDistance(currentMetrics)
+  if (isNearBottom(currentMetrics)) {
     stickToBottom.value = true
     return
   }
-  if (userIntent) {
+  if (movedAway) {
     stickToBottom.value = false
     scrollScheduler.invalidate()
   }
@@ -107,6 +121,7 @@ async function scheduleScrollToBottom(): Promise<void> {
 
 function resetScrollContext(): void {
   scrollScheduler.invalidate()
+  lastScrollMetrics = null
   stickToBottom.value = true
   bottomDistancePx.value = 0
   void scheduleScrollToBottom()

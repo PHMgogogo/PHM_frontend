@@ -103,6 +103,7 @@ composer：
 - watcher 只读取 `messages.length` 与最后一条消息的 `content.length/stages.length/sources.length/runState/metadata.route/confidence`，避免按消息总数扫描。
 - watcher 使用 `flush: 'post'`；`nextTick()` 后调度单个 frame。frame 写 DOM 前必须再次验证 `stickToBottom`、epoch 与 feed 身份。
 - 用户离底时立即递增 epoch、取消 pending frame，再更新返回按钮；因此先前排队任务不能抢回位置。
+- scroll handler 比较前后 `scrollTop`：只有位置确实向上移动且底部距离超过阈值，才判定为用户离底；仅 `scrollHeight`/`clientHeight` 改变造成的布局滚动不得关闭 sticky。
 - 点击“回到最新回答”将 sticky 设为 true、递增 epoch，并在下一 frame 使用即时滚动锚底。为避免 smooth 中间 scroll event 反转 sticky，本功能不使用程序化 smooth。
 - 打开会话、新建对话、tab 恢复和卸载均统一调用滚动上下文重置：取消 frame、递增 epoch；前三者在新 DOM 可见后锚底。
 
