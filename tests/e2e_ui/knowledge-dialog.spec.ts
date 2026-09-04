@@ -185,7 +185,9 @@ test('does not yank an older reading position and can return to the latest answe
   await installControlledStream(page)
   await prepareKnowledgeAgent(page)
   await sendQuestion(page, '持续输出测试')
+  await expect(page.getByTestId('agent-message-feed')).toHaveAttribute('aria-busy', 'true')
   await pushEvent(page, { type: 'status', message: '正在检索知识库' })
+  await expect(page.getByRole('status')).toContainText('正在检索知识库')
   const longAnswer = Array.from(
     { length: 90 },
     (_, index) => `证据段 ${index + 1}：保持当前阅读位置。`,
@@ -220,6 +222,116 @@ test('does not yank an older reading position and can return to the latest answe
   await pushEvent(page, finalEvent(`${longAnswer}\n\n新增证据：不得抢走阅读位置。`))
   await page.evaluate(() => (window as ControlledWindow).__knowledgeStreamControl.close())
   await expect(page.locator('.agent-message.assistant[data-run-state="completed"]')).toBeVisible()
+  await expect(feed).toHaveAttribute('aria-busy', 'false')
+  await expect(page.getByRole('status')).toContainText('回答完成')
+})
+
+test('reanchors for autosize and delayed rich-content growth', async ({ page }) => {
+  let releaseImage: (() => void) | undefined
+  const imageGate = new Promise<void>((resolve) => {
+    releaseImage = resolve
+  })
+  await page.route((url) => url.pathname === '/dialog-delayed.svg', async (route) => {
+    await imageGate
+    await route.fulfill({
+      status: 200,
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="520"><rect width="1400" height="520" fill="#eaf2ff"/><text x="40" y="90" font-size="42">诊断趋势图</text></svg>',
+    })
+  })
+  await page.route((url) => url.pathname === '/document/chat/stream', async (route) => {
+    const paragraphs = Array.from(
+      { length: 40 },
+      (_, index) => `诊断记录 ${index + 1}：检查温度与振动趋势。`,
+    ).join('\n\n')
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: sse(finalEvent(`${paragraphs}\n\n![诊断趋势图](/dialog-delayed.svg)`)),
+    })
+  })
+  await prepareKnowledgeAgent(page)
+  await sendQuestion(page, '尺寸变化测试')
+
+  const feed = page.getByTestId('agent-message-feed')
+  const input = page.getByPlaceholder('输入问题；Enter 发送，Shift+Enter 换行')
+  const image = page.locator('.agent-message.assistant .markdown-body img')
+  await expect(image).toHaveCount(1)
+  await expect
+    .poll(() =>
+      feed.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight),
+    )
+    .toBeLessThanOrEqual(2)
+
+  const initialInputHeight = (await boundingBox(input)).height
+  await input.fill('第一行\n第二行\n第三行\n第四行\n第五行\n第六行')
+  await expect.poll(async () => (await boundingBox(input)).height).toBeGreaterThan(initialInputHeight)
+  await expect
+    .poll(() =>
+      feed.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight),
+    )
+    .toBeLessThanOrEqual(2)
+
+  releaseImage?.()
+  await expect
+    .poll(() =>
+      image.evaluate((element) => {
+        const htmlImage = element as HTMLImageElement
+        return htmlImage.complete && htmlImage.naturalHeight > 0
+      }),
+    )
+    .toBe(true)
+  const imageBox = await boundingBox(image)
+  const assistantBodyBox = await boundingBox(
+    page.locator('.agent-message.assistant .message-body'),
+  )
+  expect(imageBox.width).toBeLessThanOrEqual(assistantBodyBox.width + 1)
+  expect(await feed.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await expect
+    .poll(() =>
+      feed.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight),
+    )
+    .toBeLessThanOrEqual(2)
+})
+
+test('reanchors the active conversation after updates while its tab is hidden', async ({ page }) => {
+  await installControlledStream(page)
+  await prepareKnowledgeAgent(page)
+  await sendQuestion(page, '隐藏标签更新')
+  const initial = Array.from({ length: 70 }, (_, index) => `初始段落 ${index + 1}`).join('\n\n')
+  await pushEvent(page, { type: 'token', content: initial })
+  const assistant = page.locator('.agent-message.assistant')
+  await expect(assistant).toContainText('初始段落 70')
+
+  await page.getByRole('tab', { name: '文档库' }).click()
+  await pushEvent(page, { type: 'token', content: '\n\n隐藏期间新增的最终段落' })
+  await pushEvent(page, finalEvent(`${initial}\n\n隐藏期间新增的最终段落`))
+  await page.evaluate(() => (window as ControlledWindow).__knowledgeStreamControl.close())
+  await expect.poll(() => assistant.getAttribute('data-run-state')).toBe('completed')
+
+  await page.getByRole('tab', { name: '知识库 Agent' }).click()
+  const feed = page.getByTestId('agent-message-feed')
+  await expect(assistant).toContainText('隐藏期间新增的最终段落')
+  await expect
+    .poll(() =>
+      feed.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight),
+    )
+    .toBeLessThanOrEqual(2)
+})
+
+test('presents a zero-token user cancellation as a terminal state', async ({ page }) => {
+  await installControlledStream(page)
+  await prepareKnowledgeAgent(page)
+  await sendQuestion(page, '立即取消')
+  await expect(page.getByRole('button', { name: '取消' })).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
+
+  const cancelled = page.locator('.agent-message.assistant[data-run-state="cancelled"]')
+  await expect(cancelled).toContainText('已取消')
+  await expect(cancelled).not.toContainText('正在等待首个回答片段')
+  await expect(cancelled.getByRole('button', { name: '使用同一问题重试' })).toBeVisible()
+  await expect(page.getByTestId('agent-message-feed')).toHaveAttribute('aria-busy', 'false')
+  await expect(page.getByRole('status')).toContainText('回答已取消')
 })
 
 test('shows only honest zero-token terminal states', async ({ page }) => {
@@ -270,6 +382,21 @@ test('does not submit while a Chinese IME composition is being confirmed', async
   expect(requests).toBe(0)
   await expect(input).toHaveValue('轴承温度')
 
+  await input.evaluate((element) => {
+    const event = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      code: 'Enter',
+      key: 'Enter',
+    })
+    Object.defineProperty(event, 'keyCode', { value: 229 })
+    element.dispatchEvent(event)
+  })
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  )
+  expect(requests).toBe(0)
+
   await input.press('Shift+Enter')
   expect(requests).toBe(0)
   await input.press('Enter')
@@ -316,4 +443,3 @@ test('keeps every dialog control inside the panel at 768px', async ({ page }) =>
     ),
   ).toBe(true)
 })
-

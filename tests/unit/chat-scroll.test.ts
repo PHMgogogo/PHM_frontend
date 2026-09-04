@@ -74,4 +74,3 @@ describe('bottom scroll scheduler', () => {
     expect(second.scrollTop).toBe(1_200)
   })
 })
-
