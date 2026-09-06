@@ -24,6 +24,10 @@ export const API_PREFIX = {
   OPENCODE: '/opencode',
   /** 文档检索服务 → proxy '/document' */
   DOCUMENT: '/document',
+  /** 外来平台配置（与数据管理同后端 152.136.119.117:8080，但该后端把外来平台接口挂在 /api 前缀下，故用独立前缀避免被 CORE 的 rewrite 剥掉 /api）→ proxy '/ext-platform' */
+  EXTERNAL_PLATFORM: '/ext-platform',
+  /** 统一数据聚合查询（与外来平台同后端，接口挂在 /api/unified 下，故同样需独立前缀）→ proxy '/unified' */
+  UNIFIED: '/unified',
 } as const
 
 /** 构造某实例 worker 的 baseURL：/instance/{instanceId} */

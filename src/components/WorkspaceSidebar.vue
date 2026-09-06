@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Fold, Expand } from '@element-plus/icons-vue'
+import { sourceText } from '@/api/unified'
 import type { Aircraft } from '@/types/entities'
 
 defineProps<{
@@ -28,8 +29,9 @@ const emit = defineEmits<{
       <span v-show="!collapsed" class="ws-aircraft-title">{{ aircraft?.aircraftNumber }}</span>
     </div>
     <div v-show="!collapsed" class="ws-aircraft-meta">
-      <div>{{ aircraft?.modelCode }}</div>
+      <div v-if="aircraft?.modelCode">{{ aircraft.modelCode }}</div>
       <div v-if="aircraft?.airline">{{ aircraft.airline }}</div>
+      <div v-if="aircraft?.source" class="ws-source">来源：{{ sourceText(aircraft.source) }}</div>
     </div>
     <ul class="ws-menu-list">
       <li
@@ -107,6 +109,11 @@ const emit = defineEmits<{
   line-height: 1.6;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   margin-bottom: 10px;
+}
+
+.ws-source {
+  color: #4d9fff;
+  margin-top: 2px;
 }
 
 .ws-menu-list {

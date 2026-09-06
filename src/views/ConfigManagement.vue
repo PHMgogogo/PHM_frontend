@@ -2,38 +2,118 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { useConfigItemStore } from '@/stores/configItem'
+import { useUnifiedStore } from '@/stores/unified'
+import { unifiedApi, sourceText } from '@/api/unified'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { ConfigItem, ConfigItemType } from '@/types/entities'
+import type { ConfigItem, ConfigItemType, UnifiedConfigRow, UnifiedSource } from '@/types/entities'
 import ConfigForceGraph from '@/components/ConfigForceGraph.vue'
 
 const aircraftStore = useAircraftStore()
 const configItemStore = useConfigItemStore()
-
-onMounted(async () => {
-  await aircraftStore.fetchModels()
-  if (aircraftStore.models.length > 0 && !selectedModelCode.value) {
-    selectedModelCode.value = aircraftStore.models[0].modelCode
-    configItemStore.fetchAll(selectedModelCode.value)
-  }
-})
+const unifiedStore = useUnifiedStore()
 
 // ---- 构型选择 ----
 const selectedModelCode = ref('')
 
-// ---- 视图模式：树形 / 力导向图 ----
+// ---- 视图模式：树形 / 力导向图（仅本地构型有） ----
 const viewMode = ref<'tree' | 'graph'>('tree')
 
-const modelOptions = computed(() =>
-  aircraftStore.models.map((m) => ({
-    value: m.modelCode,
-    label: `${m.modelCode}` + (m.description ? ` (${m.description})` : ''),
-  })),
+/** 当前机型是否存在于本地：存在才允许本地构型增删管理 */
+const hasLocalModel = computed(() =>
+  aircraftStore.models.some((m) => m.modelCode === selectedModelCode.value),
 )
 
-function onModelChange(modelCode: string) {
-  if (modelCode) {
+// 机型下拉 = 统一三源机型（含外源独有机型）+ 本地机型兜底去重（按 modelCode）
+const modelOptions = computed(() => {
+  const map = new Map<string, string>()
+  const setLabel = (code?: string, extra?: string | null) => {
+    if (!code || map.has(code)) return
+    map.set(code, extra ? `${code} (${extra})` : code)
+  }
+  for (const m of unifiedStore.models) setLabel(m.modelCode, m.manufacturer)
+  for (const m of aircraftStore.models) setLabel(m.modelCode, m.description || m.manufacturer)
+  return [...map.entries()].map(([value, label]) => ({ value, label }))
+})
+
+onMounted(async () => {
+  await Promise.all([aircraftStore.fetchModels(), unifiedStore.fetchModels()])
+  if (!selectedModelCode.value) {
+    const first = aircraftStore.models[0]?.modelCode || unifiedStore.models[0]?.modelCode || ''
+    selectedModelCode.value = first
+    applySelection(first)
+  }
+})
+
+// ---- 外部平台构型（只读，按当前机型 modelCode 聚合） ----
+const extLoading = ref(false)
+const extRows = ref<UnifiedConfigRow[]>([])
+
+async function loadExternal(modelCode: string) {
+  if (!modelCode) {
+    extRows.value = []
+    return
+  }
+  extLoading.value = true
+  try {
+    const res = await unifiedApi.queryConfig({ modelCode })
+    // 本地构型已在上方展示，这里只取外源行
+    extRows.value = res.data.filter((r) => r.source !== 'local')
+  } catch {
+    extRows.value = []
+  } finally {
+    extLoading.value = false
+  }
+}
+
+type ExtNode = UnifiedConfigRow & { children: ExtNode[] }
+
+/** 由 nodeId/parentNodeId 建树；父节点不在集合内或 parent 为空视为根 */
+function buildForest(rows: UnifiedConfigRow[]): ExtNode[] {
+  const nodes = new Map<string, ExtNode>()
+  rows.forEach((r) => nodes.set(r.nodeId, { ...r, children: [] }))
+  const roots: ExtNode[] = []
+  for (const r of rows) {
+    const n = nodes.get(r.nodeId)!
+    if (r.parentNodeId && nodes.has(r.parentNodeId)) {
+      nodes.get(r.parentNodeId)!.children.push(n)
+    } else {
+      roots.push(n)
+    }
+  }
+  return roots
+}
+
+/** 外源构型按 来源 → 机号 → 树 分组 */
+const externalGroups = computed(() => {
+  const bySource = new Map<UnifiedSource, Map<string, UnifiedConfigRow[]>>()
+  for (const r of extRows.value) {
+    let planes = bySource.get(r.source)
+    if (!planes) {
+      planes = new Map()
+      bySource.set(r.source, planes)
+    }
+    const ac = r.aircraftNo?.trim() || '未标注机号'
+    planes.set(ac, [...(planes.get(ac) ?? []), r])
+  }
+  return [...bySource.entries()].map(([source, planes]) => ({
+    source,
+    planes: [...planes.entries()].map(([aircraftNo, rows]) => ({
+      aircraftNo,
+      trees: buildForest(rows),
+    })),
+  }))
+})
+
+function applySelection(modelCode: string) {
+  if (!modelCode) return
+  if (hasLocalModel.value) {
     configItemStore.fetchAll(modelCode)
   }
+  loadExternal(modelCode)
+}
+
+function onModelChange(modelCode: string) {
+  applySelection(modelCode)
 }
 
 // ---- 新建构型项目弹窗 ----
@@ -176,6 +256,11 @@ const treeProps = {
   label: 'systemName',
 }
 
+const extTreeProps = {
+  children: 'children',
+  label: 'nodeName',
+}
+
 function treeNodeName(data: ConfigItem): string {
   if (data.itemType === 'SUBSYSTEM') return data.subSystemName ?? ''
   if (data.itemType === 'EQUIPMENT' || data.itemType === 'LRU') return data.equipmentName ?? ''
@@ -215,7 +300,8 @@ function treeNodeName(data: ConfigItem): string {
 
     <!-- 已选择构型后的构型管理 -->
     <template v-else>
-      <div class="toolbar">
+      <!-- 本地机型：本地构型管理工具栏 -->
+      <div v-if="hasLocalModel" class="toolbar">
         <span class="current-model">当前构型：{{ selectedModelCode }}</span>
         <div class="toolbar-actions">
           <el-radio-group v-model="viewMode" size="default">
@@ -231,76 +317,145 @@ function treeNodeName(data: ConfigItem): string {
         </div>
       </div>
 
-      <!-- 加载中 -->
-      <div
-        v-if="configItemStore.loading"
-        class="inner-empty"
-        v-loading="configItemStore.loading"
-        style="min-height: 200px"
-      ></div>
-
-      <!-- 空状态 -->
-      <div v-else-if="configItemStore.treeData.length === 0" class="inner-empty">
-        <p>该构型暂无构型项目，点击上方按钮开始构建</p>
+      <!-- 外源独有机型：无本地管理，仅提示 -->
+      <div v-else class="readonly-banner">
+        <span class="banner-model">当前构型：{{ selectedModelCode }}</span>
+        <span class="banner-tip">该机型来自外部平台，本地无构型，仅可查看下方外部平台构型</span>
       </div>
 
-      <!-- 构型树 / 力导向图 -->
-      <div v-else class="tree-container" :class="{ 'graph-mode': viewMode === 'graph' }">
-        <el-tree
-          v-if="viewMode === 'tree'"
-          :data="configItemStore.treeData"
-          :props="treeProps"
-          node-key="itemId"
-          default-expand-all
-          highlight-current
+      <div class="config-scroll">
+        <!-- 本地构型白卡（仅本地机型可管理编辑） -->
+        <div
+          v-if="hasLocalModel"
+          class="tree-container"
+          :class="{ 'graph-mode': viewMode === 'graph' && configItemStore.treeData.length > 0 }"
         >
-          <template #default="{ data }">
-            <div class="tree-node-content">
-              <span class="tree-node-label">{{ data.ataChapter }}</span>
-              <span class="tree-node-name">{{ treeNodeName(data) }}</span>
-              <el-tag
-                :type="data.itemType === 'SYSTEM' ? '' : data.itemType === 'SUBSYSTEM' ? 'success' : 'info'"
-                class="tree-type-tag"
-              >
-                {{ configItemStore.itemTypeLabel[data.itemType as ConfigItemType] }}
-              </el-tag>
-              <span v-if="data.partNumber" class="tree-pn">{{ data.partNumber }}</span>
+          <!-- 加载中 -->
+          <div
+            v-if="configItemStore.loading"
+            class="inner-empty"
+            v-loading="configItemStore.loading"
+            style="min-height: 200px"
+          ></div>
 
-              <span class="tree-actions">
-                <el-button
-                  v-if="data.itemType === 'SYSTEM' || data.itemType === 'SUBSYSTEM'"
-                  type="primary"
-                  text
-                  size="small"
-                  @click.stop="openCreateConfig(data.itemId, data.itemType, data.systemName)"
+          <!-- 空状态 -->
+          <div v-else-if="configItemStore.treeData.length === 0" class="inner-empty">
+            <p>该构型暂无构型项目，点击上方按钮开始构建</p>
+          </div>
+
+          <!-- 构型树 -->
+          <el-tree
+            v-else-if="viewMode === 'tree'"
+            :data="configItemStore.treeData"
+            :props="treeProps"
+            node-key="itemId"
+            default-expand-all
+            highlight-current
+          >
+            <template #default="{ data }">
+              <div class="tree-node-content">
+                <span class="tree-node-label">{{ data.ataChapter }}</span>
+                <span class="tree-node-name">{{ treeNodeName(data) }}</span>
+                <el-tag
+                  :type="data.itemType === 'SYSTEM' ? '' : data.itemType === 'SUBSYSTEM' ? 'success' : 'info'"
+                  class="tree-type-tag"
                 >
-                  添加子项
-                </el-button>
-                <el-button
-                  type="danger"
-                  text
-                  size="small"
-                  @click.stop="handleDeleteConfigItem(
-                    data.itemId,
-                    treeNodeName(data) || data.ataChapter
-                  )"
+                  {{ configItemStore.itemTypeLabel[data.itemType as ConfigItemType] }}
+                </el-tag>
+                <span v-if="data.partNumber" class="tree-pn">{{ data.partNumber }}</span>
+
+                <span class="tree-actions">
+                  <el-button
+                    v-if="data.itemType === 'SYSTEM' || data.itemType === 'SUBSYSTEM'"
+                    type="primary"
+                    text
+                    size="small"
+                    @click.stop="openCreateConfig(data.itemId, data.itemType, data.systemName)"
+                  >
+                    添加子项
+                  </el-button>
+                  <el-button
+                    type="danger"
+                    text
+                    size="small"
+                    @click.stop="handleDeleteConfigItem(
+                      data.itemId,
+                      treeNodeName(data) || data.ataChapter
+                    )"
+                  >
+                    删除
+                  </el-button>
+                </span>
+              </div>
+            </template>
+          </el-tree>
+
+          <!-- 力导向图 -->
+          <div v-else class="graph-holder">
+            <ConfigForceGraph
+              :tree="configItemStore.treeData"
+              :root-label="selectedModelCode"
+              @select="onGraphSelect"
+              @add-child="onGraphAddChild"
+              @delete="onGraphDelete"
+              @add-root-child="openCreateConfig"
+            />
+          </div>
+        </div>
+
+        <!-- 外部平台构型：每平台一张卡片（航新 / 633） -->
+        <div class="platform-area" v-loading="extLoading">
+          <div v-if="!extLoading && externalGroups.length === 0" class="platform-empty">
+            该机型暂无外部平台构型
+          </div>
+
+          <template v-else>
+            <div
+              v-for="group in externalGroups"
+              :key="group.source"
+              class="platform-card"
+            >
+              <div class="platform-head">
+                <span class="platform-tag" :class="`src-${group.source}`">
+                  {{ sourceText(group.source) }}
+                </span>
+              </div>
+
+              <div
+                v-for="plane in group.planes"
+                :key="`${group.source}-${plane.aircraftNo}`"
+                class="platform-plane"
+              >
+                <div class="platform-plane-title">机号：{{ plane.aircraftNo }}</div>
+                <el-tree
+                  :data="plane.trees"
+                  :props="extTreeProps"
+                  node-key="nodeId"
+                  default-expand-all
+                  highlight-current
                 >
-                  删除
-                </el-button>
-              </span>
+                  <template #default="{ data }">
+                    <div class="ext-node-row">
+                      <span class="ext-node-name">{{ data.nodeName }}</span>
+                      <el-tag
+                        v-if="data.nodeType"
+                        type="info"
+                        class="ext-type-tag"
+                      >
+                        {{ data.nodeType }}
+                      </el-tag>
+                      <span class="ext-node-meta">
+                        <span v-if="data.equipmentNo" class="ext-meta-item">设备号：{{ data.equipmentNo }}</span>
+                        <span v-if="data.partNumber" class="ext-meta-item">件号：{{ data.partNumber }}</span>
+                        <span v-if="data.installPosition" class="ext-meta-item">安装位置：{{ data.installPosition }}</span>
+                      </span>
+                    </div>
+                  </template>
+                </el-tree>
+              </div>
             </div>
           </template>
-        </el-tree>
-
-        <ConfigForceGraph
-          v-else
-          :tree="configItemStore.treeData"
-          :root-label="selectedModelCode"
-          @select="onGraphSelect"
-          @add-child="onGraphAddChild"
-          @delete="onGraphDelete"
-          @add-root-child="openCreateConfig"
-        />
+        </div>
       </div>
     </template>
 
@@ -415,20 +570,168 @@ function treeNodeName(data: ConfigItem): string {
   font-weight: 500;
 }
 
-.tree-container {
+/* 内容滚动区：本地构型卡 + 各外部平台卡 */
+.config-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  margin: 0 32px 32px;
-  background: #fff;
-  border-radius: 10px;
-  padding: 20px;
-  border: 1px solid #e0e8f5;
+  padding: 0 32px 24px;
 }
 
-/* 力导向图模式下，让 SVG 撑满整张卡片 */
+/* 本地构型白卡 */
+.tree-container {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e0e8f5;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+/* 外源独有机型提示条 */
+.readonly-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 32px 16px;
+  padding: 10px 16px;
+  background: #fff8e6;
+  border: 1px solid #f5e0a3;
+  border-radius: 8px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.banner-model {
+  color: #8a6d1a;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.banner-tip {
+  color: #a0863a;
+}
+
+/* 力导向图模式：图铺满白卡、固定高度；下方各平台卡随整区滚动 */
 .tree-container.graph-mode {
   padding: 0;
   overflow: hidden;
+}
+
+.graph-holder {
+  height: 62vh;
+  min-height: 520px;
+}
+
+/* ---- 外部平台卡片区：每平台一张卡片 ---- */
+.platform-area {
+  position: relative;
+  min-height: 80px;
+}
+
+.platform-empty {
+  background: #fff;
+  border: 1px dashed #dfe6f0;
+  border-radius: 10px;
+  padding: 40px 0;
+  text-align: center;
+  color: #bcc5d0;
+  font-size: 14px;
+}
+
+.platform-card {
+  background: #fff;
+  border: 1px solid #e0e8f5;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.platform-card:last-child {
+  margin-bottom: 0;
+}
+
+.platform-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.platform-tag {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  padding: 3px 12px;
+  border-radius: 999px;
+}
+
+.platform-tag.src-hangxin {
+  background: #0ea5e9;
+}
+
+.platform-tag.src-sansan {
+  background: #f59e0b;
+}
+
+.platform-tag.src-local {
+  background: #1a6cf0;
+}
+
+.platform-plane-title {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3a4a5c;
+  background: #f0f4fa;
+  border-radius: 6px;
+  padding: 5px 10px;
+  margin-bottom: 4px;
+}
+
+/* 外源树行：与本地构型树同一套格式标准 */
+.platform-card :deep(.el-tree-node__content) {
+  height: auto !important;
+  min-height: unset;
+}
+
+.platform-card :deep(.el-tree-node) {
+  margin: 2px 0;
+}
+
+.ext-node-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1;
+  font-size: 20px;
+  height: 40px;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+.ext-node-name {
+  color: #0d1f3c;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ext-type-tag {
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.ext-node-meta {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.ext-meta-item {
+  font-size: 12px;
+  color: #8c9ab0;
+  white-space: nowrap;
 }
 
 /* 穿透 el-tree 内部高度限制 */

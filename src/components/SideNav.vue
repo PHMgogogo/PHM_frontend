@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Fold, Expand } from '@element-plus/icons-vue'
 import airplaneIcon from '@/assets/airplane.svg'
+import sortieIcon from '@/assets/sortie.svg'
+import modelIcon from '@/assets/model.svg'
 import knowledgeIcon from '@/assets/knowledgebase.svg'
 import configIcon from '@/assets/config.svg'
 import monitorIcon from '@/assets/monitor.svg'
@@ -26,11 +28,14 @@ type MenuItem = {
 
 const menus: MenuItem[] = [
   { key: 'aircraft', svg: airplaneIcon, title: '飞行器管理' },
+  { key: 'sortie', svg: sortieIcon, title: '架次查询' },
+  { key: 'model', svg: modelIcon, title: '机型管理' },
   { key: 'knowledge', svg: knowledgeIcon, title: '知识库管理' },
   { key: 'config', svg: configIcon, title: '构型管理' },
   { key: 'monitor', svg: monitorIcon, title: '数据展示' },
   { key: 'algo', svg: algorithmIcon, title: '算法管理' },
   { key: 'interface', svg: dataIcon, title: '接口管理' },
+  { key: 'external', icon: '🌐', title: '外来平台配置' },
 ]
 </script>
 

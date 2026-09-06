@@ -5,15 +5,18 @@ import SideNav from '@/components/SideNav.vue'
 import AircraftCard from '@/components/AircraftCard.vue'
 import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
 import ConfigManagement from '@/views/ConfigManagement.vue'
+import SortieQuery from '@/views/SortieQuery.vue'
 import DocumentView from '@/views/DocumentView.vue'
 import MonitorView from '@/views/MonitorView.vue'
 import InterfaceManagement from '@/views/InterfaceManagement.vue'
-import { useAircraftStore } from '@/stores/aircraft'
+import ExternalPlatformManagement from '@/views/ExternalPlatformManagement.vue'
+import ModelManagement from '@/views/ModelManagement.vue'
+import { useUnifiedStore } from '@/stores/unified'
 import { Search } from '@element-plus/icons-vue'
 
-const store = useAircraftStore()
 const route = useRoute()
 const router = useRouter()
+const unifiedStore = useUnifiedStore()
 const activeMenu = ref('aircraft')
 const sidebarCollapsed = ref(false)
 const dialogVisible = ref(false)
@@ -41,33 +44,49 @@ watch(activeMenu, (menu) => {
   }
 })
 
+// 飞行器管理页数据来自统一聚合查询（本地/航新/633 三源合并，每条带 source）
 onMounted(() => {
-  store.fetchAircrafts()
-  store.fetchModels()
+  unifiedStore.fetchModels()
+  unifiedStore.fetchAircrafts()
 })
 
-// 按构型筛选：切换构型时重新请求该构型下的单机列表
-watch(selectedModel, (modelCode) => {
-  searchQuery.value = ''
-  if (modelCode) {
-    store.fetchAircrafts(modelCode)
-    store.fetchaircraftNumbers(modelCode)
-  } else {
-    store.fetchAircrafts()
-    store.aircraftNumbers = []
+// 机型下拉：三源机型 + 单机上出现的型号 去重（远端行 modelCode 可能为空，故再从单机行兜底收集）
+const modelOptions = computed(() => {
+  const mf = new Map<string, string>()
+  for (const m of unifiedStore.models) {
+    if (m.modelCode && !mf.has(m.modelCode)) mf.set(m.modelCode, m.manufacturer ?? '')
   }
+  for (const a of unifiedStore.aircrafts) {
+    if (a.modelCode && !mf.has(a.modelCode)) mf.set(a.modelCode, '')
+  }
+  return [...mf.entries()].map(([value, manufacturer]) => ({
+    value,
+    label: manufacturer ? `${value} — ${manufacturer}` : value,
+  }))
 })
 
 const filteredAircrafts = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return store.aircrafts
-  return store.aircrafts.filter(
-    (a) =>
+  return unifiedStore.aircrafts.filter((a) => {
+    if (selectedModel.value && a.modelCode !== selectedModel.value) return false
+    if (!q) return true
+    return (
       a.aircraftNumber.toLowerCase().includes(q) ||
       a.modelCode.toLowerCase().includes(q) ||
-      (a.airline ?? '').toLowerCase().includes(q),
-  )
+      a.airline.toLowerCase().includes(q)
+    )
+  })
 })
+
+// 新增/删除本地单机后刷新统一列表（本地 CRUD 内部已刷新各自本地 store）
+function onAircraftCreated() {
+  dialogVisible.value = false
+  unifiedStore.fetchAircrafts()
+  unifiedStore.fetchModels()
+}
+function onAircraftDeleted() {
+  unifiedStore.fetchAircrafts()
+}
 </script>
 
 <template>
@@ -83,26 +102,29 @@ const filteredAircrafts = computed(() => {
       <template v-if="activeMenu === 'aircraft'">
         <div class="page-header">
           <h2 class="page-title">飞行器管理</h2>
+          <p v-if="unifiedStore.sourceNotes.length" class="source-warning">
+            {{ unifiedStore.sourceNotes.join('；') }}
+          </p>
         </div>
 
         <!-- 顶部功能区 -->
         <div class="toolbar">
           <el-select
             v-model="selectedModel"
-            placeholder="按构型筛选"
+            placeholder="按机型筛选"
             clearable
             class="model-filter"
           >
             <el-option
-              v-for="m in store.models"
-              :key="m.modelCode"
-              :label="`${m.modelCode}${m.manufacturer ? ' — ' + m.manufacturer : ''}`"
-              :value="m.modelCode"
+              v-for="opt in modelOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
             />
           </el-select>
           <el-input
             v-model="searchQuery"
-            placeholder="搜索飞行器名称、属性或构型..."
+            placeholder="搜索飞行器机号、机型或所属单位..."
             clearable
             class="search-input"
           >
@@ -119,14 +141,25 @@ const filteredAircrafts = computed(() => {
         <div class="card-grid">
           <AircraftCard
             v-for="aircraft in filteredAircrafts"
-            :key="aircraft.aircraftNumber"
+            :key="`${aircraft.source}-${aircraft.aircraftNumber}`"
             :aircraft="aircraft"
+            @deleted="onAircraftDeleted"
           />
           <div v-if="filteredAircrafts.length === 0" class="empty-state">
             <span class="empty-icon">✈️</span>
             <p>暂无匹配的飞行器</p>
           </div>
         </div>
+      </template>
+
+      <!-- 架次统一查询 -->
+      <template v-else-if="activeMenu === 'sortie'">
+        <SortieQuery />
+      </template>
+
+      <!-- 机型管理 -->
+      <template v-else-if="activeMenu === 'model'">
+        <ModelManagement />
       </template>
 
       <!-- 知识库管理 -->
@@ -153,11 +186,16 @@ const filteredAircrafts = computed(() => {
       <template v-else-if="activeMenu === 'interface'">
         <InterfaceManagement />
       </template>
+
+      <!-- 外来平台配置管理 -->
+      <template v-else-if="activeMenu === 'external'">
+        <ExternalPlatformManagement />
+      </template>
     </main>
   </div>
 
   <!-- 添加飞行器弹窗 -->
-  <AddAircraftDialog v-model:visible="dialogVisible" @created="dialogVisible = false" />
+  <AddAircraftDialog v-model:visible="dialogVisible" @created="onAircraftCreated" />
 </template>
 
 <style scoped>
@@ -203,6 +241,13 @@ const filteredAircrafts = computed(() => {
   font-weight: 700;
   color: #0d1f3c;
   margin: 0 0 16px;
+}
+
+.source-warning {
+  margin: -8px 0 14px;
+  font-size: 12px;
+  color: #e6a23c;
+  line-height: 1.6;
 }
 
 .toolbar {
