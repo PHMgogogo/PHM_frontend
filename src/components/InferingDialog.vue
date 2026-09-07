@@ -32,6 +32,8 @@ const allColumns = ref<string[]>([])
 const columnsLoading = ref(false)
 const selectedDataCols = ref<string[]>([])
 const selectedLabelCols = ref<string[]>([])
+// 文本列（不可作为输入/label），后端返回首字母大写，统一转小写便于匹配
+const textColumns = ref<Set<string>>(new Set())
 
 // ---- 步骤3：推理参数（无 epoch、learning_rate） ----
 const batchSize = ref(32)
@@ -78,6 +80,7 @@ watch(
     selectedTaskId.value = null
     selectedDataCols.value = []
     selectedLabelCols.value = []
+    textColumns.value = new Set()
     batchSize.value = 32
     device.value = 'CPU'
     inferResult.value = null
@@ -95,6 +98,7 @@ watch(
       tasks.value = taskRes.tasks
       noTasksAvailable.value = taskRes.tasks.length === 0
       allColumns.value = overview.dataColumns ?? []
+      textColumns.value = new Set((overview.textColumns ?? []).map((c) => c.toLowerCase()))
 
       // 默认选中会话：优先级1 cookie 当前会话 → 优先级2 默认会话
       const currentTask = taskStore.getCurrentTask(props.aircraftNumber)
@@ -118,6 +122,11 @@ watch(
 // ---- 当前选中任务 ----
 function selectedTask(): TaskResponse | undefined {
   return tasks.value.find((t) => t.task_id === selectedTaskId.value)
+}
+
+// ---- 是否为文本列（不可作为输入/label） ----
+function isTextColumn(col: string): boolean {
+  return textColumns.value.has(col.toLowerCase())
 }
 
 // ---- 设备值映射 ----
@@ -241,6 +250,7 @@ function handleNavigateToTasks() {
               :key="col"
               :label="col"
               :value="col"
+              :disabled="isTextColumn(col)"
             />
           </el-select>
         </el-form-item>
@@ -258,6 +268,7 @@ function handleNavigateToTasks() {
               :key="col"
               :label="col"
               :value="col"
+              :disabled="isTextColumn(col)"
             />
           </el-select>
         </el-form-item>

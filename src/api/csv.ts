@@ -48,10 +48,10 @@ export function getCsvTables(modelCode?: string) {
 
 /**
  * GET /csv/overview —— 按构型数据映射（mappingId）查询对应 CSV 表的数据列名。
- * 后端返回字段较多，前端只关心 dataColumns（数据列名列表）。
+ * 后端返回字段较多，前端只关心 dataColumns（数据列名列表）与 textColumns（文本列，训练/推理时不可选）。
  */
 export function getCsvOverview(mappingId: number) {
-  return client.get<{ dataColumns: string[] }>('/csv/overview', {
+  return client.get<{ dataColumns: string[]; textColumns: string[] }>('/csv/overview', {
     mappingId: String(mappingId),
   })
 }
