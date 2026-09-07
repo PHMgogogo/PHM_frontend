@@ -84,6 +84,7 @@ async function handleDelete(e: Event) {
   cursor: pointer;
   transition: box-shadow 0.2s, transform 0.2s;
   border: 1px solid #e8edf5;
+  height: 100%;
 }
 
 .aircraft-card:hover {
@@ -143,6 +144,7 @@ async function handleDelete(e: Event) {
   gap: 6px;
   padding-top: 8px;
   border-top: 1px solid #f0f3f8;
+  margin-top: auto;
 }
 
 .delete-btn {

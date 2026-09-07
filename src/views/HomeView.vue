@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SideNav from '@/components/SideNav.vue'
 import AircraftCard from '@/components/AircraftCard.vue'
@@ -87,6 +87,44 @@ function onAircraftCreated() {
 function onAircraftDeleted() {
   unifiedStore.fetchAircrafts()
 }
+
+// ---- 卡片等高：所有卡片宽度/高度统一，与首行一致 ----
+// 网格等列宽已保证宽度统一；高度以当前已渲染卡片中的最高一张为基准，
+// 将每一行都固定为这一高度，使每张卡片都拉伸到与首行卡片相同。
+const gridEl = ref<HTMLElement | null>(null)
+const cardRowHeight = ref<number>(0)
+let gridResizeObserver: ResizeObserver | null = null
+
+function syncCardRowHeight() {
+  nextTick(() => {
+    const grid = gridEl.value
+    if (!grid) return
+    const cards = grid.querySelectorAll<HTMLElement>('.aircraft-card')
+    let max = 0
+    cards.forEach((card) => {
+      if (card.offsetHeight > max) max = card.offsetHeight
+    })
+    if (max > 0) cardRowHeight.value = max
+  })
+}
+
+onMounted(() => {
+  unifiedStore.fetchModels()
+  unifiedStore.fetchAircrafts()
+  // 侧栏折叠/窗口变化会导致列数变化，重新同步行高
+  gridResizeObserver = new ResizeObserver(() => syncCardRowHeight())
+  if (gridEl.value) gridResizeObserver.observe(gridEl.value)
+})
+
+onBeforeUnmount(() => {
+  gridResizeObserver?.disconnect()
+})
+
+// 列表增删（含筛选/切换机型）后重新测量
+watch(
+  () => filteredAircrafts.value.length,
+  () => syncCardRowHeight(),
+)
 </script>
 
 <template>
@@ -138,7 +176,11 @@ function onAircraftDeleted() {
         </div>
 
         <!-- 卡片区 -->
-        <div class="card-grid">
+        <div
+          class="card-grid"
+          ref="gridEl"
+          :style="cardRowHeight ? { gridAutoRows: cardRowHeight + 'px' } : undefined"
+        >
           <AircraftCard
             v-for="aircraft in filteredAircrafts"
             :key="`${aircraft.source}-${aircraft.aircraftNumber}`"
