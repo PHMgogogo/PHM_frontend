@@ -6,11 +6,14 @@ export const API_PREFIX = {
   CORE: '/api',
   PMGR: '/api/pmgr',
   INSTANCE: '/instance',
-  TASK: '/task',
+  TASK: '/api',
   OPENCODE: '/opencode',
-  RAG: '/document',
+  RAG: '/api',
   // 兼容既有文档 API 调用；新代码优先使用语义更清晰的 RAG。
-  DOCUMENT: '/document',
+  DOCUMENT: '/api',
+  EXTERNAL_PLATFORM: '/api',
+  /** 统一数据聚合查询（与外来平台同后端，接口挂在 /api/unified 下，故同样需独立前缀）→ proxy '/unified' */
+  UNIFIED: '/api/unified',
 } as const
 
 export function instanceWorkerBase(instanceId: string): string {

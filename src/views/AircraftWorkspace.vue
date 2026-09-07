@@ -67,7 +67,7 @@ const aircraft = computed(() => {
 const activeMenu = ref(isExternal.value ? 'data' : 'task')
 const initializing = ref(true)
 const sidebarCollapsed = ref(false)
-const workspaceMenus = [
+const allWorkspaceMenus = [
   { key: 'chat', svg: chatIcon, title: '当前对话' },
   { key: 'task', svg: taskIcon, title: '会话管理' },
   { key: 'data', svg: dataIcon, title: '数据管理' },

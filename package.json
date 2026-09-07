@@ -33,7 +33,7 @@
     "@codemirror/lang-python": "^6.2.1",
     "@element-plus/icons-vue": "^2.3.2",
     "@logicflow/core": "^2.2.4",
-    "@logicflow/vue-node-registry": "^1.2.4",
+    "@logicflow/vue-node-registry": "1.2.4",
     "@scalar/api-reference": "^1.60.0",
     "@vitejs/plugin-vue": "^6.0.6",
     "codemirror": "^6.0.2",

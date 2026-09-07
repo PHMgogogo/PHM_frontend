@@ -14,8 +14,6 @@ import ModelManagement from '@/views/ModelManagement.vue'
 import { useUnifiedStore } from '@/stores/unified'
 import { Search } from '@element-plus/icons-vue'
 
-const DocumentView = defineAsyncComponent(() => import('@/views/DocumentView.vue'))
-
 const route = useRoute()
 const router = useRouter()
 const unifiedStore = useUnifiedStore()
