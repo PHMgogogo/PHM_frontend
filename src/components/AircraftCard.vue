@@ -1,16 +1,34 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAircraftStore } from '@/stores/aircraft'
+import { sourceText } from '@/api/unified'
 import type { Aircraft } from '@/types/entities'
 
 const props = defineProps<{
   aircraft: Aircraft
 }>()
 
+const emit = defineEmits<{
+  (e: 'deleted'): void
+}>()
+
 const router = useRouter()
 const aircraftStore = useAircraftStore()
+
+/** 是否为外部平台（航新/633）单机：外部来源仅可查看，无删除等本地操作 */
+const isExternal = computed(
+  () => props.aircraft.source !== undefined && props.aircraft.source !== 'local',
+)
+
+function openAircraft() {
+  router.push({
+    path: `/aircraft/${props.aircraft.aircraftNumber}`,
+    query: props.aircraft.source ? { source: props.aircraft.source } : {},
+  })
+}
 
 async function handleDelete(e: Event) {
   e.stopPropagation()
@@ -22,62 +40,25 @@ async function handleDelete(e: Event) {
     )
     await aircraftStore.deleteAircraft(props.aircraft.aircraftNumber)
     ElMessage.success('飞机已删除')
+    emit('deleted')
   } catch { /* cancelled */ }
 }
 
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  active: { label: '活跃', color: '#00c87a' },
-  retired: { label: '已退役', color: '#8c9ab0' },
-  maintenance: { label: '维护中', color: '#e6a23c' },
-}
-
-function statusInfo(status: string) {
-  return STATUS_MAP[status] ?? { label: status, color: '#8c9ab0' }
-}
-
-function formatTime(dateStr: string) {
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
 </script>
 
 <template>
-  <div
-    class="aircraft-card"
-    @click="router.push(`/aircraft/${props.aircraft.aircraftNumber}`)"
-  >
+  <div class="aircraft-card" @click="openAircraft">
     <div class="card-header">
       <span class="aircraft-name">{{ aircraft.aircraftNumber }}</span>
-      <span class="model-badge">{{ aircraft.modelCode }}</span>
+      <span v-if="aircraft.modelCode" class="model-badge">{{ aircraft.modelCode }}</span>
     </div>
     <div class="card-body">
-      <div class="info-row" v-if="aircraft.airline">
-        <span class="info-label">航司</span>
-        <span class="info-value">{{ aircraft.airline }}</span>
-      </div>
-      <div class="info-row" v-if="aircraft.configVersion">
-        <span class="info-label">构型版本</span>
-        <span class="info-value config-version">{{ aircraft.configVersion }}</span>
-      </div>
-      <div class="info-row" v-if="aircraft.createdAt">
-        <span class="info-label">创建时间</span>
-        <span class="info-value">{{ formatTime(aircraft.createdAt) }}</span>
+      <div class="info-row">
+        <span class="info-label">来源</span>
+        <span class="info-value">{{ aircraft.source ? sourceText(aircraft.source) : '*' }}</span>
       </div>
     </div>
-    <div class="card-footer">
-      <span
-        class="status-dot"
-        :style="{ background: statusInfo(aircraft.status).color }"
-      ></span>
-      <span class="status-text">{{ statusInfo(aircraft.status).label }}</span>
+    <div class="card-footer" v-if="!isExternal">
       <el-button
         class="delete-btn"
         :icon="Delete"
@@ -156,10 +137,6 @@ function formatTime(dateStr: string) {
   font-weight: 500;
 }
 
-.config-version {
-  color: #1a6cf0;
-}
-
 .card-footer {
   display: flex;
   align-items: center;
@@ -170,17 +147,5 @@ function formatTime(dateStr: string) {
 
 .delete-btn {
   margin-left: auto;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.status-text {
-  font-size: 12px;
-  color: #8c9ab0;
 }
 </style>

@@ -85,6 +85,7 @@ declare module 'vue' {
     KnowledgeAgentPanel: typeof import('./src/components/knowledge/KnowledgeAgentPanel.vue')['default']
     KnowledgeAgentPanel: typeof import('./src/components/knowledge/KnowledgeAgentPanel.vue')['default']
     MessageFeed: typeof import('./src/components/MessageFeed.vue')['default']
+    ModelCard: typeof import('./src/components/ModelCard.vue')['default']
     PlaneSelector: typeof import('./src/components/demo/PlaneSelector.vue')['default']
     ProxyRuleEditor: typeof import('./src/components/ProxyRuleEditor.vue')['default']
     ProxyRuleForm: typeof import('./src/components/ProxyRuleForm.vue')['default']

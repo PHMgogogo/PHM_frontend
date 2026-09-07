@@ -5,15 +5,18 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDataMappingStore } from '@/stores/dataMapping'
 import { useConfigItemStore } from '@/stores/configItem'
 import { getMappings, getSorties, addSortie, deleteSortie } from '@/api/aircraft'
+import { unifiedApi, sourceText } from '@/api/unified'
 import TrainingDialog from '@/components/TrainingDialog.vue'
 import InferingDialog from '@/components/InferingDialog.vue'
 import SortieDialog from '@/components/SortieDialog.vue'
-import type { ConfigDataMapping, Sortie } from '@/types/entities'
+import type { ConfigDataMapping, Sortie, UnifiedSortieRow } from '@/types/entities'
 
 type SortieRow = Sortie & { mappings: ConfigDataMapping[] }
 
 const props = defineProps<{
   aircraftNumber: string
+  /** 外部平台单机整台只读：隐藏上传/新增架次/训练推理删表等写操作 */
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -35,6 +38,19 @@ const sortieRows = ref<SortieRow[]>([])
 const sortiesLoading = ref(false)
 const addingSortie = ref(false)
 const deletingSortie = ref(false)
+
+// ---- 外部平台架次（统一聚合查询里 source!=='local' 的行，只读） ----
+const remoteSorties = ref<UnifiedSortieRow[]>([])
+
+async function loadRemoteSorties() {
+  try {
+    const res = await unifiedApi.querySortie({ airplaneNum: props.aircraftNumber })
+    remoteSorties.value = res.data.filter((r) => r.source !== 'local')
+  } catch {
+    // 外部源聚合失败不影响本地流程，静默置空
+    remoteSorties.value = []
+  }
+}
 
 function formatTime(ts?: string) {
   if (!ts) return '-'
@@ -68,6 +84,8 @@ async function loadSorties() {
   } finally {
     sortiesLoading.value = false
   }
+  // 外部平台架次与本地流程解耦：独立聚合查询，不阻塞本地读取/写流程
+  await loadRemoteSorties()
 }
 
 watch(
@@ -238,8 +256,8 @@ function onInferingSuccess() {
       <h2 class="inner-title">数据管理</h2>
     </div>
 
-    <!-- CSV 上传区域 -->
-    <div class="upload-section">
+    <!-- CSV 上传区域（外部平台只读时隐藏） -->
+    <div v-if="!readonly" class="upload-section">
       <div class="section-title">CSV 数据上传</div>
       <div class="upload-form">
         <div class="form-row">
@@ -351,14 +369,14 @@ function onInferingSuccess() {
       </div>
     </div>
 
-    <!-- 架次管理（每个架次可关联多张 CSV 数据表，展开查看） -->
-    <div class="records-section">
+    <!-- 架次管理（每个架次可关联多张 CSV 数据表，展开查看；外部只读时空则不展示以免误导） -->
+    <div class="records-section" v-if="!readonly || sortieRows.length > 0">
       <div class="section-title sorties-title">
         <span>
           架次管理
           <span class="record-count">{{ sortieRows.length }} 条</span>
         </span>
-        <el-button type="primary" size="small" @click="sortieDialogVisible = true">
+        <el-button v-if="!readonly" type="primary" size="small" @click="sortieDialogVisible = true">
           + 添加架次
         </el-button>
       </div>
@@ -386,7 +404,7 @@ function onInferingSuccess() {
                     <span class="time-text">{{ formatTime(m.createdAt) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="240" align="center">
+                <el-table-column v-if="!readonly" label="操作" width="240" align="center">
                   <template #default="{ row: m }">
                     <div class="action-btns">
                       <el-button type="primary" text size="small" @click="handleGoToTraining(m)">
@@ -432,7 +450,7 @@ function onInferingSuccess() {
             <span v-else class="no-data-tag">暂无数据</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" align="center">
+        <el-table-column v-if="!readonly" label="操作" width="120" align="center">
           <template #default="{ row }">
             <el-button
               type="danger"
@@ -453,6 +471,71 @@ function onInferingSuccess() {
         <p>暂无架次</p>
         <p class="empty-sub">点击上方「添加架次」开始管理飞行任务与数据</p>
       </div>
+    </div>
+
+    <!-- 外部平台架次（统一聚合查询里非本地源，只读展示） -->
+    <div v-if="remoteSorties.length > 0" class="records-section external-section">
+      <div class="section-title sorties-title">
+        <span>
+          外部平台架次
+          <span class="record-count">{{ remoteSorties.length }} 条</span>
+        </span>
+        <span class="readonly-tip">外部平台数据仅支持查看</span>
+      </div>
+      <el-table
+        :data="remoteSorties"
+        size="small"
+        stripe
+        v-loading="sortiesLoading"
+        empty-text="暂无外部平台架次"
+      >
+        <!-- 展开行：参数列表 -->
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div v-if="row.parameterList?.length" class="param-wrap">
+              <span class="param-label">参数列表：</span>
+              <el-tag
+                v-for="(p, i) in row.parameterList"
+                :key="i"
+                size="small"
+                effect="plain"
+                class="param-tag"
+              >{{ p }}</el-tag>
+            </div>
+            <div v-else class="no-data-tag sub-empty">该架次无参数信息</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" width="110" align="center">
+          <template #default="{ row }">
+            <span class="source-badge">{{ sourceText(row.source) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="架次号" min-width="140">
+          <template #default="{ row }">
+            <span class="table-name-cell">{{ row.flightNum || row.flightId }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="机号" width="140" align="center">
+          <template #default="{ row }">
+            <span>{{ row.aircraftNo || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="飞行日期" width="140" align="center">
+          <template #default="{ row }">
+            <span>{{ row.flightDate || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="起止时间" width="180" align="center">
+          <template #default="{ row }">
+            <span class="time-text">{{ row.startTime || '--' }} ~ {{ row.endTime || '--' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="参数数" width="90" align="center">
+          <template #default="{ row }">
+            <span>{{ row.parameterList?.length ?? 0 }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
     <!-- 添加架次对话框 -->
@@ -652,5 +735,43 @@ function onInferingSuccess() {
 .empty-sub {
   font-size: 12px !important;
   color: #c0c4cc;
+}
+
+/* 外部平台架次（只读块） */
+.external-section {
+  border-color: #d6e4fb;
+}
+
+.readonly-tip {
+  font-size: 12px;
+  color: #e6a23c;
+}
+
+.source-badge {
+  font-size: 12px;
+  color: #fff;
+  background: #6b8fbf;
+  border-radius: 10px;
+  padding: 1px 10px;
+  display: inline-block;
+  line-height: 18px;
+}
+
+.param-wrap {
+  padding: 6px 16px 6px 48px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.param-label {
+  font-size: 12px;
+  color: #909399;
+  flex-shrink: 0;
+}
+
+.param-tag {
+  margin-right: 0;
 }
 </style>

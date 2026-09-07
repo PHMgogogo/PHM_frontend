@@ -24,6 +24,8 @@ export interface Aircraft {
   configVersion: string
   status: AircraftStatus
   createdAt?: string
+  /** 数据来源（统一聚合查询注入；本地创建/查询不带此字段） */
+  source?: UnifiedSource
 }
 
 /** 架次（飞行任务）：单机 → 架次 → CSV数据表（一对多，一个架次可关联多张数据表） */
@@ -49,6 +51,16 @@ export interface ConfigItem {
   itemType: ConfigItemType
   label?: string
   children?: ConfigItem[]
+}
+
+// ---- 外来平台配置 ----
+
+/** 外来平台配置（读接口返回形态：写/测接口用平台枚举 + ip/port，见 api/externalPlatform.ts） */
+export interface ExternalPlatform {
+  id: number
+  platformName: string
+  platformIp: string
+  port: number
 }
 
 // ---- CSV 相关 ----
@@ -392,4 +404,100 @@ export interface ProcessConnection {
   pid: number
   name: string
   conns: ConnectionInfo[]
+}
+
+// ---- 统一聚合查询（06-统一数据聚合查询）----
+
+/** 数据来源枚举：本地 / 航新服务 / 633服务 */
+export type UnifiedSource = 'local' | 'hangxin' | 'sansan'
+
+/** 单个数据源的查询元数据（响应外层 hangxin/sansan/local 各自一个） */
+export interface SourceInfo {
+  /** 该数据源返回的记录数 */
+  total: number
+  /** 查询结果说明；失败时描述原因（如 "本机未找到该单机"） */
+  message?: string
+}
+
+/** 统一聚合查询的统一响应体：code=200 成功，data 为三源合并行 */
+export interface UnifiedApiResult<T = unknown> {
+  code: number
+  message?: string
+  data: T[]
+  hangxin: SourceInfo
+  sansan: SourceInfo
+  local: SourceInfo
+}
+
+/** 统一单机（GET /unified/aircraft/query 的 data 行） */
+export interface UnifiedAircraftRow {
+  source: UnifiedSource
+  aircraftId?: string | null
+  aircraftCode?: string | null
+  /** 机号（本地 aircraftNumber） */
+  aircraftNumber: string
+  /** 机型（本地 modelCode） */
+  modelCode?: string | null
+  /** 所属单位（本地 airline） */
+  organization?: string | null
+  configVersion?: string | null
+  status?: string | null
+  inputType?: number | null
+  createdTime?: string | null
+}
+
+/** 统一机型（GET /unified/model/query 的 data 行） */
+export interface UnifiedModelRow {
+  source: UnifiedSource
+  modelId?: string | null
+  /** 型号编码（本地 modelCode） */
+  modelCode: string
+  manufacturer?: string | null
+  description?: string | null
+  createdTime?: string | null
+}
+
+/** 统一架次（POST /unified/sortie/query 的 data 行） */
+export interface UnifiedSortieRow {
+  source: UnifiedSource
+  /** 架次唯一标识（航新/633 为远端 id；本地为 sortieId 的字符串） */
+  flightId: string
+  aircraftType?: string | null
+  /** 机号（本地 aircraftNumber） */
+  aircraftNo?: string | null
+  /** 架次号（本地 sortieNumber） */
+  flightNum?: string | null
+  flightDate?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  parameterList?: string[] | null
+}
+
+/** 统一架次查询请求（POST /unified/sortie/query body，全部可选） */
+export interface UnifiedSortieQuery {
+  airplaneType?: string
+  airplaneNum?: string
+  startTime?: string
+  endTime?: string
+  fileName?: string
+  fileType?: string
+  sortieId?: number
+  flightNum?: string
+  paraList?: string[]
+}
+
+/** 统一构型节点（GET /unified/config/query 的 data 行，父子用 nodeId/parentNodeId 成树） */
+export interface UnifiedConfigRow {
+  source: UnifiedSource
+  nodeId: string
+  parentNodeId?: string | null
+  nodeName: string
+  nodeType?: string | null
+  /** 本地体系为 GJB 章节号；远端一般无 */
+  chapterCode?: string | null
+  /** 远端构型挂在具体机号下 */
+  aircraftNo?: string | null
+  equipmentNo?: string | null
+  installPosition?: string | null
+  partNumber?: string | null
 }
