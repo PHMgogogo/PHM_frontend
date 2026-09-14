@@ -217,9 +217,10 @@ export interface TaskResponse {
   session_id: string
   aircraft_id: string
   instance_id: string
+  /** 机型（后端保证非空，缺省为 ""） */
+  model_code: string
   work_dir: string
   is_global: boolean
-  default: boolean
 }
 
 /** GET /api/tasks/aircraft/{aircraft_id} 响应体 */
@@ -227,6 +228,8 @@ export interface AircraftTaskListResponse {
   /** 该飞机是否仍需初始化（无任何专属任务时为 true，与 tasks 是否含全局任务无关） */
   initialization_required: boolean
   tasks: TaskResponse[]
+  /** 对账时实例服务不可用：本次未清理失效任务，列表可能含失效项 */
+  stale_check_failed?: boolean
 }
 
 /** POST /api/tasks 请求体 */
@@ -238,8 +241,9 @@ export interface TaskCreateRequest {
   work_dir?: string
   // 注：aircraft_id 显式传入时不得为空字符串（后端 min_length=1），省略则用默认 ""
   aircraft_id?: string
+  /** 机型（可选，不传后端默认 ""） */
+  model_code?: string
   is_global?: boolean
-  default?: boolean
 }
 
 /** POST /api/tasks 成功响应 */
@@ -280,11 +284,11 @@ export interface Task {
   description: string
   sessionId: string
   instanceId?: string
+  /** 机型 */
+  modelCode: string
   workDir: string
   aircraftId: string
   isGlobal: boolean
-  /** 是否为对应飞机的默认任务 */
-  isDefault: boolean
   createdAt: string
   updatedAt: string
 }

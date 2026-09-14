@@ -85,29 +85,21 @@ const workspaceMenus = computed(() =>
   allWorkspaceMenus.filter((m) => !isExternal.value || !externalHiddenKeys.has(m.key)),
 )
 
-// ---- 初始化指定飞机的任务上下文：拉取列表，空列表则静默自动创建默认会话 ----
+// ---- 初始化指定飞机的任务上下文：拉取列表；有会话则自动选中第一个并进入对话，否则停在会话列表 ----
 async function bootstrapFor(id: string) {
   initializing.value = true
   try {
-    await taskStore.init(id)
+    await taskStore.init(id, aircraft.value?.modelCode ?? '')
   } finally {
     initializing.value = false
   }
-  // 每个单机都有默认会话，因此任意情况下都进入当前对话：
-  // - 若 cookie 已有该飞机的 currentTask，直接使用；
-  // - 若 cookie 无记录，自动选中默认会话并更新 cookie。
-  let ct = taskStore.getCurrentTask(id)
-  if (!ct) {
-    const defaultTask = taskStore.tasks.find(t => t.isDefault)
-    if (defaultTask && defaultTask.workDir) {
-      taskStore.setCurrentTask(id, defaultTask.id)
-      ct = defaultTask
-    }
-  }
-  if (ct && ct.workDir) {
+  // 自动选中第一个会话。
+  const firstTask = taskStore.tasks[0]
+  if (firstTask && firstTask.workDir) {
+    taskStore.setCurrentTask(firstTask.id)
     activeMenu.value = 'chat'
     await nextTick()
-    chatStore.connectToSession(ct.sessionId, ct.workDir)
+    chatStore.connectToSession(firstTask.sessionId, firstTask.workDir)
   } else {
     activeMenu.value = 'task'
   }

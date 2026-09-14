@@ -27,6 +27,11 @@ export const taskApi = {
     return client.get<AircraftTaskListResponse>(`/tasks/aircraft/${aircraftId}`)
   },
 
+  /** 按 OpenCode session_id 查询任务详情 */
+  getBySessionId(sessionId: string) {
+    return client.get<TaskResponse>(`/tasks/session/${sessionId}`)
+  },
+
   /** 创建任务 */
   create(data: TaskCreateRequest) {
     return client.post<TaskCreateResponse>('/tasks/', data)
@@ -42,8 +47,11 @@ export const taskApi = {
     return client.get<TaskResponse[]>('/tasks/search', { keyword })
   },
 
-  /** 更新任务信息 */
-  update(taskId: number, data: { name: string; description?: string; is_global?: boolean }) {
+  /** 更新任务信息（部分更新，字段名保持 snake_case） */
+  update(
+    taskId: number,
+    data: { name?: string; description?: string; model_code?: string; is_global?: boolean },
+  ) {
     return client.put<TaskResponse>(`/tasks/${taskId}`, data)
   },
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import type { ChatMessage, MessagePart } from '@/stores/chat'
 import { ArrowDown, ArrowUp, SetUp, Warning, QuestionFilled, MagicStick } from '@element-plus/icons-vue'
 import { renderMarkdown, renderMarkdownStreaming } from '@/utils/useMarkdown'
@@ -10,22 +10,27 @@ const props = defineProps<{
   currentSid: string
   pendingQuestion: null | {
     id: string
-    questions: Array<{ question: string; options: Array<{ label: string }> }>
+    title?: string
+    questions: Array<{ question: string; options: Array<{ label: string; value?: unknown }> }>
   }
 }>()
 
 const emit = defineEmits<{
-  (e: 'question-reply', labels: string[]): void
+  (e: 'question-reply', values: string[]): void
   (e: 'question-reject'): void
 }>()
 
 const feedRef = ref<HTMLElement | null>(null)
+const feedContentRef = ref<HTMLElement | null>(null)
 const expandedReasoning = ref(new Set<string | number>())
 const expandedTools = ref(new Set<string | number>())
 
 // ===== 滚动控制 =====
 const SCROLL_THRESHOLD = 40 // 距底部小于该值视为"在底部"
 const isPinnedToBottom = ref(true)
+// 标记由 scrollToBottom 触发的滚动，避免其被 onFeedScroll 误判为"用户上滑"而解除钉底
+let programmaticScroll = false
+let resizeObserver: ResizeObserver | null = null
 
 watch(
   () => props.currentSid,
@@ -50,22 +55,36 @@ watch(
 function onFeedScroll() {
   const el = feedRef.value
   if (!el) return
+  if (programmaticScroll) return
   isPinnedToBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD
 }
 
 function scrollToBottom(smooth = true) {
   const el = feedRef.value
   if (!el) return
+  programmaticScroll = true
   el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   isPinnedToBottom.value = true
+  // 下一帧再解锁，确保本次程序化滚动产生的 scroll 事件被忽略
+  requestAnimationFrame(() => {
+    programmaticScroll = false
+  })
+}
+
+/**
+ * 内容高度变化时保持钉底。
+ * 流式输出（尤其思考文本换行、Markdown 重渲染）会让 feed 内容高度在滚动之后继续增长，
+ * 仅靠 messages 变化 + scroll 事件无法覆盖这种异步增高，会导致视口脱离底部。
+ */
+function onContentResize() {
+  if (isPinnedToBottom.value) scrollToBottom(false)
 }
 
 // 判断某 part 是否为"正在流式输出的最后一条助手 text part"
-function isStreamingPart(msgIdx: number, partIdx: number): boolean {
+function isStreamingPart(msg: ChatMessage, partIdx: number): boolean {
   if (!props.sessionBusy) return false
-  if (msgIdx !== props.messages.length - 1) return false
-  const msg = props.messages[msgIdx]
-  if (!msg || msg.info.role !== 'assistant') return false
+  if (msg !== props.messages[props.messages.length - 1]) return false
+  if (msg.info.role !== 'assistant') return false
   let lastTextPartIdx = -1
   for (let i = msg.parts.length - 1; i >= 0; i--) {
     if (msg.parts[i].type === 'text') {
@@ -87,12 +106,27 @@ function hasVisibleContent(msg: ChatMessage): boolean {
   })
 }
 
+/**
+ * 需要渲染的消息：过滤掉既无内容、又无错误、且不在流式等待中的助手空气泡。
+ * 服务端在 step 开始时会先下发空的 assistant 消息（parts 为空），若该 step 无输出
+ * （例如会话即将结束），结束后就会残留一个多余的空助手气泡。
+ */
+const visibleMessages = computed(() =>
+  props.messages.filter((msg) => {
+    if (msg.info.role === 'user') return true
+    if (msg.info.error) return true
+    if (hasVisibleContent(msg)) return true
+    // 最后一条助手消息在会话繁忙时保留（用于显示三点 loading）
+    const isLast = props.messages[props.messages.length - 1] === msg
+    return isLast && props.sessionBusy
+  }),
+)
+
 // 最后一条助手消息是否处于"等待流式输出"状态（繁忙、无内容、无错误）
-function isWaitingAssistant(msgIdx: number): boolean {
+function isWaitingAssistant(msg: ChatMessage): boolean {
   if (!props.sessionBusy) return false
-  if (msgIdx !== props.messages.length - 1) return false
-  const msg = props.messages[msgIdx]
-  if (!msg || msg.info.role !== 'assistant') return false
+  if (msg !== props.messages[props.messages.length - 1]) return false
+  if (msg.info.role !== 'assistant') return false
   if (msg.info.error) return false
   return !hasVisibleContent(msg)
 }
@@ -161,10 +195,17 @@ function onFeedClick(e: MouseEvent) {
 onMounted(() => {
   feedRef.value?.addEventListener('click', onFeedClick)
   feedRef.value?.addEventListener('scroll', onFeedScroll, { passive: true })
+  // 观察内容增高（流式思考 / Markdown 重渲染），保证视口持续钉在底部
+  if (feedContentRef.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(onContentResize)
+    resizeObserver.observe(feedContentRef.value)
+  }
 })
 onBeforeUnmount(() => {
   feedRef.value?.removeEventListener('click', onFeedClick)
   feedRef.value?.removeEventListener('scroll', onFeedScroll)
+  resizeObserver?.disconnect()
+  resizeObserver = null
 })
 
 function toggleReasoning(id: string | number) {
@@ -201,13 +242,14 @@ function formatJson(obj: unknown) {
 <template>
   <div class="feed-wrapper">
     <div ref="feedRef" class="feed">
+      <div ref="feedContentRef" class="feed-content">
       <template v-if="currentSid">
-        <div v-if="!messages.length && !sessionBusy" class="empty-hint">
+        <div v-if="!visibleMessages.length && !sessionBusy" class="empty-hint">
           暂无消息，发送第一条消息开始对话。
         </div>
 
         <div
-          v-for="(msg, msgIdx) in messages"
+          v-for="msg in visibleMessages"
           :key="msg.info.id"
           class="bubble"
           :class="msg.info.role === 'user' ? 'bubble-user' : 'bubble-bot'"
@@ -219,8 +261,8 @@ function formatJson(obj: unknown) {
               <div
                 v-if="part.type === 'text' && part.text"
                 class="bubble-text markdown-body"
-                :class="{ 'is-streaming': isStreamingPart(msgIdx, idx) }"
-                v-html="isStreamingPart(msgIdx, idx) ? renderMarkdownStreaming(part.text) : renderMarkdown(part.text)"
+                :class="{ 'is-streaming': isStreamingPart(msg, idx) }"
+                v-html="isStreamingPart(msg, idx) ? renderMarkdownStreaming(part.text) : renderMarkdown(part.text)"
               />
 
               <!-- 思考过程 -->
@@ -273,7 +315,7 @@ function formatJson(obj: unknown) {
             </template>
 
             <!-- 等待流式输出开始：三点式 loading -->
-            <div v-if="isWaitingAssistant(msgIdx)" class="loading" aria-label="正在思考">
+            <div v-if="isWaitingAssistant(msg)" class="loading" aria-label="正在思考">
               <span></span>
               <span></span>
               <span></span>
@@ -301,6 +343,7 @@ function formatJson(obj: unknown) {
       </template>
 
       <div v-else class="empty-hint">正在初始化会话，请稍候…</div>
+      </div>
     </div>
 
     <!-- 回到底部悬浮按钮 -->
@@ -316,11 +359,11 @@ function formatJson(obj: unknown) {
       </button>
     </transition>
 
-    <!-- AI 主动提问面板 -->
+    <!-- AI 主动提问面板（v2 form） -->
     <div v-if="pendingQuestion" class="question-panel">
       <div class="question-text">
         <el-icon><QuestionFilled /></el-icon>
-        {{ pendingQuestion.questions[0]?.question }}
+        {{ pendingQuestion.questions[0]?.question || pendingQuestion.title || '请选择' }}
       </div>
       <div class="question-options">
         <el-button
@@ -329,7 +372,7 @@ function formatJson(obj: unknown) {
           size="small"
           type="primary"
           plain
-          @click="emit('question-reply', [opt.label])"
+          @click="emit('question-reply', [String(opt.value ?? opt.label)])"
         >{{ opt.label }}</el-button>
         <el-button size="small" type="danger" plain @click="emit('question-reject')">拒绝</el-button>
       </div>
@@ -350,11 +393,15 @@ function formatJson(obj: unknown) {
 .feed {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
+}
+
+.feed-content {
   padding: 20px 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 0;
+  min-height: 100%;
 }
 
 .empty-hint {

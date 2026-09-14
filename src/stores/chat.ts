@@ -2,23 +2,31 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { opencodeApi } from '@/api/opencode'
-import type { ConnOpts } from '@/api/opencode'
-import { API_PREFIX } from '@/config/endpoints'
+import type { ConnOpts, OpencodeEvent } from '@/api/opencode'
+import { API_PREFIX, OPENCODE_AUTH } from '@/config/endpoints'
 
 // 默认连接配置（来自 ConnectionConfig.vue 默认填充值）
 const DEFAULT_OPTS = {
   base: API_PREFIX.OPENCODE,
   dir: "/mnt/d/phm",
-  user: 'opencode',
-  pass: '',
+  user: OPENCODE_AUTH.user,
+  pass: OPENCODE_AUTH.pass,
 }
-const DEFAULT_PROVIDER="deepseeklocal"
+const DEFAULT_PROVIDER="local-model"
 const DEFAULT_MODEL="deepseek-v4-pro"
+
+/**
+ * v2 会话的模型需在「创建会话」时指定，否则回退到 opencode 全局默认模型。
+ * 此处统一导出，供创建会话处（chat.ts / task.ts）复用。
+ */
+export const DEFAULT_MODEL_REF = { providerID: DEFAULT_PROVIDER, id: DEFAULT_MODEL }
 export interface MessagePart {
   id?: string
   type: string
   text?: string
   tool?: string
+  /** 工具名（v2 使用 name） */
+  name?: string
   state?: {
     status?: string
     title?: string
@@ -46,6 +54,16 @@ export interface ModelOption {
   modelID: string
 }
 
+/** v2 待处理 form（AI 主动提问） */
+export interface PendingForm {
+  id: string
+  sessionID: string
+  title: string
+  questions: Array<{ question: string; options: Array<{ label: string; value: unknown }> }>
+  /** 字段 key，用于构造 reply 的 answers */
+  fieldKeys: string[]
+}
+
 export const useChatStore = defineStore('chat', () => {
   // 连接状态
   const connecting = ref(false)
@@ -69,8 +87,8 @@ export const useChatStore = defineStore('chat', () => {
   const sending = ref(false)
   const sessionBusy = ref(false)
 
-  // Question
-  const pendingQuestion = ref<null | { id: string; sessionID: string; questions: Array<{ question: string; options: Array<{ label: string }> }> }>(null)
+  // Form（v2 取代旧 question）
+  const pendingQuestion = ref<null | PendingForm>(null)
 
   // SSE
   let eventSource: EventSource | null = null
@@ -88,6 +106,29 @@ export const useChatStore = defineStore('chat', () => {
   let connectingToSid = ''
 
   const opts = ref<ConnOpts>({ ...DEFAULT_OPTS })
+
+  // ---- 解析 v2 模型列表 ----
+  async function loadModels() {
+    const res = await opencodeApi.models(opts.value)
+    const options: ModelOption[] = []
+    for (const m of res.data || []) {
+      const modelID = m.modelID || m.id || ''
+      if (!m.providerID || !modelID) continue
+      options.push({
+        label: `${m.providerID}/${modelID}`,
+        value: `${m.providerID}/${modelID}`,
+        providerID: m.providerID,
+        modelID,
+      })
+    }
+    modelOptions.value = options
+    if (!selectedModel.value) {
+      const preferred =
+        options.find((o) => o.providerID === DEFAULT_PROVIDER && o.modelID === DEFAULT_MODEL) ||
+        options[0]
+      if (preferred) selectedModel.value = preferred.value
+    }
+  }
 
   // ---- 连接到指定任务的 session ----
   async function connectToSession(sessionId: string, workDir: string) {
@@ -108,36 +149,21 @@ export const useChatStore = defineStore('chat', () => {
     pendingQuestion.value = null
 
     // 设置动态连接选项
-    opts.value = { base: API_PREFIX.OPENCODE, dir: workDir, user: 'opencode', pass: '' }
+    opts.value = {
+      base: API_PREFIX.OPENCODE,
+      dir: workDir,
+      user: OPENCODE_AUTH.user,
+      pass: OPENCODE_AUTH.pass,
+    }
 
     try {
-      const [health, providersRes] = await Promise.all([
+      const [health] = await Promise.all([
         opencodeApi.health(opts.value),
-        opencodeApi.providers(opts.value),
+        loadModels(),
       ])
       serverVersion.value = health.version || ''
       connected.value = true
       currentSid.value = sessionId
-
-      // 填充模型选项
-      const options: ModelOption[] = []
-      for (const provider of providersRes.all || []) {
-        for (const model of Object.values(provider.models || {})) {
-          options.push({
-            label: `${provider.id}/${model.id}`,
-            value: `${provider.id}/${model.id}`,
-            providerID: provider.id,
-            modelID: model.id,
-          })
-        }
-      }
-      modelOptions.value = options
-      if (!selectedModel.value) {
-        const preferred =
-          options.find((o) => o.providerID === DEFAULT_PROVIDER && o.modelID === DEFAULT_MODEL) ||
-          options[0]
-        if (preferred) selectedModel.value = preferred.value
-      }
       startEventSource()
       await loadMessages(sessionId)
     } catch (e: unknown) {
@@ -156,34 +182,15 @@ export const useChatStore = defineStore('chat', () => {
     errorMsg.value = ''
     connecting.value = true
     try {
-      const [health, providersRes, sessionsRes] = await Promise.all([
+      const [health, sessionsRes] = await Promise.all([
         opencodeApi.health(opts.value),
-        opencodeApi.providers(opts.value),
         opencodeApi.sessions(opts.value),
+        loadModels(),
       ])
       serverVersion.value = health.version || ''
       connected.value = true
 
-      const options: ModelOption[] = []
-      for (const provider of providersRes.all || []) {
-        for (const model of Object.values(provider.models || {})) {
-          options.push({
-            label: `${provider.id}/${model.id}`,
-            value: `${provider.id}/${model.id}`,
-            providerID: provider.id,
-            modelID: model.id,
-          })
-        }
-      }
-      modelOptions.value = options
-      if (!selectedModel.value) {
-        const preferred =
-          options.find((o) => o.providerID === DEFAULT_PROVIDER && o.modelID === DEFAULT_MODEL) ||
-          options[0]
-        if (preferred) selectedModel.value = preferred.value
-      }
-
-      sessions.value = sessionsRes || []
+      sessions.value = sessionsRes.data || []
       startEventSource()
       // 自动打开或创建会话
       if (sessions.value.length > 0 && !currentSid.value) {
@@ -211,22 +218,118 @@ export const useChatStore = defineStore('chat', () => {
     sessionBusy.value = false
     pendingQuestion.value = null
     await loadMessages(sid)
+    await loadPendingForms(sid)
   }
 
   async function loadMessages(sid: string) {
     try {
-      const prom = opencodeApi.messages(opts.value, sid)
-      const msgs = await prom
-      messages.value = msgs as ChatMessage[]
+      const res = await opencodeApi.messages(opts.value, sid)
+      messages.value = (res.data || []).map((m) => normalizeMessage(m as Record<string, unknown>, sid))
     } catch (e: unknown) {
       ElMessage.error('加载消息失败: ' + (e as Error).message)
+    }
+  }
+
+  /** 把 v2 消息结构（user{text} / assistant{content[]}）映射为 UI 使用的 {info, parts} */
+  function normalizeMessage(m: Record<string, unknown>, sid: string): ChatMessage {
+    const id = String(m.id || '')
+    const type = String(m.type || '')
+    const role: 'user' | 'assistant' = type === 'user' ? 'user' : 'assistant'
+    const parts: MessagePart[] = []
+
+    if (role === 'user') {
+      if (typeof m.text === 'string' && m.text) parts.push({ type: 'text', text: m.text })
+    } else {
+      for (const c of (m.content as Array<Record<string, unknown>>) || []) {
+        const ctype = String(c.type || '')
+        if (ctype === 'text' || ctype === 'reasoning') {
+          parts.push({ type: ctype, text: String(c.text ?? '') })
+        } else if (ctype === 'tool') {
+          parts.push({
+            type: 'tool',
+            tool: String(c.name || ''),
+            id: c.id ? String(c.id) : undefined,
+            state: mapToolState(c.state as Record<string, unknown> | undefined),
+          })
+        }
+      }
+    }
+
+    return {
+      info: {
+        id,
+        role,
+        sessionID: sid,
+        error: m.error,
+      },
+      parts,
+    }
+  }
+
+  /** v2 工具状态 → UI 期望的 {status, title, input, output, error} */
+  function mapToolState(state?: Record<string, unknown>) {
+    if (!state) return undefined
+    const status = String(state.status || '')
+    const content = (state.content as Array<{ type?: string; text?: string }>) || []
+    const output = content
+      .filter((c) => c.type === 'text' && c.text)
+      .map((c) => c.text)
+      .join('\n')
+    const err = state.error as { message?: string } | undefined
+    return {
+      status,
+      input: state.input,
+      output: output || undefined,
+      error: err?.message,
+    }
+  }
+
+  async function loadPendingForms(sid: string) {
+    try {
+      const res = await opencodeApi.forms(opts.value, sid)
+      const form = (res.data || [])[0]
+      pendingQuestion.value = form ? normalizeForm(form) : null
+    } catch {
+      pendingQuestion.value = null
+    }
+  }
+
+  function normalizeForm(form: {
+    id: string
+    sessionID: string
+    title: string
+    fields?: Array<{
+      key: string
+      title?: string
+      options?: Array<{ label?: string; value?: unknown }>
+    }>
+  }): PendingForm {
+    const fields = form.fields || []
+    return {
+      id: form.id,
+      sessionID: form.sessionID,
+      title: form.title,
+      questions: fields.map((f) => ({
+        question: f.title || f.key,
+        options: (f.options || []).map((o) => ({
+          label: String(o.label ?? o.value ?? ''),
+          value: o.value ?? o.label,
+        })),
+      })),
+      fieldKeys: fields.map((f) => f.key),
     }
   }
 
   async function handleCreateSession() {
     creating.value = true
     try {
-      const session = await opencodeApi.create(opts.value, newSessionTitle.value || undefined)
+      const res = await opencodeApi.create(
+        opts.value,
+        newSessionTitle.value || undefined,
+        DEFAULT_MODEL_REF,
+        opts.value.dir,
+      )
+      const session = res.data
       sessions.value = [session, ...sessions.value]
       newSessionTitle.value = ''
       await handleOpenSession(session.id)
@@ -273,6 +376,22 @@ export const useChatStore = defineStore('chat', () => {
     sessionBusy.value = true
     inputText.value = ''
 
+    // v2 的 /prompt 不接受 model，需先通过 /model 切换会话模型
+    if (modelOpt) {
+      try {
+        await opencodeApi.switchModel(opts.value, sid, {
+          providerID: modelOpt.providerID,
+          id: modelOpt.modelID,
+        })
+      } catch (e: unknown) {
+        ElMessage.error('切换模型失败: ' + (e as Error).message)
+        sending.value = false
+        sessionBusy.value = false
+        inputText.value = body
+        return
+      }
+    }
+
     const optimisticId = `optimistic-${Date.now()}`
 
     messages.value = [
@@ -284,12 +403,7 @@ export const useChatStore = defineStore('chat', () => {
     ]
 
     try {
-      await opencodeApi.prompt(opts.value, sid, {
-        text: body,
-        providerID: modelOpt?.providerID,
-        modelID: modelOpt?.modelID,
-      })
-      await loadMessages(sid)
+      await opencodeApi.prompt(opts.value, sid, { text: body })
     } catch (e: unknown) {
       ElMessage.error('发送失败: ' + (e as Error).message)
       messages.value = messages.value.filter((m) => m.info.id !== optimisticId)
@@ -303,10 +417,20 @@ export const useChatStore = defineStore('chat', () => {
   async function handleAbort() {
     if (!currentSid.value) return
     try {
-      await opencodeApi.abort(opts.value, currentSid.value)
+      await opencodeApi.interrupt(opts.value, currentSid.value)
     } catch (e: unknown) {
       ElMessage.error('中止失败: ' + (e as Error).message)
+      return
     }
+    // 中止后服务端不一定会补发 execution.failed/succeeded 事件，
+    // 需在前端主动收尾：结束繁忙态、冲刷未落地的流式 delta、拉取最终消息。
+    sessionBusy.value = false
+    if (deltaRafId !== null) {
+      cancelAnimationFrame(deltaRafId)
+      deltaRafId = null
+    }
+    flushDeltas()
+    await loadMessages(currentSid.value)
   }
 
   async function handleRefresh() {
@@ -316,10 +440,15 @@ export const useChatStore = defineStore('chat', () => {
 
   async function handleQuestionReply(labels: string[]) {
     if (!pendingQuestion.value) return
-    const qid = pendingQuestion.value.id
+    const form = pendingQuestion.value
     pendingQuestion.value = null
+    // v2 form 回复以 answers: { <fieldKey>: <value> } 提交
+    const answers: Record<string, unknown> = {}
+    form.fieldKeys.forEach((key, i) => {
+      answers[key] = labels[i] ?? labels[0]
+    })
     try {
-      await opencodeApi.questionReply(opts.value, qid, { answers: [labels] })
+      await opencodeApi.formReply(opts.value, form.sessionID, form.id, answers)
     } catch (e: unknown) {
       ElMessage.error('回复失败: ' + (e as Error).message)
     }
@@ -327,10 +456,10 @@ export const useChatStore = defineStore('chat', () => {
 
   async function handleQuestionReject() {
     if (!pendingQuestion.value) return
-    const qid = pendingQuestion.value.id
+    const form = pendingQuestion.value
     pendingQuestion.value = null
     try {
-      await opencodeApi.questionReject(opts.value, qid)
+      await opencodeApi.formCancel(opts.value, form.sessionID, form.id)
     } catch (e: unknown) {
       ElMessage.error('拒绝失败: ' + (e as Error).message)
     }
@@ -410,6 +539,23 @@ export const useChatStore = defineStore('chat', () => {
     if (deltaRafId === null) deltaRafId = requestAnimationFrame(flushDeltas)
   }
 
+  /**
+   * v2 流式文本/思考以 ordinal 标识分段，此处按 ordinal 生成稳定的 partID，
+   * 保证 text.started / text.delta / text.ended 能命中同一 part。
+   */
+  function ensureStreamPart(messageID: string, ordinal: number, type: 'text' | 'reasoning') {
+    const partID = `ord-${type}-${ordinal}`
+    const msgIdx = messages.value.findIndex((m) => m.info.id === messageID)
+    if (msgIdx === -1) return partID
+    const msg = messages.value[msgIdx]
+    if (!msg.parts.some((p) => p.id === partID)) {
+      const updated = [...messages.value]
+      updated[msgIdx] = { ...msg, parts: [...msg.parts, { id: partID, type, text: '' }] }
+      messages.value = updated
+    }
+    return partID
+  }
+
   // ---- SSE ----
   function scheduleReconnect() {
     if (sseRetryTimer) return
@@ -432,51 +578,100 @@ export const useChatStore = defineStore('chat', () => {
         sseReadyState.value = 1 // OPEN
       }
       eventSource.onmessage = async (e: MessageEvent) => {
-        let event: { type: string; properties?: Record<string, unknown> }
+        let event: OpencodeEvent
         try {
           event = JSON.parse(e.data)
         } catch {
           return
         }
+        if (!event.type) return
         const sid = currentSid.value
-        const props = (event.properties || {}) as Record<string, unknown>
+        // v2 事件业务数据统一放在 data 字段
+        const data = (event.data || {}) as Record<string, unknown>
+        const evtSid = data.sessionID as string | undefined
+        if (evtSid && evtSid !== sid) return
 
         switch (event.type) {
-          case 'session.status':
-            if (props.sessionID === sid) {
-              const isIdle = (props.status as { type?: string })?.type === 'idle'
-              if (isIdle && deltaRafId !== null) {
-                // 收尾 flush：idle 前确保最后一个 token 已渲染
-                cancelAnimationFrame(deltaRafId)
-                flushDeltas()
-              }
-              sessionBusy.value = !isIdle
-              if (isIdle) await loadMessages(sid)
+          case 'session.execution.started':
+            sessionBusy.value = true
+            break
+          case 'session.execution.succeeded':
+            sessionBusy.value = false
+            if (deltaRafId !== null) {
+              cancelAnimationFrame(deltaRafId)
+              flushDeltas()
+            }
+            if (sid) await loadMessages(sid)
+            break
+          case 'session.execution.failed': {
+            sessionBusy.value = false
+            const err = data.error as { message?: string } | undefined
+            if (err?.message) ElMessage.error(err.message)
+            if (sid) await loadMessages(sid)
+            break
+          }
+          case 'session.step.started': {
+            const messageID = data.assistantMessageID as string | undefined
+            if (messageID) {
+              patchMessage({ id: messageID, role: 'assistant', sessionID: sid })
             }
             break
-          case 'message.updated':
-            if (props.info && props.sessionID === sid)
-              patchMessage(props.info as ChatMessage['info'])
+          }
+          case 'session.text.started': {
+            const messageID = data.assistantMessageID as string | undefined
+            if (messageID) ensureStreamPart(messageID, Number(data.ordinal) || 0, 'text')
             break
-          case 'message.part.updated':
-            if (props.part && props.sessionID === sid)
-              patchPart(props.part as MessagePart & { messageID: string })
+          }
+          case 'session.text.delta': {
+            const messageID = data.assistantMessageID as string | undefined
+            if (!messageID) break
+            const partID = ensureStreamPart(messageID, Number(data.ordinal) || 0, 'text')
+            patchPartDelta(messageID, partID, 'text', String(data.delta ?? ''))
             break
-          case 'message.part.delta':
-            if (props.sessionID === sid && props.messageID && props.partID)
-              patchPartDelta(
-                props.messageID as string,
-                props.partID as string,
-                (props.field as string) || 'text',
-                (props.delta as string) || '',
-              )
+          }
+          case 'session.text.ended': {
+            const messageID = data.assistantMessageID as string | undefined
+            if (!messageID) break
+            const partID = ensureStreamPart(messageID, Number(data.ordinal) || 0, 'text')
+            patchPart({ id: partID, type: 'text', text: String(data.text ?? ''), messageID })
             break
-          case 'question.asked':
-            if (props.sessionID === sid) pendingQuestion.value = props as typeof pendingQuestion.value
+          }
+          case 'session.reasoning.started': {
+            const messageID = data.assistantMessageID as string | undefined
+            if (messageID) ensureStreamPart(messageID, Number(data.ordinal) || 0, 'reasoning')
             break
-          case 'question.replied':
-          case 'question.rejected':
-            if (props.sessionID === sid) pendingQuestion.value = null
+          }
+          case 'session.reasoning.delta': {
+            const messageID = data.assistantMessageID as string | undefined
+            if (!messageID) break
+            const partID = ensureStreamPart(messageID, Number(data.ordinal) || 0, 'reasoning')
+            patchPartDelta(messageID, partID, 'text', String(data.delta ?? ''))
+            break
+          }
+          case 'session.reasoning.ended': {
+            const messageID = data.assistantMessageID as string | undefined
+            if (!messageID) break
+            const partID = ensureStreamPart(messageID, Number(data.ordinal) || 0, 'reasoning')
+            patchPart({ id: partID, type: 'reasoning', text: String(data.text ?? ''), messageID })
+            break
+          }
+          case 'session.tool.input.started':
+          case 'session.tool.input.delta':
+          case 'session.tool.input.ended':
+          case 'session.tool.progress':
+          case 'session.tool.success':
+          case 'session.tool.failed': {
+            if (sid) await loadMessages(sid)
+            break
+          }
+          case 'session.form.created':
+          case 'session.form.state': {
+            if (sid) await loadPendingForms(sid)
+            break
+          }
+          case 'session.form.replied':
+          case 'session.form.cancelled':
+            pendingQuestion.value = null
             break
         }
       }

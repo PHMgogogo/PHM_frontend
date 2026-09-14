@@ -11,14 +11,31 @@ export interface ConnOpts {
   timeout?: number
 }
 
+/** 模型引用（v2 Model.Ref） */
+export interface ModelRef {
+  providerID: string
+  /** v2 使用 id 字段表示模型标识 */
+  id?: string
+  modelID?: string
+  variant?: string
+}
+
 interface PromptInput {
   text: string
-  agent?: string
-  providerID?: string
-  modelID?: string
+}
+
+/** v2 事件负载（SSE /api/event） */
+export interface OpencodeEvent {
+  id?: string
+  created?: number
+  type: string
+  location?: { directory?: string }
+  data?: Record<string, unknown>
+  [key: string]: unknown
 }
 
 function buildAuth(opts: ConnOpts): Record<string, string> {
+  // v2 仍使用 HTTP Basic 认证
   if (!opts.pass) return {}
   return {
     authorization: `Basic ${btoa(`${opts.user || 'opencode'}:${opts.pass}`)}`,
@@ -37,6 +54,17 @@ function buildUrl(base: string | undefined, path: string): string {
   return `${baseUrl}/${relativePath}`
 }
 
+/**
+ * v2 通过 ``location[directory]`` 查询参数指定工作目录（deepObject 风格），
+ * 旧版的 ``x-opencode-directory`` 请求头已失效。
+ */
+function appendLocation(url: string, dir?: string): string {
+  if (!dir) return url
+  const u = new URL(url, window.location.origin)
+  u.searchParams.set('location[directory]', dir)
+  return u.toString()
+}
+
 async function req<T = unknown>(opts: ConnOpts, path: string, init?: RequestInit): Promise<T> {
   // 深拷贝：若 opts 是 Vue reactive proxy，解包为纯对象，避免传递 Proxy 给原生 API
   const opts_deepcopy: ConnOpts = JSON.parse(JSON.stringify(opts))
@@ -52,13 +80,14 @@ async function req<T = unknown>(opts: ConnOpts, path: string, init?: RequestInit
 
   const headers = new Headers((init?.headers as HeadersInit) || {})
   headers.set('content-type', 'application/json')
-  headers.set('x-opencode-directory', opts_deepcopy.dir || '')
   for (const [key, value] of Object.entries(buildAuth(opts_deepcopy))) {
     headers.set(key, value)
   }
 
+  const url = appendLocation(buildUrl(opts_deepcopy.base, path), opts_deepcopy.dir)
+
   try {
-    const res = await fetch(buildUrl(opts_deepcopy.base, path), {
+    const res = await fetch(url, {
       ...init,
       headers,
       signal: ctrl.signal,
@@ -81,49 +110,107 @@ async function req<T = unknown>(opts: ConnOpts, path: string, init?: RequestInit
 }
 
 export const opencodeApi = {
-  health: (opts: ConnOpts) => req<{ version?: string }>(opts, '/global/health'),
-  providers: (opts: ConnOpts) => req<{ all?: Array<{ id: string; models?: Record<string, { id: string }> }> }>(opts, '/provider'),
-  sessions: (opts: ConnOpts) => req<Array<{ id: string; title?: string }>>(opts, '/session'),
-  create: (opts: ConnOpts, title?: string) =>
-    req<{ id: string; title?: string }>(opts, '/session', {
-      method: 'POST',
-      body: JSON.stringify(title ? { title } : {}),
-    }),
-  messages: async (opts: ConnOpts, sid: string) => {
-    return req<unknown[]>(opts, `/session/${sid}/message`)
-  },
-  prompt: (opts: ConnOpts, sid: string, input: PromptInput) =>
-    req(opts, `/session/${sid}/prompt_async`, {
+  /** 健康检查：{healthy, version, pid} */
+  health: (opts: ConnOpts) => req<{ healthy?: boolean; version?: string; pid?: number }>(opts, '/api/health'),
+  /** 模型列表：{location, data:[{id, modelID, providerID, name, ...}]} */
+  models: (opts: ConnOpts) =>
+    req<{ data?: Array<{ id?: string; modelID?: string; providerID?: string; name?: string }> }>(
+      opts,
+      '/api/model',
+    ),
+  /** Provider 列表：{location, data:[{id, name, ...}]} */
+  providers: (opts: ConnOpts) =>
+    req<{ data?: Array<{ id: string; name?: string }> }>(opts, '/api/provider'),
+  /** 会话列表：{data:[{id, title?, ...}]} */
+  sessions: (opts: ConnOpts) =>
+    req<{ data?: Array<{ id: string; title?: string }> }>(opts, '/api/session'),
+  /**
+   * 创建会话：body {title?, model?, location?}，返回 {data:{id, title?, ...}}
+   * 注意：创建会话时 query 参数 location[directory] 会被服务端忽略，
+   * 工作目录必须放到请求体的 location 字段（Location.Ref）才生效。
+   */
+  create: (opts: ConnOpts, title?: string, model?: ModelRef, dir?: string) =>
+    req<{ data: { id: string; title?: string } }>(opts, '/api/session', {
       method: 'POST',
       body: JSON.stringify({
-        agent: input.agent || undefined,
-        model:
-          input.providerID && input.modelID
-            ? { providerID: input.providerID, modelID: input.modelID }
-            : undefined,
-        parts: [{ type: 'text', text: input.text }],
+        title: title || undefined,
+        model: model ? normalizeModelRef(model) : undefined,
+        location: dir ? { directory: dir } : undefined,
       }),
     }),
-  deleteSession: (opts: ConnOpts, sid: string) =>
-    req(opts, `/session/${sid}`, { method: 'DELETE' }),
-  abort: (opts: ConnOpts, sid: string) =>
-    req(opts, `/session/${sid}/abort`, { method: 'POST' }),
-  questionReply: (opts: ConnOpts, requestID: string, body: unknown) =>
-    req(opts, `/question/${requestID}/reply`, {
+  /** 切换会话模型：body 必须为 {model: Model.Ref} */
+  switchModel: (opts: ConnOpts, sid: string, model: ModelRef) =>
+    req(opts, `/api/session/${sid}/model`, {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ model: normalizeModelRef(model) }),
     }),
-  questionReject: (opts: ConnOpts, requestID: string) =>
-    req(opts, `/question/${requestID}/reject`, { method: 'POST' }),
+  /** 消息列表：{data:[...], cursor}；order=asc 保证按时间正序返回（v2 限制 limit ≤ 200） */
+  messages: (opts: ConnOpts, sid: string) =>
+    req<{ data?: unknown[]; cursor?: unknown }>(
+      opts,
+      `/api/session/${sid}/message?order=asc&limit=200`,
+    ),
+  /**
+   * 发送提示词：body {text}
+   * 注意：v2 的 /prompt 接口不接受 model 字段（additionalProperties=false，会被静默丢弃），
+   * 会话使用的模型由「创建会话时的 model」或「/model 切换接口」决定。
+   */
+  prompt: (opts: ConnOpts, sid: string, input: PromptInput) =>
+    req(opts, `/api/session/${sid}/prompt`, {
+      method: 'POST',
+      body: JSON.stringify({ text: input.text }),
+    }),
+  /** 删除会话 */
+  deleteSession: (opts: ConnOpts, sid: string) =>
+    req(opts, `/api/session/${sid}`, { method: 'DELETE' }),
+  /** 中断当前执行 */
+  interrupt: (opts: ConnOpts, sid: string) =>
+    req(opts, `/api/session/${sid}/interrupt`, { method: 'POST' }),
+  /** 列出会话待处理的 form */
+  forms: (opts: ConnOpts, sid: string) =>
+    req<{ data?: Array<FormInfo> }>(opts, `/api/session/${sid}/form`),
+  /** 回复 form（v2 取代旧 question.reply） */
+  formReply: (opts: ConnOpts, sid: string, formID: string, answers: Record<string, unknown>) =>
+    req(opts, `/api/session/${sid}/form/${formID}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    }),
+  /** 取消 form（v2 取代旧 question.reject） */
+  formCancel: (opts: ConnOpts, sid: string, formID: string) =>
+    req(opts, `/api/session/${sid}/form/${formID}/cancel`, { method: 'POST' }),
   event: (opts: ConnOpts): EventSource => {
-    const relPath = buildUrl(opts.base, '/event')
-    // buildUrl 返回的是相对路径（如 /opencode/event），
-    // new URL() 单参数要求绝对 URL，需以当前页面 origin 为基准解析
-    const u = new URL(relPath, window.location.origin)
-    u.searchParams.set('directory', opts.dir || '')
+    const base = appendLocation(buildUrl(opts.base, '/api/event'), opts.dir)
+    const u = new URL(base, window.location.origin)
     if (opts.pass) {
       u.searchParams.set('auth_token', btoa(`${opts.user || 'opencode'}:${opts.pass}`))
     }
     return new EventSource(u.toString())
   },
+}
+
+/** v2 统一使用 {id, providerID, variant?}，此处做字段归一 */
+function normalizeModelRef(model: ModelRef): ModelRef {
+  return {
+    providerID: model.providerID,
+    id: model.id || model.modelID || '',
+    variant: model.variant,
+  }
+}
+
+/** v2 form 描述（AI 主动提问的新载体） */
+export interface FormField {
+  key: string
+  type?: string
+  title?: string
+  description?: string
+  required?: boolean
+  options?: Array<{ label?: string; value?: unknown; [k: string]: unknown }>
+  [k: string]: unknown
+}
+
+export interface FormInfo {
+  id: string
+  sessionID: string
+  title: string
+  fields?: FormField[]
 }

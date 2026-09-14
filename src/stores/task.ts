@@ -1,13 +1,14 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/task'
-import { instanceApi } from '@/api/instance'
+import { instanceApi, DEFAULT_HIGHLEVEL_ALGO } from '@/api/instance'
+import type { HighLevelAlgo } from '@/api/instance'
 import { clearWorkerClient } from '@/api/instance-worker'
 import { opencodeApi } from '@/api/opencode'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, DEFAULT_MODEL_REF } from '@/stores/chat'
 import type { Task } from '@/types/entities'
-import { API_PREFIX } from '@/config/endpoints'
+import { API_PREFIX, OPENCODE_AUTH } from '@/config/endpoints'
 
 // ---- 工具函数 ----
 
@@ -25,23 +26,6 @@ function friendlyError(e: unknown): string {
   return (e as Error).message || '未知错误'
 }
 
-// ---- Cookie 工具（session cookie，关浏览器后清除） ----
-
-const COOKIE_CURRENT_TASK = 'phm_current_task'
-
-function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
-  return match ? decodeURIComponent(match[1]) : null
-}
-
-function setCookie(name: string, value: string) {
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/`
-}
-
-function deleteCookie(name: string) {
-  document.cookie = `${name}=; path=/; max-age=0`
-}
-
 export const useTaskStore = defineStore('task', () => {
   // ---- 状态 ----
   const tasks = ref<Task[]>([])
@@ -51,78 +35,55 @@ export const useTaskStore = defineStore('task', () => {
   const updating = ref(false)
   const clearing = ref(false)
 
-  /** 每个飞行器当前正在对话的任务 ID（session cookie 持久化，关浏览器后清除） */
-  const currentTaskByAircraft = ref<Record<string, number>>({})
+  /** 当前正在对话的任务 ID（仅内存，不做任何持久化） */
+  const currentTaskId = ref<number | null>(null)
 
   /** 当前工作区所属飞机标识（即后端 aircraft_id），由 init() 设置，供 loadTasks/createTask 复用 */
   const currentAircraftId = ref('')
 
-  // ---- Cookie 同步 ----
+  /** 当前工作区对应机型（后端 model_code），由 init() 设置，供 createTask 提交时复用 */
+  const currentModelCode = ref('')
 
-  function syncCurrentTaskCookie() {
-    const json = JSON.stringify(currentTaskByAircraft.value)
-    if (json === '{}') {
-      deleteCookie(COOKIE_CURRENT_TASK)
-    } else {
-      setCookie(COOKIE_CURRENT_TASK, json)
-    }
+  // ---- 当前任务 ----
+
+  /** 获取当前正在对话的任务 */
+  const currentTask = computed(() =>
+    currentTaskId.value === null
+      ? undefined
+      : tasks.value.find((t) => t.id === currentTaskId.value),
+  )
+
+  function setCurrentTask(taskId: number) {
+    currentTaskId.value = taskId
   }
 
-  /** 从 cookie 恢复状态 */
-  function loadFromCookies() {
-    try {
-      const taskJson = getCookie(COOKIE_CURRENT_TASK)
-      if (taskJson) {
-        currentTaskByAircraft.value = JSON.parse(taskJson)
-      }
-    } catch {
-      // Cookie 数据损坏，忽略
-    }
-  }
-
-  // ---- currentTask 追踪 ----
-
-  /** 获取指定飞行器当前正在对话的任务 */
-  function getCurrentTask(aircraftNumber: string): Task | undefined {
-    const taskId = currentTaskByAircraft.value[aircraftNumber]
-    if (!taskId) return undefined
-    return tasks.value.find((t) => t.id === taskId)
-  }
-
-  function setCurrentTask(aircraftNumber: string, taskId: number) {
-    currentTaskByAircraft.value = { ...currentTaskByAircraft.value, [aircraftNumber]: taskId }
-    syncCurrentTaskCookie()
-  }
-
-  function clearCurrentTask(aircraftNumber: string) {
-    const next = { ...currentTaskByAircraft.value }
-    delete next[aircraftNumber]
-    currentTaskByAircraft.value = next
-    syncCurrentTaskCookie()
+  function clearCurrentTask() {
+    currentTaskId.value = null
   }
 
   // ---- 任务列表 ----
 
   /**
    * 加载并映射当前飞机的任务列表（不切换 loading，供 init/createTask 等在外壳内复用）。
-   * 返回 initialization_required：该飞机是否仍需初始化（无任何专属任务时为 true）。
    */
-  async function loadTasks(): Promise<boolean> {
+  async function loadTasks(): Promise<void> {
     const res = await taskApi.listByAircraft(currentAircraftId.value)
+    if (res.stale_check_failed) {
+      ElMessage.warning('实例状态校验暂时不可用，列表可能包含已失效的会话')
+    }
     tasks.value = res.tasks.map((r) => ({
       id: r.task_id,
       name: r.name,
       description: r.description,
       sessionId: r.session_id,
       instanceId: r.instance_id || '',
+      modelCode: r.model_code || '',
       workDir: r.work_dir || '',
       aircraftId: r.aircraft_id || '',
       isGlobal: r.is_global ?? false,
-      isDefault: r.default ?? false,
       createdAt: '',
       updatedAt: '',
     }))
-    return res.initialization_required
   }
 
   /** 重新拉取当前飞机的任务列表（带 loading 态，供需要 loading 指示的路径调用） */
@@ -140,17 +101,16 @@ export const useTaskStore = defineStore('task', () => {
   // ---- 创建任务（多步编排） ----
 
   async function createTask(
-    data: { name: string; description: string },
-    opts?: { isDefault?: boolean; isGlobal?: boolean },
+    data: { name: string; description: string; algo?: HighLevelAlgo },
   ): Promise<Task | null> {
     creating.value = true
     let instanceId = ''
     let sessionId = ''
 
     try {
-      // Step 1: 启动实例
+      // Step 1: 启动实例（可指定基础算法）
       createStep.value = '正在启动实例...'
-      const inst = await instanceApi.start()
+      const inst = await instanceApi.start(data.algo ?? DEFAULT_HIGHLEVEL_ALGO)
       instanceId = inst.instance_id
 
       // Step 2: 处理工作目录路径
@@ -159,15 +119,16 @@ export const useTaskStore = defineStore('task', () => {
       const sessionOpts = {
         base: API_PREFIX.OPENCODE,
         dir: workDir,
-        user: 'opencode',
+        user: OPENCODE_AUTH.user,
+        pass: OPENCODE_AUTH.pass,
       }
 
       // Step 3: 创建 OpenCode 会话
       createStep.value = '正在创建会话...'
-      const session = await opencodeApi.create(sessionOpts, data.name)
-      sessionId = session.id
+      const session = await opencodeApi.create(sessionOpts, data.name, DEFAULT_MODEL_REF, workDir)
+      sessionId = session.data.id
 
-      // Step 4: 保存任务到本地后端（携带当前飞机标识与默认/全局标记）
+      // Step 4: 保存任务到本地后端（会话恒为单机可见，不写全局标记）
       createStep.value = '正在保存会话...'
       await taskApi.create({
         name: data.name,
@@ -176,8 +137,8 @@ export const useTaskStore = defineStore('task', () => {
         instance_id: instanceId,
         work_dir: workDir,
         aircraft_id: currentAircraftId.value,
-        default: opts?.isDefault ?? false,
-        is_global: opts?.isGlobal ?? false,
+        model_code: currentModelCode.value,
+        is_global: false,
       })
 
       // Step 5: 刷新列表（不切换 loading，避免在外壳内反复 toggle）
@@ -220,7 +181,12 @@ export const useTaskStore = defineStore('task', () => {
     if (task.sessionId) {
       try {
         await opencodeApi.deleteSession(
-          { base: API_PREFIX.OPENCODE, dir: task.workDir, user: 'opencode' },
+          {
+            base: API_PREFIX.OPENCODE,
+            dir: task.workDir,
+            user: OPENCODE_AUTH.user,
+            pass: OPENCODE_AUTH.pass,
+          },
           task.sessionId,
         )
       } catch (e) {
@@ -252,15 +218,10 @@ export const useTaskStore = defineStore('task', () => {
     // Step 5: 更新本地状态
     tasks.value = tasks.value.filter((t) => t.id !== taskId)
 
-    // 从所有飞行器的 currentTask 中移除
-    const nextCurrent = { ...currentTaskByAircraft.value }
-    for (const key of Object.keys(nextCurrent)) {
-      if (nextCurrent[key] === taskId) {
-        delete nextCurrent[key]
-      }
+    // 若删除的是当前任务，清空当前任务
+    if (currentTaskId.value === taskId) {
+      currentTaskId.value = null
     }
-    currentTaskByAircraft.value = nextCurrent
-    syncCurrentTaskCookie()
 
     ElMessage.success('会话已删除')
   }
@@ -269,13 +230,14 @@ export const useTaskStore = defineStore('task', () => {
 
   async function updateTask(
     taskId: number,
-    data: { name: string; description: string; isGlobal?: boolean },
+    data: { name: string; description: string; modelCode?: string; isGlobal?: boolean },
   ) {
     updating.value = true
     try {
       await taskApi.update(taskId, {
         name: data.name,
         description: data.description,
+        model_code: data.modelCode,
         is_global: data.isGlobal,
       })
       await loadTasks()
@@ -287,12 +249,13 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  // ---- 清空对话（/clear：换新 session 重置 AI 上下文） ----
+  // ---- 清空对话（/clear：基于当前 workDir 重建会话，重置 AI 上下文） ----
 
   /**
-   * 真正的 /clear：创建全新 OpenCode session → 同步 task 记录的 session_id →
-   * 切换 chat 连接 → 删除旧 session。这样 AI 上下文被彻底重置，
-   * 且重开任务不会连回带历史的旧 session。
+   * 清空 = 重建：在当前任务的工作目录（workDir）下新建一个 OpenCode session，
+   * 保持与创建任务一致的上下文（同一目录、同一默认模型，后端会重写 AGENTS.md），
+   * 然后同步 task 记录的 session_id、切换 chat 连接、删除旧 session。
+   * 工作目录缺失时拒绝重建：否则新 session 会落到服务端默认目录，与创建出的会话行为不一致。
    */
   async function clearTaskSession(taskId: number): Promise<boolean> {
     const task = tasks.value.find((t) => t.id === taskId)
@@ -303,26 +266,37 @@ export const useTaskStore = defineStore('task', () => {
 
     const chatStore = useChatStore()
     if (chatStore.sessionBusy) {
-      ElMessage.warning('对话进行中，请先中止后再清空')
+      ElMessage.warning('对话进行中，请先中止后再重建')
       return false
     }
 
-    const oldSid = task.sessionId
     const workDir = task.workDir
-    const sessionOpts = { base: API_PREFIX.OPENCODE, dir: workDir, user: 'opencode' }
+    if (!workDir) {
+      ElMessage.error('缺少工作目录，无法重建会话，请重新创建会话')
+      return false
+    }
+
+    // 重建仍复用原任务的 session 绑定与工作目录
+    const oldSid = task.sessionId
+    const sessionOpts = {
+      base: API_PREFIX.OPENCODE,
+      dir: workDir,
+      user: OPENCODE_AUTH.user,
+      pass: OPENCODE_AUTH.pass,
+    }
 
     clearing.value = true
     try {
-      // Step 1: 创建新 session（全新上下文）
-      const session = await opencodeApi.create(sessionOpts, task.name)
+      // Step 1: 在当前工作目录下创建新 session（全新上下文，同 createTask 的 Step 3）
+      const session = await opencodeApi.create(sessionOpts, task.name, DEFAULT_MODEL_REF, workDir)
 
       // Step 2: 同步 task 记录的 session_id（必须成功，否则重开任务会连回旧 session）
       try {
-        await taskApi.updateSessionId(taskId, session.id)
+        await taskApi.updateSessionId(taskId, session.data.id)
       } catch (e) {
         // 回滚：删除刚创建的孤立新 session，保持原绑定不变
         try {
-          await opencodeApi.deleteSession(sessionOpts, session.id)
+          await opencodeApi.deleteSession(sessionOpts, session.data.id)
         } catch {
           /* 忽略清理失败 */
         }
@@ -330,10 +304,10 @@ export const useTaskStore = defineStore('task', () => {
       }
 
       // Step 3: 切换 chat 连接到新 session（内部 dispose 旧 SSE + 拉取空消息）
-      await chatStore.connectToSession(session.id, workDir)
+      await chatStore.connectToSession(session.data.id, workDir)
 
       // Step 4: 删除旧 session（best-effort，失败不阻塞）
-      if (oldSid && oldSid !== session.id) {
+      if (oldSid && oldSid !== session.data.id) {
         try {
           await opencodeApi.deleteSession(sessionOpts, oldSid)
         } catch (e) {
@@ -343,10 +317,10 @@ export const useTaskStore = defineStore('task', () => {
 
       // Step 5: 刷新本地 task 列表，同步 sessionId
       await loadTasks()
-      ElMessage.success('已清空对话，AI 上下文已重置')
+      ElMessage.success('会话已重建，AI 上下文已重置')
       return true
     } catch (e) {
-      ElMessage.error('清空失败: ' + friendlyError(e))
+      ElMessage.error('重建会话失败: ' + friendlyError(e))
       return false
     } finally {
       clearing.value = false
@@ -357,22 +331,16 @@ export const useTaskStore = defineStore('task', () => {
 
   /**
    * 初始化指定飞机的任务上下文：
-   * 1. 记录当前飞机标识（作为后端 aircraft_id）
+   * 1. 记录当前飞机标识（作为后端 aircraft_id）与机型（model_code）
    * 2. 按飞机拉取任务列表
-   * 3. 若 initialization_required=true（该飞机无任何专属任务），静默自动创建一条默认会话（default=true）
-   *    注意：tasks 可能含全局任务导致 length>0，故只看 initialization_required，不看 tasks.length。
-   * 整个流程包在单个 loading 外壳内，对外只产生一次 loading true→false 跳变。
+   * 不再自动创建默认会话：无会话时由页面停靠在会话列表，待用户主动创建。
    */
-  async function init(aircraftId: string) {
+  async function init(aircraftId: string, modelCode = '') {
     currentAircraftId.value = aircraftId
-    loadFromCookies()
+    currentModelCode.value = modelCode
     loading.value = true
     try {
-      const initializationRequired = await loadTasks()
-      if (initializationRequired) {
-        await createTask({ name: '默认会话', description: '' }, { isDefault: true })
-        await loadTasks()
-      }
+      await loadTasks()
     } catch (e) {
       ElMessage.error('加载会话列表失败: ' + friendlyError(e))
     } finally {
@@ -387,9 +355,10 @@ export const useTaskStore = defineStore('task', () => {
     createStep,
     updating,
     clearing,
-    currentTaskByAircraft,
+    currentTaskId,
     currentAircraftId,
-    getCurrentTask,
+    currentModelCode,
+    currentTask,
     setCurrentTask,
     clearCurrentTask,
     fetchTasks,

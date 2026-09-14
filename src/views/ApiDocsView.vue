@@ -3,7 +3,7 @@ import { ref, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { ApiReference } from '@scalar/api-reference'
 import '@scalar/api-reference/style.css'
-import { API_PREFIX, DEBUG_BACKEND } from '@/config/endpoints'
+import { API_PREFIX } from '@/config/endpoints'
 
 const route = useRoute()
 const instanceId = String(route.params.instanceId)
@@ -13,11 +13,9 @@ const specContent = ref<Record<string, unknown> | null>(null)
 watchEffect(async () => {
   const resp = await fetch(`${API_PREFIX.INSTANCE}/${instanceId}/openapi.json`)
   const raw = await resp.json()
-  // 替换 servers 列表，让 Scalar 的服务器选择器可用
-  raw.servers = [
-    { url: DEBUG_BACKEND.URL + '/' + instanceId, description: DEBUG_BACKEND.LABEL },
-    // { url: API_PREFIX.INSTANCE + '/' + instanceId, description: 'Vite 代理 (相对路径)' },
-  ]
+  // 用当前页面 origin 作为服务端地址，前端部署在哪台机器，文档 base url 就是哪台
+  const serverBase = `${window.location.origin}${API_PREFIX.INSTANCE}/${instanceId}`
+  raw.servers = [{ url: serverBase, description: '当前服务' }]
   specContent.value = raw
 })
 </script>

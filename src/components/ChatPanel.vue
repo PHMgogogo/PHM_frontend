@@ -6,7 +6,7 @@ import { useChatStore } from '@/stores/chat'
 import { useTaskStore } from '@/stores/task'
 import MessageFeed from '@/components/MessageFeed.vue'
 
-const props = defineProps<{
+defineProps<{
   aircraftNumber: string
 }>()
 
@@ -51,16 +51,24 @@ function handleSendKey(e: KeyboardEvent) {
   }
 }
 
+/** 无会话时：直接创建一个基于基础模型（framework）的默认会话并进入对话 */
+async function handleCreateDefaultSession() {
+  const task = await taskStore.createTask({ name: '默认会话', description: '' })
+  if (!task || !task.workDir) return
+  taskStore.setCurrentTask(task.id)
+  await chatStore.connectToSession(task.sessionId, task.workDir)
+}
+
 async function handleClearMessages() {
   if (chatStore.messages.length === 0) return
-  const task = taskStore.getCurrentTask(props.aircraftNumber)
+  const task = taskStore.currentTask
   if (!task) return
   try {
     await ElMessageBox.confirm(
-      '清空将重置 AI 上下文，当前对话历史不可恢复。是否继续？',
-      '确认清空',
+      '将在当前工作目录下重建会话，AI 上下文与当前对话历史将被重置且不可恢复。是否继续？',
+      '确认重建会话',
       {
-        confirmButtonText: '清空',
+        confirmButtonText: '重建',
         cancelButtonText: '取消',
         type: 'warning',
       },
@@ -80,11 +88,19 @@ async function sendMessage() {
 
 <template>
   <!-- 无 currentTask 时的空状态 -->
-  <div v-if="!taskStore.getCurrentTask(props.aircraftNumber)" class="chat-empty-state">
+  <div v-if="!taskStore.currentTask" class="chat-empty-state">
     <div class="chat-empty-icon">💬</div>
-    <p>{{ taskStore.tasks.length === 0 ? '暂无会话，请先创建会话再开始对话。' : '请先在会话管理中选择一个会话开始对话。' }}</p>
-    <el-button type="primary" @click="emit('navigate-to-tasks')">
-      {{ taskStore.tasks.length === 0 ? '去创建会话' : '去会话管理' }}
+    <p>{{ taskStore.tasks.length === 0 ? '暂无会话，可直接创建默认会话开始对话。' : '请先在会话管理中选择一个会话开始对话。' }}</p>
+    <el-button
+      v-if="taskStore.tasks.length === 0"
+      type="primary"
+      :loading="taskStore.creating"
+      @click="handleCreateDefaultSession"
+    >
+      创建默认会话
+    </el-button>
+    <el-button v-else type="primary" @click="emit('navigate-to-tasks')">
+      去会话管理
     </el-button>
   </div>
 
@@ -118,7 +134,7 @@ async function sendMessage() {
         <el-button v-if="chatStore.sessionBusy" size="small" type="warning" :icon="VideoPause" @click="chatStore.handleAbort">
           中止
         </el-button>
-        <span class="current-task-label">会话：{{ taskStore.getCurrentTask(props.aircraftNumber)?.name }}</span>
+        <span class="current-task-label">会话：{{ taskStore.currentTask?.name }}</span>
       </div>
     </div>
 
@@ -149,7 +165,7 @@ async function sendMessage() {
           :loading="taskStore.clearing"
           @click="handleClearMessages"
         >
-          清空对话记录
+          重建会话
         </el-button>
         <el-button
           type="primary"

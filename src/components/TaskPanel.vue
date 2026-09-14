@@ -7,10 +7,11 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
 import { useChatStore } from '@/stores/chat'
 import { instanceApi } from '@/api/instance'
+import type { HighLevelAlgo } from '@/api/instance'
 import { workerApi } from '@/api/instance-worker'
 import TaskDialog from '@/components/TaskDialog.vue'
 import CsvPreview from '@/components/CsvPreview.vue'
-import type { Task, TrainRequest, InferRequest, ProgressCounter, ModelResult } from '@/types/entities'
+import type { Task, TrainRequest, InferRequest, ProgressCounter } from '@/types/entities'
 
 const props = defineProps<{
   aircraftNumber: string
@@ -53,7 +54,7 @@ async function pollTaskStates() {
         .filter((t) => t.instanceId)
         .map(async (task) => {
           try {
-            const response = await workerApi.getState(task.instanceId!, 1)
+            const response = await workerApi.getState(task.instanceId!, 0)
             taskStates[task.id] = response.state
             taskProgress[task.id] = {
               epoch_progress: response.epoch_progress,
@@ -102,52 +103,6 @@ onUnmounted(() => {
   stopPolling()
 })
 
-// ---- 推理结果查询 ----
-const inferResultDialogVisible = ref(false)
-const queriedInferResult = ref<ModelResult[] | null>(null)
-const inferResultLoading = ref(false)
-
-interface InferResultRow {
-  id: number
-  output: number[]
-}
-const inferResultRows = computed<InferResultRow[]>(() => {
-  if (!queriedInferResult.value) return []
-  const rows: InferResultRow[] = []
-  for (const item of queriedInferResult.value) {
-    const ids = item.ids ?? []
-    const outputs = item.outputs ?? []
-    const len = Math.min(ids.length, outputs.length)
-    for (let i = 0; i < len; i++) {
-      rows.push({ id: ids[i], output: outputs[i] })
-    }
-  }
-  return rows
-})
-
-async function handleShowInferResult(task: Task) {
-  if (!task.instanceId) {
-    ElMessage.warning('该会话没有关联的实例')
-    return
-  }
-  inferResultLoading.value = true
-  queriedInferResult.value = null
-  try {
-    const response = await workerApi.getState(task.instanceId, 1)
-    if (response.result && response.result.length > 0) {
-      queriedInferResult.value = response.result
-      inferResultDialogVisible.value = true
-    } else {
-      const stateLabel = STATE_LABELS[response.state] || response.state
-      ElMessage.info(`${stateLabel}，暂无推理结果`)
-    }
-  } catch (e) {
-    ElMessage.error('查询推理结果失败: ' + (e as Error).message)
-  } finally {
-    inferResultLoading.value = false
-  }
-}
-
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max) + '…' : str
 }
@@ -159,7 +114,7 @@ const filteredTasks = computed(() => {
   return list.filter((t) => t.name.toLowerCase().includes(kw))
 })
 
-const currentTask = computed(() => taskStore.getCurrentTask(props.aircraftNumber))
+const currentTask = computed(() => taskStore.currentTask)
 
 // ---- 当前任务进度条 ----
 
@@ -222,8 +177,8 @@ const basicInfoFormRef = ref<FormInstance>()
 function setBasicInfoFormRef(el: any) {
   basicInfoFormRef.value = el
 }
-const basicInfoForm = reactive({ name: '', description: '', isGlobal: false })
-const originalBasicInfo = reactive({ name: '', description: '', isGlobal: false })
+const basicInfoForm = reactive({ name: '', description: '' })
+const originalBasicInfo = reactive({ name: '', description: '' })
 const basicInfoDirty = ref(false)
 const basicInfoSaving = ref(false)
 const basicInfoRules: FormRules = {
@@ -281,12 +236,11 @@ const deviceOptions = [
 
 // ---- dirty 追踪 ----
 watch(
-  () => [basicInfoForm.name, basicInfoForm.description, basicInfoForm.isGlobal],
+  () => [basicInfoForm.name, basicInfoForm.description],
   () => {
     basicInfoDirty.value =
       basicInfoForm.name !== originalBasicInfo.name ||
-      basicInfoForm.description !== originalBasicInfo.description ||
-      basicInfoForm.isGlobal !== originalBasicInfo.isGlobal
+      basicInfoForm.description !== originalBasicInfo.description
   },
 )
 
@@ -328,11 +282,9 @@ async function handleSaveBasicInfo() {
     await taskStore.updateTask(taskId, {
       name: basicInfoForm.name.trim(),
       description: basicInfoForm.description.trim(),
-      isGlobal: basicInfoForm.isGlobal,
     })
     originalBasicInfo.name = basicInfoForm.name
     originalBasicInfo.description = basicInfoForm.description
-    originalBasicInfo.isGlobal = basicInfoForm.isGlobal
     basicInfoDirty.value = false
   } finally {
     basicInfoSaving.value = false
@@ -516,19 +468,20 @@ function handleCreateTaskClick() {
   showTaskDialog.value = true
 }
 
-async function onTaskConfirm(data: { name: string; description: string; isGlobal: boolean }) {
-  const result = await taskStore.createTask(
-    { name: data.name, description: data.description },
-    { isGlobal: data.isGlobal },
-  )
+async function onTaskConfirm(data: {
+  name: string
+  description: string
+  algo: HighLevelAlgo
+}) {
+  const result = await taskStore.createTask({
+    name: data.name,
+    description: data.description,
+    algo: data.algo,
+  })
   if (result) showTaskDialog.value = false
 }
 
 function handleDeleteTask(task: Task) {
-  if (task.isDefault) {
-    ElMessage.warning('默认会话不可删除')
-    return
-  }
   ElMessageBox.confirm(
     `确认删除会话「${task.name}」？删除后将同时清理关联的会话与实例，此操作不可恢复。`,
     '删除会话',
@@ -548,7 +501,7 @@ function handleEditTask(task: Task) {
     ElMessage.warning('工作目录信息不可用。请重新创建会话。')
     return
   }
-  taskStore.setCurrentTask(props.aircraftNumber, task.id)
+  taskStore.setCurrentTask(task.id)
   chatStore.connectToSession(task.sessionId, workDir)
   emit('enter-chat', task)
 }
@@ -591,7 +544,7 @@ function handleEditTask(task: Task) {
         <!-- 任务行 -->
         <div
           class="task-item"
-          :class="{ current: currentTask?.id === task.id, 'is-default': task.isDefault }"
+          :class="{ current: currentTask?.id === task.id }"
         >
           <div class="task-info">
             <div class="task-name">
@@ -604,14 +557,11 @@ function handleEditTask(task: Task) {
               </span>
               <span v-if="currentTask?.id === task.id" class="current-tag">当前会话</span>
             </div>
-            <div v-if="!task.isDefault" class="task-desc">{{ task.description || '暂无描述' }}</div>
+            <div class="task-desc">{{ task.description || '暂无描述' }}</div>
           </div>
           <div class="task-actions">
             <el-button type="primary" size="small" @click="handleEditTask(task)">
               进入对话
-            </el-button>
-            <el-button type="primary" plain size="small" :loading="inferResultLoading" @click="handleShowInferResult(task)">
-              推理结果
             </el-button>
             <!-- <el-button
               type="primary"
@@ -622,9 +572,9 @@ function handleEditTask(task: Task) {
               {{ expandedTaskId === task.id ? '收起配置' : '数据配置' }}
             </el-button> -->
             <el-button type="primary" plain size="small" @click="handleQueryTask(task)">
-              接口查询
+              接口文档
             </el-button>
-            <el-button type="danger" size="small" :disabled="task.isDefault" @click="handleDeleteTask(task)">
+            <el-button type="danger" size="small" @click="handleDeleteTask(task)">
               会话删除
             </el-button>
           </div>
@@ -678,13 +628,7 @@ function handleEditTask(task: Task) {
                   <span v-if="basicInfoDirty" class="dirty-tag">已修改</span>
                 </template>
 
-                <!-- 默认会话：只读提示 -->
-                <div v-if="task.isDefault" class="default-notice">
-                  默认会话的基础信息不可编辑
-                </div>
-                <!-- 普通会话：可编辑表单 -->
                 <el-form
-                  v-else
                   :ref="setBasicInfoFormRef"
                   :model="basicInfoForm"
                   :rules="basicInfoRules"
@@ -707,9 +651,8 @@ function handleEditTask(task: Task) {
                       resize="none"
                     />
                   </el-form-item>
-                  <el-form-item label="会话可见性">
-                    <el-switch v-model="basicInfoForm.isGlobal" />
-                    <span class="visibility-hint">{{ basicInfoForm.isGlobal ? '全局可见' : '当前单机可见' }}</span>
+                  <el-form-item label="机型">
+                    <span class="readonly-value">{{ task.modelCode || '—' }}</span>
                   </el-form-item>
                   <el-form-item>
                     <el-button
@@ -952,34 +895,6 @@ function handleEditTask(task: Task) {
     @confirm="onTaskConfirm"
   />
 
-  <!-- 推理结果弹窗 -->
-  <el-dialog
-    v-model="inferResultDialogVisible"
-    title="推理结果"
-    width="560px"
-    :close-on-click-modal="false"
-    destroy-on-close
-  >
-    <div v-if="queriedInferResult" class="infer-result">
-      <div class="infer-result-stats">
-        共 {{ inferResultRows.length }} 条结果
-      </div>
-      <div class="infer-result-table-wrap">
-        <el-table :data="inferResultRows" size="small" border stripe max-height="320">
-          <el-table-column label="ids" prop="id" width="100" />
-          <el-table-column label="outputs">
-            <template #default="{ row }">
-              <span class="output-cell">{{ row.output.join(', ') }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </div>
-    <template #footer>
-      <el-button type="primary" @click="inferResultDialogVisible = false">关闭</el-button>
-    </template>
-  </el-dialog>
-
   <!-- 创建进度 -->
   <div v-if="taskStore.creating" class="create-progress">
     {{ taskStore.createStep }}
@@ -1065,16 +980,6 @@ function handleEditTask(task: Task) {
 .task-item.current:hover {
   border-color: #e0e8f5;
   border-left: 3px solid #1a6cf0;
-  box-shadow: none;
-}
-
-.task-item.is-default.current {
-  border-left: 3px solid #e6a23c;
-}
-
-.task-item.is-default.current:hover {
-  border-color: #e0e8f5;
-  border-left: 3px solid #e6a23c;
   box-shadow: none;
 }
 
@@ -1266,22 +1171,6 @@ function handleEditTask(task: Task) {
   flex-shrink: 0;
 }
 
-.visibility-hint {
-  margin-left: 10px;
-  font-size: 13px;
-  color: #8c9ab0;
-}
-
-.default-notice {
-  font-size: 13px;
-  color: #8c9ab0;
-  background: #fafbfd;
-  border: 1px dashed #dcdfe6;
-  border-radius: 8px;
-  padding: 12px 16px;
-  text-align: center;
-}
-
 .no-instance-tip {
   font-size: 12px;
   color: #8c9ab0;
@@ -1289,6 +1178,12 @@ function handleEditTask(task: Task) {
   border-radius: 10px;
   padding: 1px 8px;
   font-weight: 500;
+}
+
+/* 只读展示值（如机型） */
+.readonly-value {
+  font-size: 13px;
+  color: #3a4a5c;
 }
 
 /* ---- 会话配置内部 ---- */
@@ -1414,38 +1309,5 @@ function handleEditTask(task: Task) {
 
 .task-progress-bar .progress-details span {
   white-space: nowrap;
-}
-
-/* ========== 推理结果弹窗 ========== */
-.infer-result {
-  width: 100%;
-  max-height: 400px;
-  display: flex;
-  flex-direction: column;
-  padding: 10px 12px;
-  background: #fafbfd;
-  border: 1px solid #e0e8f5;
-  border-radius: 6px;
-  box-sizing: border-box;
-}
-
-.infer-result-stats {
-  font-size: 13px;
-  color: #3a4a5c;
-  margin-bottom: 6px;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.infer-result-table-wrap {
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.output-cell {
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 13px;
-  color: #303133;
 }
 </style>

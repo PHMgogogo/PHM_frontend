@@ -100,15 +100,11 @@ watch(
       allColumns.value = overview.dataColumns ?? []
       textColumns.value = new Set((overview.textColumns ?? []).map((c) => c.toLowerCase()))
 
-      // 默认选中会话：优先级1 cookie 当前会话 → 优先级2 默认会话
-      const currentTask = taskStore.getCurrentTask(props.aircraftNumber)
+      // 默认选中会话：使用当前会话
+      const currentTask = taskStore.currentTask
       if (currentTask) {
         const match = tasks.value.find((t) => t.task_id === currentTask.id)
         if (match) selectedTaskId.value = match.task_id
-      }
-      if (selectedTaskId.value === null) {
-        const defaultTask = tasks.value.find((t) => t.default)
-        if (defaultTask) selectedTaskId.value = defaultTask.task_id
       }
     } catch (e) {
       ElMessage.error('加载配置数据失败: ' + (e as Error).message)
@@ -217,10 +213,6 @@ function handleNavigateToTasks() {
             :value="t.task_id"
           >
             <span>{{ t.name }}</span>
-            <span
-              v-if="t.default"
-              style="margin-left: 8px; font-size: 12px; color: #909399"
-            >（默认）</span>
           </el-option>
         </el-select>
         <div v-if="noTasksAvailable" class="no-task-hint">

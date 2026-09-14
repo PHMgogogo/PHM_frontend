@@ -292,13 +292,14 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 对话能力通过 [opencode.ts](src/api/opencode.ts) 对接 [OpenCode](https://opencode.ai) 服务，不走通用 `client.ts`，自行实现 HTTP + `EventSource`。
 
-- **连接配置**（[chat.ts](src/stores/chat.ts) `DEFAULT_OPTS`）：`base: '/opencode'`、`dir`、`user: 'opencode'`、`pass: ''`。每个会话连接时用该会话的 `workDir` 覆盖 `dir`，即**每个会话连到各自工作目录**。
-- **REST**：健康检查、模型列表、会话 CRUD、`POST /session/:id/prompt_async`（异步发消息，回复走 SSE）、`POST /session/:id/abort`（中止）、`POST /question/:id/reply\|/reject`（AI 提问交互）。
-- **SSE 流式**（`GET /event`）：按事件类型分发——
-  - `message.part.delta`：增量 token，缓冲后按 `requestAnimationFrame` 每帧合并，按消息聚合，避免逐 token 全量重渲染；
-  - `message.updated` / `message.part.updated`：整条 / 单 part 补丁；
-  - `session.status`：`idle` 时收尾对齐；
-  - `question.asked/replied/rejected`：AI 主动提问交互。
+- **连接配置**（[chat.ts](src/stores/chat.ts) `DEFAULT_OPTS`）：`base: '/opencode'`、`dir`、`user`/`pass`（取自 [endpoints.ts](src/config/endpoints.ts) 的 `OPENCODE_AUTH`）。每个会话连接时用该会话的 `workDir` 覆盖 `dir`，即**每个会话连到各自工作目录**。
+- **后端版本**：对接 opencode v2（`opencode2 serve`）。v2 全部接口位于 `/api/*` 前缀下，工作目录改用 `location[directory]` 查询参数传递（旧版 `x-opencode-directory` 请求头已失效），认证为 HTTP Basic。
+- **REST**：`GET /api/health`、`GET /api/model`、`GET /api/provider`、会话 CRUD（`GET|POST /api/session`、`DELETE /api/session/:id`）、`POST /api/session/:id/prompt`（发消息，回复走 SSE）、`POST /api/session/:id/interrupt`（中止）、`GET|POST /api/session/:id/form[/:formID/reply|/cancel]`（AI 提问交互，v2 form 取代旧 question）。
+- **SSE 流式**（`GET /api/event`）：事件业务数据统一放在 `data` 字段，按事件类型分发——
+  - `session.text.delta` / `session.reasoning.delta`：增量 token，缓冲后按 `requestAnimationFrame` 每帧合并，按消息聚合，避免逐 token 全量重渲染；
+  - `session.execution.started/succeeded/failed`：执行生命周期，`succeeded` 时收尾对齐并重拉消息；
+  - `session.step.started/ended`、`session.tool.*`：单步 / 工具调用状态；
+  - `session.form.created/state/replied/cancelled`：AI 主动提问交互。
   - 断线指数退避重连（3s 起、封顶 30s）。
 - **消息渲染**：Markdown（加粗 / 斜体 / 代码 / 换行）、KaTeX 公式、highlight.js 代码高亮；区分普通文本 / 思考过程（reasoning，可折叠）/ 工具调用（tool，可折叠）。支持 `Ctrl+Enter` 快捷发送、中止生成、自动滚动。
 
