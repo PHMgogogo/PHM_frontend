@@ -44,7 +44,7 @@ export const useConfigItemStore = defineStore('configItem', () => {
   }
 
   async function createItem(
-    data: Partial<Omit<ConfigItem, 'itemId' | 'children' | 'modelCode'>> & Pick<ConfigItem, 'itemType' | 'ataChapter'>,
+    data: Partial<Omit<ConfigItem, 'itemId' | 'children' | 'modelCode'>> & Pick<ConfigItem, 'itemType' | 'gjbChapter'>,
   ) {
     await aircraftApi.createConfigItem({ ...data, modelCode: currentModelCode.value })
     await fetchAll(currentModelCode.value)

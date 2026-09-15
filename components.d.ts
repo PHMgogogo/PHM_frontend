@@ -92,6 +92,8 @@ declare module 'vue' {
     SessionDrawer: typeof import('./src/components/knowledge/SessionDrawer.vue')['default']
     SideNav: typeof import('./src/components/SideNav.vue')['default']
     SortieDialog: typeof import('./src/components/SortieDialog.vue')['default']
+    SortieQueryPanel: typeof import('./src/components/SortieQueryPanel.vue')['default']
+    SortieTimeSeriesPanel: typeof import('./src/components/SortieTimeSeriesPanel.vue')['default']
     SourceDrawer: typeof import('./src/components/knowledge/SourceDrawer.vue')['default']
     StealthHealth: typeof import('./src/components/demo/StealthHealth.vue')['default']
     TaskDialog: typeof import('./src/components/TaskDialog.vue')['default']

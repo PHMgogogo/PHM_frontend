@@ -3,6 +3,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getMappings, getSorties, getPlanes } from '@/api/aircraft'
+import { isLocalAircraft } from '@/utils/aircraft-source'
 import { getCsvOverview } from '@/api/csv'
 import { DISPLAY_TYPE, CHART_STYLE } from '@/api/display'
 import { getRequiredColumnCount } from './DisplayOptionBuilder.js'
@@ -214,11 +215,20 @@ watch(
   },
 )
 
-// ---- 拉取全部单机候选（getPlanes 不传参 → 库内全部单机）----
+// ---- 拉取单机候选（getPlanes 不传参 → 库内全部单机）----
+// 本面板配置的是本地 CSV 数据源，只有本地单机有架次/映射可配：
+// /aircraft/plane 已聚合本地/航新/633 三源，需滤掉外源单机，并按机号去重
+// （同一机号可能三源各有一条）。
 async function fetchPlanes() {
   planesLoading.value = true
   try {
-    planes.value = await getPlanes()
+    const all = await getPlanes()
+    const seen = new Set()
+    planes.value = all.filter((p) => {
+      if (!isLocalAircraft(p) || seen.has(p.aircraftNumber)) return false
+      seen.add(p.aircraftNumber)
+      return true
+    })
   } catch (e) {
     ElMessage.error('获取单机列表失败: ' + (e instanceof Error ? e.message : String(e)))
     planes.value = []

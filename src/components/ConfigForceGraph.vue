@@ -31,7 +31,7 @@
             @mouseenter="hoveredId = n.id"
             @mouseleave="hoveredId = null"
           >
-            <title>{{ n.item.ataChapter }} · {{ typeLabel(n.type) }}{{ n.item.partNumber ? ` · ${n.item.partNumber}` : '' }}</title>
+            <title>{{ n.item.gjbChapter }} · {{ typeLabel(n.type) }}{{ n.item.partNumber ? ` · ${n.item.partNumber}` : '' }}</title>
             <circle
               class="node-circle"
               :class="{ selected: selected?.id === n.id }"
@@ -39,7 +39,7 @@
               :fill="colorOf(n.type)"
             />
             <text class="node-label" :y="radiusOf(n.type) + 14" :font-size="labelSize(n.type)">
-              {{ n.label || n.item.ataChapter }}
+              {{ n.label || n.item.gjbChapter }}
             </text>
           </g>
         </g>
@@ -48,7 +48,7 @@
 
     <!-- 选中节点旁的浮动工具栏（HTML 叠加层，随节点屏幕坐标移动） -->
     <div v-if="selected" class="node-toolbar" :style="toolbarStyle" @click.stop @mousedown.stop>
-      <!-- <span class="tb-chip">{{ selected.type === 'MODEL' ? selected.label : selected.item.ataChapter }}</span> -->
+      <!-- <span class="tb-chip">{{ selected.type === 'MODEL' ? selected.label : selected.item.gjbChapter }}</span> -->
       <button v-if="canAddChild" class="tb-btn primary" @click="onAddChild">添加子项</button>
       <button v-if="canDelete" class="tb-btn danger" @click="onDelete">删除</button>
     </div>
@@ -237,7 +237,7 @@ function flatten(tree: ConfigItem[]) {
         itemId: ROOT_ID,
         modelCode: rootLabel,
         parentItemId: null,
-        ataChapter: '',
+        gjbChapter: '',
         systemName: rootLabel,
         subSystemName: null,
         equipmentName: null,

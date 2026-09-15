@@ -5,18 +5,18 @@ import SideNav from '@/components/SideNav.vue'
 import AircraftCard from '@/components/AircraftCard.vue'
 import AddAircraftDialog from '@/components/AddAircraftDialog.vue'
 import ConfigManagement from '@/views/ConfigManagement.vue'
-import SortieQuery from '@/views/SortieQuery.vue'
 import DocumentView from '@/views/DocumentView.vue'
 import MonitorView from '@/views/MonitorView.vue'
 import InterfaceManagement from '@/views/InterfaceManagement.vue'
 import ExternalPlatformManagement from '@/views/ExternalPlatformManagement.vue'
 import ModelManagement from '@/views/ModelManagement.vue'
-import { useUnifiedStore } from '@/stores/unified'
+import { useAircraftStore } from '@/stores/aircraft'
+import { baseModelCode } from '@/utils/model-code'
 import { Search } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
-const unifiedStore = useUnifiedStore()
+const aircraftStore = useAircraftStore()
 const activeMenu = ref('aircraft')
 const sidebarCollapsed = ref(false)
 const dialogVisible = ref(false)
@@ -44,48 +44,70 @@ watch(activeMenu, (menu) => {
   }
 })
 
-// 飞行器管理页数据来自统一聚合查询（本地/航新/633 三源合并，每条带 source）
-onMounted(() => {
-  unifiedStore.fetchModels()
-  unifiedStore.fetchAircrafts()
+// 单机与机型均走本地聚合接口：GET /aircraft/plane、GET /aircraft/models
+
+/**
+ * 按当前机型筛选重拉单机列表。
+ * 筛选值可能是外源机型（如 JX-20A:10001），须截断 ':modelId' 后缀再查 ——
+ * 后端 /aircraft/plane 只认基础编码，传带后缀的值会返回空列表。
+ */
+function reload() {
+  const code = selectedModel.value ? baseModelCode(selectedModel.value) : undefined
+  return aircraftStore.fetchAircrafts(code)
+}
+
+// 机型筛选改为服务端查询（原先是内存里精确比对 modelCode）
+watch(selectedModel, () => reload())
+
+/**
+ * 切回「飞行器管理」时重拉数据。
+ * 该页内容直接内联在 HomeView 模板里（机型/构型等是子组件，切走时会被 v-if 销毁、
+ * 切回时重新 onMounted），而 HomeView 自身在整个 SPA 里只挂载一次 —— 所以只靠
+ * onMounted 的话，从别的菜单切回来不会发任何请求，列表和机型下拉都是旧数据。
+ */
+watch(activeMenu, async (menu) => {
+  if (menu !== 'aircraft') return
+  await aircraftStore.fetchModels()
+  // 机型管理页可能刚删掉当前筛选的机型；筛选值失效就清空
+  // （清空会由 watch(selectedModel) 自行触发重拉，避免这里重复请求）
+  const stillExists = aircraftStore.models.some((m) => m.modelCode === selectedModel.value)
+  if (selectedModel.value && !stillExists) {
+    selectedModel.value = ''
+  } else {
+    reload()
+  }
+  bindGridObserver()
 })
 
-// 机型下拉：三源机型 + 单机上出现的型号 去重（远端行 modelCode 可能为空，故再从单机行兜底收集）
+// 机型下拉：只显示 GET /aircraft/models 的 modelCode
 const modelOptions = computed(() => {
-  const mf = new Map<string, string>()
-  for (const m of unifiedStore.models) {
-    if (m.modelCode && !mf.has(m.modelCode)) mf.set(m.modelCode, m.manufacturer ?? '')
+  const seen = new Set<string>()
+  for (const m of aircraftStore.models) {
+    if (m.modelCode) seen.add(m.modelCode)
   }
-  for (const a of unifiedStore.aircrafts) {
-    if (a.modelCode && !mf.has(a.modelCode)) mf.set(a.modelCode, '')
-  }
-  return [...mf.entries()].map(([value, manufacturer]) => ({
-    value,
-    label: manufacturer ? `${value} — ${manufacturer}` : value,
-  }))
+  return [...seen].map((value) => ({ value, label: value }))
 })
 
+// 机型已由服务端过滤，这里只做关键字过滤
 const filteredAircrafts = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  return unifiedStore.aircrafts.filter((a) => {
-    if (selectedModel.value && a.modelCode !== selectedModel.value) return false
-    if (!q) return true
-    return (
+  if (!q) return aircraftStore.aircrafts
+  return aircraftStore.aircrafts.filter(
+    (a) =>
       a.aircraftNumber.toLowerCase().includes(q) ||
       a.modelCode.toLowerCase().includes(q) ||
-      a.airline.toLowerCase().includes(q)
-    )
-  })
+      a.airline.toLowerCase().includes(q),
+  )
 })
 
-// 新增/删除本地单机后刷新统一列表（本地 CRUD 内部已刷新各自本地 store）
+// 新增/删除本地单机后刷新列表（保持当前机型筛选生效）
 function onAircraftCreated() {
   dialogVisible.value = false
-  unifiedStore.fetchAircrafts()
-  unifiedStore.fetchModels()
+  reload()
+  aircraftStore.fetchModels()
 }
 function onAircraftDeleted() {
-  unifiedStore.fetchAircrafts()
+  reload()
 }
 
 // ---- 卡片等高：所有卡片宽度/高度统一，与首行一致 ----
@@ -108,12 +130,27 @@ function syncCardRowHeight() {
   })
 }
 
+/**
+ * 把 ResizeObserver 绑到当前的卡片网格上。
+ * 网格随菜单切换被 v-if 销毁重建，observer 不会自己跟过去（还盯着已脱离文档的旧元素），
+ * 因此每次重新进入本页都要重新绑定，否则侧栏折叠/窗口缩放不再同步行高。
+ */
+function bindGridObserver() {
+  nextTick(() => {
+    const grid = gridEl.value
+    if (!grid || !gridResizeObserver) return
+    gridResizeObserver.disconnect()
+    gridResizeObserver.observe(grid)
+    syncCardRowHeight()
+  })
+}
+
 onMounted(() => {
-  unifiedStore.fetchModels()
-  unifiedStore.fetchAircrafts()
+  aircraftStore.fetchModels()
+  reload()
   // 侧栏折叠/窗口变化会导致列数变化，重新同步行高
   gridResizeObserver = new ResizeObserver(() => syncCardRowHeight())
-  if (gridEl.value) gridResizeObserver.observe(gridEl.value)
+  bindGridObserver()
 })
 
 onBeforeUnmount(() => {
@@ -140,9 +177,6 @@ watch(
       <template v-if="activeMenu === 'aircraft'">
         <div class="page-header">
           <h2 class="page-title">飞行器管理</h2>
-          <p v-if="unifiedStore.sourceNotes.length" class="source-warning">
-            {{ unifiedStore.sourceNotes.join('；') }}
-          </p>
         </div>
 
         <!-- 顶部功能区 -->
@@ -181,9 +215,11 @@ watch(
           ref="gridEl"
           :style="cardRowHeight ? { gridAutoRows: cardRowHeight + 'px' } : undefined"
         >
+          <!-- key 带下标：同一机号可能在多源同时存在（如 20011 本地/航新/633 各一条），
+               仅用机号作 key 会重复 -->
           <AircraftCard
-            v-for="aircraft in filteredAircrafts"
-            :key="`${aircraft.source}-${aircraft.aircraftNumber}`"
+            v-for="(aircraft, idx) in filteredAircrafts"
+            :key="`${aircraft.aircraftNumber}-${idx}`"
             :aircraft="aircraft"
             @deleted="onAircraftDeleted"
           />
@@ -192,11 +228,6 @@ watch(
             <p>暂无匹配的飞行器</p>
           </div>
         </div>
-      </template>
-
-      <!-- 架次统一查询 -->
-      <template v-else-if="activeMenu === 'sortie'">
-        <SortieQuery />
       </template>
 
       <!-- 机型管理 -->
@@ -283,13 +314,6 @@ watch(
   font-weight: 700;
   color: #0d1f3c;
   margin: 0 0 16px;
-}
-
-.source-warning {
-  margin: -8px 0 14px;
-  font-size: 12px;
-  color: #e6a23c;
-  line-height: 1.6;
 }
 
 .toolbar {

@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAircraftStore } from '@/stores/aircraft'
-import { sourceText } from '@/api/unified'
+import { isExternalAircraft, aircraftSourceText } from '@/utils/aircraft-source'
 import type { Aircraft } from '@/types/entities'
 
 const props = defineProps<{
@@ -19,15 +19,10 @@ const router = useRouter()
 const aircraftStore = useAircraftStore()
 
 /** 是否为外部平台（航新/633）单机：外部来源仅可查看，无删除等本地操作 */
-const isExternal = computed(
-  () => props.aircraft.source !== undefined && props.aircraft.source !== 'local',
-)
+const isExternal = computed(() => isExternalAircraft(props.aircraft))
 
 function openAircraft() {
-  router.push({
-    path: `/aircraft/${props.aircraft.aircraftNumber}`,
-    query: props.aircraft.source ? { source: props.aircraft.source } : {},
-  })
+  router.push(`/aircraft/${props.aircraft.aircraftNumber}`)
 }
 
 async function handleDelete(e: Event) {
@@ -55,7 +50,7 @@ async function handleDelete(e: Event) {
     <div class="card-body">
       <div class="info-row">
         <span class="info-label">来源</span>
-        <span class="info-value">{{ aircraft.source ? sourceText(aircraft.source) : '*' }}</span>
+        <span class="info-value">{{ aircraftSourceText(aircraft) }}</span>
       </div>
     </div>
     <div class="card-footer" v-if="!isExternal">

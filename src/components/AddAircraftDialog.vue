@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { ElMessage } from 'element-plus'
 import type { AircraftStatus } from '@/types/entities'
@@ -14,6 +14,15 @@ const emit = defineEmits<{
 }>()
 
 const store = useAircraftStore()
+
+// 构型下拉只显示 GET /aircraft/models 的 modelCode；外源机型可能出现重复 modelCode，需去重
+const modelOptions = computed(() => {
+  const seen = new Set<string>()
+  for (const m of store.models) {
+    if (m.modelCode) seen.add(m.modelCode)
+  }
+  return [...seen]
+})
 
 const STATUS_OPTIONS: { label: string; value: AircraftStatus }[] = [
   { label: '活跃', value: 'active' },
@@ -122,10 +131,10 @@ function handleClose() {
             filterable
           >
             <el-option
-              v-for="m in store.models"
-              :key="m.modelCode"
-              :label="`${m.modelCode}${m.manufacturer ? ' — ' + m.manufacturer : ''}`"
-              :value="m.modelCode"
+              v-for="code in modelOptions"
+              :key="code"
+              :label="code"
+              :value="code"
             />
           </el-select>
           <el-button

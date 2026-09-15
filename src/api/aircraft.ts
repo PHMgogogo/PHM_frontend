@@ -65,8 +65,14 @@ export function deleteSortie(sortieId: number) {
 
 // ---- 构型项目 ----
 
-export function getConfigItems(modelCode: string) {
-  return client.get<ConfigItem[]>('/aircraft/config-items', { modelCode })
+/**
+ * 构型项目列表。
+ * - 传 modelCode：该机型的本地构型（itemId 为数字）
+ * - 不传 modelCode：返回全部第三方构型（后端从外部平台汇总，itemId / parentItemId 均为 null）
+ */
+export function getConfigItems(modelCode?: string) {
+  const params = modelCode ? { modelCode } : undefined
+  return client.get<ConfigItem[]>('/aircraft/config-items', params)
 }
 
 export function getConfigItemTree(modelCode: string) {
@@ -77,9 +83,9 @@ export function getConfigItemSelectList(modelCode: string) {
   return client.get<ConfigItem[]>('/aircraft/config-items/select-list', { modelCode })
 }
 
-/** 创建构型项目：仅 modelCode / itemType / ataChapter 必填，其余按 itemType 条件填写 */
+/** 创建构型项目：仅 modelCode / itemType / gjbChapter 必填，其余按 itemType 条件填写 */
 export function createConfigItem(
-  data: Partial<Omit<ConfigItem, 'itemId' | 'children'>> & Pick<ConfigItem, 'modelCode' | 'itemType' | 'ataChapter'>,
+  data: Partial<Omit<ConfigItem, 'itemId' | 'children'>> & Pick<ConfigItem, 'modelCode' | 'itemType' | 'gjbChapter'>,
 ) {
   return client.post<ApiResponse>('/aircraft/config-items', data)
 }
