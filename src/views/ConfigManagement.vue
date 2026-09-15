@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { useConfigItemStore } from '@/stores/configItem'
-import * as aircraftApi from '@/api/aircraft'
 import { isLocalModelCode } from '@/utils/model-code'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ConfigItem, ConfigItemType } from '@/types/entities'
@@ -11,82 +10,70 @@ import ConfigForceGraph from '@/components/ConfigForceGraph.vue'
 const aircraftStore = useAircraftStore()
 const configItemStore = useConfigItemStore()
 
-// ---- 查询类型：本地构型（须指定机型）/ 第三方构型（不传参数，返回全部） ----
-type QueryMode = 'local' | 'third'
-const queryMode = ref<QueryMode>('local')
-const queryTypeOptions: { value: QueryMode; label: string }[] = [
-  { value: 'local', label: '本地构型' },
-  { value: 'third', label: '第三方构型' },
-]
-const isLocalMode = computed(() => queryMode.value === 'local')
+// ---- 机型下拉：本地机型 + 第三方平台架号（SSFJH）两组 ----
+// 选项 value 带来源前缀，避免本地机型编码与架号恰好同名时走错分支
+const LOCAL_PREFIX = 'local:'
+const THIRD_PREFIX = 'third:'
+const selectedValue = ref('')
 
-// ---- 本地构型：机型选择 ----
-const selectedModelCode = ref('')
-
-// ---- 视图模式：树形 / 力导向图（仅本地构型有） ----
-const viewMode = ref<'tree' | 'graph'>('tree')
-
-// 机型下拉 = GET /aircraft/models 中的本地机型；外源机型编码含 ':'（如 JX-20AS:1），只在第三方构型里出现
-const modelOptions = computed(() => {
+// 「本地机型」组 = GET /aircraft/models 中的本地机型；外源机型编码含 ':'（如 JX-20AS:1），不在此列
+const localModelOptions = computed(() => {
   const seen = new Set<string>()
   for (const m of aircraftStore.models) {
     if (m.modelCode && isLocalModelCode(m.modelCode)) seen.add(m.modelCode)
   }
-  return [...seen].map((value) => ({ value, label: value }))
+  return [...seen].map((value) => ({ value: LOCAL_PREFIX + value, label: value }))
 })
 
-// ---- 第三方构型：不传 modelCode 返回全部，只读 ----
-const thirdRows = ref<ConfigItem[]>([])
-const thirdLoading = ref(false)
-
-async function fetchThirdConfigs() {
-  thirdLoading.value = true
-  try {
-    // 不传 modelCode —— 后端返回全部第三方构型（itemId / parentItemId 均为 null）
-    thirdRows.value = await aircraftApi.getConfigItems()
-  } catch {
-    thirdRows.value = []
-  } finally {
-    thirdLoading.value = false
-  }
-}
-
-/** 按机型分组展示，故先按 modelCode 排序（接口返回顺序不保证） */
-const thirdRowsSorted = computed(() =>
-  [...thirdRows.value].sort((a, b) => (a.modelCode || '').localeCompare(b.modelCode || '')),
+// 「第三方平台」组 = 全部第三方构型里的 SSFJH（后端映射 SSFJH→modelCode，store 已去重）
+const thirdSsfjhOptions = computed(() =>
+  configItemStore.thirdSsfjhList.map((value) => ({ value: THIRD_PREFIX + value, label: value })),
 )
 
-function applySelection(modelCode: string) {
-  if (!modelCode) return
-  configItemStore.fetchAll(modelCode)
+const modelOptionGroups = computed(() => [
+  { category: '本地机型', items: localModelOptions.value },
+  { category: '第三方平台', items: thirdSsfjhOptions.value },
+])
+
+const hasSelection = computed(() => selectedValue.value !== '')
+const isThird = computed(() => selectedValue.value.startsWith(THIRD_PREFIX))
+
+/** 下拉选中值 → 裸编码（本地机型编码 / 架号） */
+function selectedCodeOf(value: string): string {
+  if (value.startsWith(LOCAL_PREFIX)) return value.slice(LOCAL_PREFIX.length)
+  if (value.startsWith(THIRD_PREFIX)) return value.slice(THIRD_PREFIX.length)
+  return ''
 }
 
-function onModelChange(modelCode: string) {
-  applySelection(modelCode)
-}
+const selectedCode = computed(() => selectedCodeOf(selectedValue.value))
 
-watch(queryMode, (mode) => {
-  if (mode === 'third') {
-    fetchThirdConfigs()
+// ---- 视图模式：树形 / 力导向图（仅本地构型有） ----
+const viewMode = ref<'tree' | 'graph'>('tree')
+
+function applySelection(value: string) {
+  const code = selectedCodeOf(value)
+  if (!code) return
+  // 第三方平台：点架号时把 modelCode 传成该架号，只读
+  if (value.startsWith(THIRD_PREFIX)) {
+    configItemStore.fetchSsfjhItems(code)
     return
   }
-  // 切回本地：恢复上次选中的机型，没有则取首个本地机型
-  if (!selectedModelCode.value) {
-    selectedModelCode.value = modelOptions.value[0]?.value || ''
-  }
-  applySelection(selectedModelCode.value)
-})
+  configItemStore.fetchAll(code)
+}
+
+function onModelChange(value: string) {
+  applySelection(value)
+}
 
 onMounted(async () => {
-  await aircraftStore.fetchModels()
-  if (queryMode.value === 'third') {
-    fetchThirdConfigs()
-    return
+  // 进页面即取全部第三方构型，架号用于下拉的「第三方平台」组
+  await Promise.all([aircraftStore.fetchModels(), configItemStore.fetchThirdItems()])
+  // 沿用原交互：默认选中首个本地机型；没有本地机型则保持空态
+  const first = localModelOptions.value[0]?.value || ''
+  if (first) {
+    selectedValue.value = first
+    applySelection(first)
   }
-  if (!selectedModelCode.value) {
-    selectedModelCode.value = modelOptions.value[0]?.value || ''
-  }
-  applySelection(selectedModelCode.value)
 })
 
 // ---- 新建构型项目弹窗 ----
@@ -187,16 +174,18 @@ async function submitConfig() {
 async function handleDeleteCurrentModel() {
   try {
     await ElMessageBox.confirm(
-      `确定要删除构型"${selectedModelCode.value}"及其所有构型项目吗？此操作不可撤销。`,
+      `确定要删除构型"${selectedCode.value}"及其所有构型项目吗？此操作不可撤销。`,
       '删除构型确认',
       { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
     )
-    await aircraftStore.deleteModel(selectedModelCode.value)
+    await aircraftStore.deleteModel(selectedCode.value)
     ElMessage.success('构型已删除')
-    selectedModelCode.value = ''
-    if (aircraftStore.models.length > 0) {
-      selectedModelCode.value = aircraftStore.models[0].modelCode
-      configItemStore.fetchAll(selectedModelCode.value)
+    // deleteModel 内部已刷新机型列表，这里改选删除后的首个本地机型
+    selectedValue.value = ''
+    const next = localModelOptions.value[0]?.value || ''
+    if (next) {
+      selectedValue.value = next
+      applySelection(next)
     }
   } catch { /* cancelled */ }
 }
@@ -242,44 +231,40 @@ function treeNodeName(data: ConfigItem): string {
       <h2 class="page-title">构型管理</h2>
     </div>
 
-    <!-- 构型选择器：先选查询类型，本地构型再指定机型 -->
+    <!-- 机型选择器：本地机型走本地构型，第三方平台下是各架号（SSFJH） -->
     <div class="aircraft-selector">
-      <el-select v-model="queryMode" style="width: 160px">
-        <el-option
-          v-for="opt in queryTypeOptions"
-          :key="opt.value"
-          :label="opt.label"
-          :value="opt.value"
-        />
-      </el-select>
-
       <el-select
-        v-if="isLocalMode"
-        v-model="selectedModelCode"
-        placeholder="请选择机型"
+        v-model="selectedValue"
+        placeholder="请选择机型 / 架号"
         style="width: 320px"
         filterable
         @change="onModelChange"
       >
-        <el-option
-          v-for="opt in modelOptions"
-          :key="opt.value"
-          :label="opt.label"
-          :value="opt.value"
-        />
+        <el-option-group
+          v-for="group in modelOptionGroups"
+          :key="group.category"
+          :label="group.category"
+        >
+          <el-option
+            v-for="opt in group.items"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
+        </el-option-group>
       </el-select>
     </div>
 
-    <!-- 本地构型：未选机型时的提示 -->
-    <div v-if="isLocalMode && !selectedModelCode" class="empty-hint">
+    <!-- 未选机型时的提示 -->
+    <div v-if="!hasSelection" class="empty-hint">
       <span class="empty-icon">🔧</span>
       <p>请先选择机型，查看和管理其本地构型项目</p>
     </div>
 
     <!-- 本地构型管理 -->
-    <template v-else-if="isLocalMode">
+    <template v-else-if="!isThird">
       <div class="toolbar">
-        <span class="current-model">当前构型：{{ selectedModelCode }}</span>
+        <span class="current-model">当前构型：{{ selectedCode }}</span>
         <div class="toolbar-actions">
           <el-radio-group v-model="viewMode" size="default">
             <el-radio-button value="tree">树形</el-radio-button>
@@ -364,7 +349,7 @@ function treeNodeName(data: ConfigItem): string {
           <div v-else class="graph-holder">
             <ConfigForceGraph
               :tree="configItemStore.treeData"
-              :root-label="selectedModelCode"
+              :root-label="selectedCode"
               @select="onGraphSelect"
               @add-child="onGraphAddChild"
               @delete="onGraphDelete"
@@ -376,12 +361,17 @@ function treeNodeName(data: ConfigItem): string {
       </div>
     </template>
 
-    <!-- 第三方构型：不指定机型，返回全部（只读） -->
-    <div v-else class="third-area" v-loading="thirdLoading">
-      <div class="third-summary">全部第三方构型 · 共 {{ thirdRowsSorted.length }} 条</div>
+    <!-- 第三方构型：选中某个架号后展示其全部部件（只读，无增删入口） -->
+    <div v-else class="third-area" v-loading="configItemStore.ssfjhLoading">
+      <div class="third-summary">
+        第三方构型 · 架号 {{ selectedCode }} · 共 {{ configItemStore.ssfjhItems.length }} 个部件
+      </div>
 
-      <el-table :data="thirdRowsSorted" class="third-table" empty-text="暂无第三方构型">
-        <el-table-column prop="modelCode" label="机型" width="180" />
+      <el-table
+        :data="configItemStore.ssfjhItems"
+        class="third-table"
+        empty-text="该架号暂无构型数据"
+      >
         <el-table-column label="名称" min-width="220">
           <template #default="{ row }">
             <span class="third-node-name">{{ treeNodeName(row) }}</span>
