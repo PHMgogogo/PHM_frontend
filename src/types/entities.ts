@@ -39,6 +39,8 @@ export interface Sortie {
   flightDate: string // "YYYY-MM-DD"
   startTime: string // "HH:mm:ss"
   endTime: string // "HH:mm:ss"
+  /** 参数组ID：仅航新（三方）行下发，用于查该架次的参数字段名；本地行为 null */
+  parameterGroupId?: string | null
 }
 
 export interface ConfigItem {
@@ -60,12 +62,12 @@ export interface ConfigItem {
 
 // ---- 外来平台配置 ----
 
-/** 外来平台配置（读接口返回形态：写/测接口用平台枚举 + ip/port，见 api/externalPlatform.ts） */
+/** 外来平台配置（读接口返回形态：写/测接口用平台枚举 + config JSON 字符串，见 api/externalPlatform.ts） */
 export interface ExternalPlatform {
   id: number
   platformName: string
-  platformIp: string
-  port: number
+  /** 平台配置 JSON 字符串，各平台 key 不同，如 {"ip":"...","port":8080} */
+  platformConfig: string
 }
 
 // ---- CSV 相关 ----

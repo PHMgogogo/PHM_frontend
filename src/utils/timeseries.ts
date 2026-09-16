@@ -67,6 +67,50 @@ export function propertyCandidates(
   return Object.keys(types).filter((k) => normalizeKey(k) !== ts)
 }
 
+/** 属性下拉的一项（el-select-v2 的 options 元素） */
+export interface PropertyOption {
+  label: string
+  value: string
+}
+
+/**
+ * 候选列名 → 下拉 option。
+ *
+ * 航新参数组实测可下发 10000+ 列名，若直接 `v-for` 渲染 el-option 会一次性挂载
+ * 上万节点把页面卡死；故统一走 el-select-v2 的虚拟滚动（只渲染可视区选项）。
+ * option 只保留 label/value 两个字段：虚拟列表按 itemHeight 估算高度，
+ * 对象越简单越省内存，也避免把大字符串复制到多份。
+ *
+ * 顺手做三件容错：去重（后端列名可能重名）、剔除空白项、非数组按空处理。
+ */
+export function toOptions(candidates?: string[] | null): PropertyOption[] {
+  if (!Array.isArray(candidates)) return []
+  const seen = new Set<string>()
+  const options: PropertyOption[] = []
+  for (const raw of candidates) {
+    if (typeof raw !== 'string') continue
+    const value = raw.trim()
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    options.push({ label: value, value })
+  }
+  return options
+}
+
+/**
+ * 输入框内过滤（el-select-v2 的 filter-method）。
+ *
+ * 默认过滤是 O(n) 全量正则匹配，1 万项每次输入都要扫一遍；这里改为
+ * 折叠大小写的 indexOf 子串匹配 —— 对「用户敲的是列名片段」这个场景足够，
+ * 且不需要为正则转义 / 编译付费。空查询直接返回原数组，不复制。
+ */
+export function filterOptions(options: PropertyOption[], query: string): PropertyOption[] {
+  if (!Array.isArray(options)) return []
+  const q = query.trim().toLowerCase()
+  if (!q) return options
+  return options.filter((o) => o.label.toLowerCase().includes(q))
+}
+
 /**
  * 三方的起止时间：把列表行的 `flightDate` 与 `HH:mm:ss` 拼成后端要的
  * `YYYY-MM-DD HH:mm:ss`。实测拼出来的值与该架次在后端的真实起止时间完全相同
@@ -202,6 +246,38 @@ export function formatTimestamp(ms?: number | null): string {
 /** 单元格文本：接口下发的是字符串，原样展示；null/undefined 显示为空 */
 export function cellText(v: unknown): string {
   return v === null || v === undefined ? '' : String(v)
+}
+
+/** 结果表每页行数的默认值：一行就是一个时间点的全列数据，几百行已足够看 */
+export const DEFAULT_PAGE_SIZE = 200
+
+/** 结果表分页可选的行数 */
+export const PAGE_SIZE_OPTIONS = [100, 200, 500, 1000]
+
+/**
+ * 结果表分页：整份数据留在内存（`rows` 不动），只把当前页交给表格渲染。
+ *
+ * 时序数据的行数与时间跨度成正比（分钟级采样可轻易到十万行），全部塞给 el-table
+ * 会一次性创建对应数量的 tr + 每列一个 td，直接卡死。故只渲染当前页。
+ *
+ * 页码越界（如切换每页大小后页码超出、或重新查询后行数变少）一律夹到合法范围，
+ * 不抛错也不返回空页——否则用户会看到一张莫名其妙的空表。
+ */
+export function paginate<T>(rows: T[], page: number, pageSize: number) {
+  const size = Math.max(1, Math.floor(pageSize) || 1)
+  const total = rows.length
+  const pageCount = Math.max(1, Math.ceil(total / size))
+  // 页码夹取：1 <= page <= pageCount
+  const current = Math.min(Math.max(1, Math.floor(page) || 1), pageCount)
+  const start = (current - 1) * size
+  return {
+    /** 当前页的行（原数组切片，不复制元素） */
+    pageRows: rows.slice(start, start + size),
+    /** 夹取后的页码，调用方应据此回写以免与实际展示不一致 */
+    page: current,
+    pageCount,
+    total,
+  }
 }
 
 /**

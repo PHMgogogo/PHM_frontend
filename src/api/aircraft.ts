@@ -53,6 +53,11 @@ export function getSortie(sortieId: number) {
   return client.get<Sortie>(`/aircraft/sorties/${sortieId}`)
 }
 
+/** 按参数组ID查该架次的参数字段名（仅航新支持，失败时后端返回空数组） */
+export function getSortieParameters(parameterGroupId: string) {
+  return client.get<string[]>('/aircraft/sortie/parameters', { parameterGroupId })
+}
+
 /** 添加架次（aircraftNumber 由调用方注入） */
 export function addSortie(data: Omit<Sortie, 'sortieId'>) {
   return client.post<ApiResponse>('/aircraft/sorties', data)

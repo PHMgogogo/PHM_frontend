@@ -34,7 +34,7 @@ export function platformNameToType(name: string): PlatformType | undefined {
 }
 
 /** 追加 query 参数到路径；跳过 undefined / 空字符串 */
-function withQuery(path: string, params: Record<string, string | number | undefined>): string {
+function withQuery<T extends object>(path: string, params: T): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== '') sp.set(k, String(v))
@@ -46,13 +46,30 @@ function withQuery(path: string, params: Record<string, string | number | undefi
 export interface ExternalPlatformWriteParams {
   /** 平台类型枚举（新增时必填，编辑时沿用原类型） */
   platform: PlatformType
-  ip: string
-  port: number
+  /** 平台配置 JSON 字符串，各平台 key 不同，至少含 ip */
+  config: string
 }
 
 export interface ExternalPlatformProbeParams {
-  ip: string
-  port: number
+  /** 平台配置 JSON 字符串，各平台 key 不同，至少含 ip */
+  config: string
+}
+
+/** 解析平台配置 JSON，非法时返回 {} */
+export function parsePlatformConfig(raw?: string): Record<string, unknown> {
+  if (!raw) return {}
+  try {
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** 从配置中取指定 key 的字符串值 */
+export function getConfigValue(raw: string | undefined, key: string): string {
+  const v = parsePlatformConfig(raw)[key]
+  return v === undefined || v === null ? '' : String(v)
 }
 
 export const externalPlatformApi = {
@@ -66,12 +83,12 @@ export const externalPlatformApi = {
     return client.get<ExternalPlatform>(`/external-platforms/${id}`)
   },
 
-  /** POST /external-platforms?platform=&ip=&port= 新增（每类平台唯一，重复会返回 success:false） */
+  /** POST /external-platforms?platform=&config= 新增（每类平台唯一，重复会返回 success:false） */
   create(p: ExternalPlatformWriteParams) {
     return client.post<ApiResponse>(withQuery('/external-platforms', p))
   },
 
-  /** PUT /external-platforms/{id}?platform=&ip=&port= 更新 */
+  /** PUT /external-platforms/{id}?platform=&config= 更新 */
   update(id: number, p: ExternalPlatformWriteParams) {
     return client.put<ApiResponse>(withQuery(`/external-platforms/${id}`, p))
   },
@@ -86,7 +103,7 @@ export const externalPlatformApi = {
     return client.post<ApiResponse>(`/external-platforms/${id}/test`)
   },
 
-  /** POST /external-platforms/test?ip=&port= 测试 IP+端口连通性（不保存） */
+  /** POST /external-platforms/test?config= 测试配置连通性（不保存） */
   testByAddress(p: ExternalPlatformProbeParams) {
     return client.post<ApiResponse>(withQuery('/external-platforms/test', p))
   },
