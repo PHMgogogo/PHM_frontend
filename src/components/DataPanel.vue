@@ -1,18 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { Upload, Warning } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useDataMappingStore } from '@/stores/dataMapping'
-import { useConfigItemStore } from '@/stores/configItem'
-import { getMappings, getSorties, addSortie, deleteSortie } from '@/api/aircraft'
+import { getMappings, getSorties } from '@/api/aircraft'
 import { hasLocalSortieId } from '@/utils/aircraft-source'
 import { defaultCsvTableName } from '@/utils/csvUpload'
-import TrainingDialog from '@/components/TrainingDialog.vue'
-import InferingDialog from '@/components/InferingDialog.vue'
-import SortieDialog from '@/components/SortieDialog.vue'
-import type { ConfigDataMapping, Sortie } from '@/types/entities'
-
-type SortieRow = Sortie & { mappings: ConfigDataMapping[] }
+import type { Sortie } from '@/types/entities'
 
 const props = defineProps<{
   aircraftNumber: string
@@ -24,93 +18,73 @@ const props = defineProps<{
   readonly?: boolean
 }>()
 
-const emit = defineEmits<{
-  (e: 'navigate-to-tasks'): void
-}>()
-
 const dataMappingStore = useDataMappingStore()
-const configItemStore = useConfigItemStore()
 
 const csvFile = ref<File | null>(null)
 const csvTableName = ref('')
 const csvSortieId = ref<number | undefined>(undefined)
-const csvParentItemId = ref<number | undefined>(undefined)
 /** 用户是否手工改过表名：改过就不再被「架次号」默认值覆盖 */
 const tableNameEdited = ref(false)
 const uploadRef = ref()
 
-// ---- 架次列表（每个架次可关联多张 CSV 数据表） ----
+// ---- 架次列表（只服务上传时的「关联架次」下拉） ----
 const sorties = ref<Sortie[]>([])
 /** 只有带本地主键的架次才能绑定 CSV 表；三方架次的数据来自三方平台，不参与本地绑定 */
 const localSorties = computed(() => sorties.value.filter((s) => hasLocalSortieId(s)))
-const sortieRows = ref<SortieRow[]>([])
 const sortiesLoading = ref(false)
-const addingSortie = ref(false)
-const deletingSortie = ref(false)
-
-/** 三方架次的时间字段是占位符 '-'，统一显示为 '--' */
-function cellText(v?: string | null) {
-  if (!v || v === '-') return '--'
-  return v
-}
-
-function formatTime(ts?: string) {
-  if (!ts) return '-'
-  // 后端返回格式 "2026-06-01 18:31:19.000000" 或 ISO
-  const s = ts.replace('T', ' ').replace('Z', '')
-  return s.length >= 19 ? s.slice(0, 19) : s
-}
+/** 所选架次已建好的表名（只为默认表名避让重名，故只查选中的那一个架次） */
+const sortieTables = ref<string[]>([])
+let tablesToken = 0
 
 async function loadSorties() {
   if (!props.aircraftNumber) return
   sortiesLoading.value = true
   try {
-    const list = await getSorties(props.aircraftNumber)
-    sorties.value = list
-    // 一个架次可关联多张 CSV 数据表：并联查询每个架次的全部映射。
-    // 三方架次没有本地主键，也就没有 config_data_mapping，连查都不该查
-    // （否则会发出 ?sortieId=null 这种请求）。
-    const enriched = await Promise.all(
-      list.map(async (s) => {
-        if (!hasLocalSortieId(s)) return { ...s, mappings: [] } as SortieRow
-        try {
-          const maps = await getMappings({ sortieId: s.sortieId })
-          return { ...s, mappings: maps } as SortieRow
-        } catch {
-          return { ...s, mappings: [] } as SortieRow
-        }
-      }),
-    )
-    sortieRows.value = enriched
-    // 架次下的表数量变了（新增/删表），未手工改过表名时重算默认值
-    if (csvSortieId.value !== undefined && !tableNameEdited.value) {
-      csvTableName.value = defaultTableName(csvSortieId.value)
-    }
+    sorties.value = await getSorties(props.aircraftNumber)
   } catch (e) {
     ElMessage.error('获取架次列表失败: ' + (e as Error).message)
     sorties.value = []
-    sortieRows.value = []
   } finally {
     sortiesLoading.value = false
   }
 }
 
-/** 取某架次下已建好的表名（含 `csv_` 前缀形态，交由 defaultCsvTableName 归一） */
-function mappingsOf(sortieId: number): string[] {
-  const row = sortieRows.value.find((s) => s.sortieId === sortieId)
-  return row ? row.mappings.map((m) => m.csvTableName) : []
+/**
+ * 取某架次下已建好的表名（含 `csv_` 前缀形态，交由 defaultCsvTableName 归一）。
+ * 三方架次没有本地主键，也就没有 config_data_mapping，连查都不该查
+ * （否则会发出 ?sortieId=null 这种请求）。
+ * 连点两个架次时后发的响应可能先到，故用 token 丢弃过期结果。
+ */
+async function loadSortieTables(sortieId: number | undefined) {
+  const token = ++tablesToken
+  if (sortieId === undefined) {
+    sortieTables.value = []
+    return
+  }
+  try {
+    const maps = await getMappings({ sortieId })
+    if (token !== tablesToken) return
+    sortieTables.value = maps.map((m) => m.csvTableName)
+  } catch {
+    if (token !== tablesToken) return
+    sortieTables.value = []
+  }
 }
 
 /** 默认表名 = 架次号（同架次重复上传自动加序号） */
 function defaultTableName(sortieId: number | undefined): string {
   if (sortieId === undefined) return ''
   const sortie = sorties.value.find((s) => s.sortieId === sortieId)
-  return defaultCsvTableName(sortie, mappingsOf(sortieId))
+  return defaultCsvTableName(sortie, sortieTables.value)
 }
 
 // 选中架次即带出表名；清空架次（如切机）则一并清空
-watch(csvSortieId, (id) => {
+watch(csvSortieId, async (id) => {
   tableNameEdited.value = false
+  // 先清空，避免上一个架次的表名在新架次的映射回来之前留在输入框里
+  csvTableName.value = ''
+  sortieTables.value = []
+  await loadSortieTables(id)
   csvTableName.value = defaultTableName(id)
 })
 
@@ -161,6 +135,25 @@ async function analyzeFile() {
   }
 }
 
+/**
+ * 预览表格的行：CSV 原始表头 + 后端落库用的物理列名 + SQL 类型。
+ *
+ * 后端把表头里的非 ASCII 字符逐个换成 `_`（`时间` → `__`、`传感器1` → `___1`），
+ * columnTypes 的键就是这些物理列名 —— 只显示它，用户根本认不出自己的列。
+ * 原始表头后端也一并在 originalColumns 里返回，且与 columns 同序，对齐即可。
+ */
+const previewColumns = computed(() => {
+  const analysis = dataMappingStore.previewResult?.analysis
+  if (!analysis) return []
+  const cols = analysis.columns ?? []
+  const original = analysis.originalColumns ?? []
+  return Object.entries(analysis.columnTypes ?? {}).map(([sql, type], i) => {
+    // columnTypes 的键大小写可能与 columns 不一致，按折叠大小写找下标
+    const idx = cols.findIndex((c) => c.toLowerCase() === sql.toLowerCase())
+    return { sql, type, original: original[idx >= 0 ? idx : i] ?? sql }
+  })
+})
+
 async function handleCsvUpload() {
   if (csvSortieId.value === undefined) {
     ElMessage.warning('请先选择关联架次')
@@ -183,124 +176,23 @@ async function handleCsvUpload() {
     return
   }
   try {
-    await dataMappingStore.uploadCsv(
-      csvFile.value,
-      csvTableName.value.trim(),
-      csvSortieId.value,
-      csvParentItemId.value,
-    )
+    await dataMappingStore.uploadCsv(csvFile.value, csvTableName.value.trim(), csvSortieId.value)
     ElMessage.success(dataMappingStore.uploadResult?.message || '上传成功')
-    // 重置：保留架次与构型选择，便于同架次连传多张表
+    // 重置：保留架次选择，便于同架次连传多张表
     csvFile.value = null
-    csvParentItemId.value = undefined
     dataMappingStore.clearAnalysis()
     resetUploadInput()
-    // 刷新架次列表（含映射），并按最新映射重算默认表名
+    // 该架次多了一张表，按最新映射重算默认表名（下次上传自动避让）
     tableNameEdited.value = false
-    await loadSorties()
+    await loadSortieTables(csvSortieId.value)
     csvTableName.value = defaultTableName(csvSortieId.value)
-  } catch {
-    // 错误已在 store 中处理
-  }
-}
-
-// ---- 添加架次对话框 ----
-const sortieDialogVisible = ref(false)
-
-async function onSortieConfirm(payload: {
-  sortieNumber: string
-  flightDate: string
-  startTime: string
-  endTime: string
-}) {
-  addingSortie.value = true
-  try {
-    await addSortie({ ...payload, aircraftNumber: props.aircraftNumber })
-    ElMessage.success('架次添加成功')
-    sortieDialogVisible.value = false
-    loadSorties()
   } catch (e) {
-    ElMessage.error('添加架次失败: ' + (e as Error).message)
-  } finally {
-    addingSortie.value = false
+    // 失败原因必须回显：后端会用业务话术说明为什么（如「该架次已绑定CSV表，不能重复绑定」），
+    // store 只记录结果、不负责提示，这里吞掉的话用户点完「上传」什么也看不到
+    ElMessage.error((e as Error).message || '上传失败')
   }
 }
 
-async function handleDeleteSortie(row: SortieRow) {
-  try {
-    await ElMessageBox.confirm(
-      row.mappings.length
-        ? `确定删除架次「${row.sortieNumber || row.sortieId}」？该架次关联的 ${row.mappings.length} 张数据表将一并删除，且不可恢复。`
-        : `确定删除架次「${row.sortieNumber || row.sortieId}」？该操作不可恢复。`,
-      '确认删除',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
-    )
-  } catch {
-    return
-  }
-  deletingSortie.value = true
-  try {
-    const res = await deleteSortie(row.sortieId)
-    ElMessage.success(res?.message || '删除成功')
-    loadSorties()
-  } catch (e) {
-    ElMessage.error('删除失败: ' + (e as Error).message)
-  } finally {
-    deletingSortie.value = false
-  }
-}
-
-/**
- * 仅删除某张 CSV 数据表，保留架次本身（一个架次可有多张表，故需指定 mapping）。
- * 复用 dataMappingStore.dropCsvTable（自动补 `csv_` 前缀 + dropping 加载态）。
- */
-async function handleDropTable(row: SortieRow, mapping: ConfigDataMapping) {
-  const tableName = mapping.csvTableName
-  try {
-    await ElMessageBox.confirm(
-      `确定删除数据表「${tableName}」并保留架次「${row.sortieNumber || row.sortieId}」？此操作不可恢复。`,
-      '确认删表',
-      { confirmButtonText: '删表', cancelButtonText: '取消', type: 'warning' },
-    )
-  } catch {
-    return
-  }
-  try {
-    const res = await dataMappingStore.dropCsvTable(tableName)
-    ElMessage.success(res?.message || '数据表已删除')
-    loadSorties()
-  } catch (e) {
-    ElMessage.error('删表失败: ' + (e as Error).message)
-  }
-}
-
-// ---- 去训练对话框 ----
-const trainingDialogVisible = ref(false)
-const trainingMapping = ref<ConfigDataMapping | null>(null)
-
-function handleGoToTraining(mapping: ConfigDataMapping) {
-  trainingMapping.value = mapping
-  trainingDialogVisible.value = true
-}
-
-function onTrainingSuccess() {
-  trainingDialogVisible.value = false
-  emit('navigate-to-tasks')
-}
-
-// ---- 去推理对话框 ----
-const inferingDialogVisible = ref(false)
-const inferingMapping = ref<ConfigDataMapping | null>(null)
-
-function handleGoToInfering(mapping: ConfigDataMapping) {
-  inferingMapping.value = mapping
-  inferingDialogVisible.value = true
-}
-
-function onInferingSuccess() {
-  inferingDialogVisible.value = false
-  emit('navigate-to-tasks')
-}
 </script>
 
 <template>
@@ -311,10 +203,7 @@ function onInferingSuccess() {
 
     <!-- CSV 上传区域（外部平台只读时隐藏） -->
     <div v-if="!readonly" class="upload-section">
-      <div class="section-title upload-title">
-        <span>CSV 数据上传</span>
-        <span class="section-hint">表名默认取架次号，入库为 <code>csv_&lt;表名&gt;</code></span>
-      </div>
+      <div class="section-title">CSV 数据上传</div>
       <div class="upload-form">
         <div class="upload-grid">
           <!-- 左：文件 -->
@@ -330,9 +219,6 @@ function onInferingSuccess() {
             >
               <el-icon class="el-icon--upload"><Upload /></el-icon>
               <div class="el-upload__text">拖拽或点击上传 CSV 文件</div>
-              <template #tip>
-                <div class="upload-tip">仅支持单个 .csv，可先「分析预览」校验行列</div>
-              </template>
             </el-upload>
           </el-form-item>
 
@@ -344,6 +230,7 @@ function onInferingSuccess() {
                 placeholder="选择架次（必选）"
                 clearable
                 filterable
+                :loading="sortiesLoading"
                 style="width: 100%"
               >
                 <el-option
@@ -361,36 +248,16 @@ function onInferingSuccess() {
                 placeholder="选择架次后自动填充"
                 @input="tableNameEdited = true"
               />
-              <div class="field-hint">
-                物理表名
-                <code>{{ csvTableName.trim() ? 'csv_' + csvTableName.trim() : '—' }}</code>
-                <template v-if="csvSortieId !== undefined">
-                  <template v-if="tableNameEdited">
-                    ，已自定义
-                    <el-link type="primary" underline="never" @click="resetTableName">
-                      恢复为架次号
-                    </el-link>
-                  </template>
-                  <template v-else>，与架次号同名；重复上传自动加序号</template>
-                </template>
-              </div>
-            </el-form-item>
-
-            <el-form-item label="关联构型">
-              <el-select
-                v-model="csvParentItemId"
-                placeholder="选择构型项目（可选）"
-                clearable
-                style="width: 100%"
-                filterable
+              <!-- 改过表名才出现「恢复为架次号」：默认形态不用解释，表名本身就是架次号 -->
+              <el-link
+                v-if="tableNameEdited"
+                type="primary"
+                underline="never"
+                class="field-link"
+                @click="resetTableName"
               >
-                <el-option
-                  v-for="item in configItemStore.selectList"
-                  :key="item.itemId"
-                  :label="item.label"
-                  :value="item.itemId"
-                />
-              </el-select>
+                恢复为架次号
+              </el-link>
             </el-form-item>
           </div>
         </div>
@@ -408,7 +275,7 @@ function onInferingSuccess() {
             <el-icon><Upload /></el-icon> 上传
           </el-button>
           <span v-if="!sorties.length" class="actions-hint">
-            该单机还没有架次，请先在下方「添加架次」
+            该单机还没有架次，请先在「架次查询」页添加
           </span>
           <span v-else-if="!localSorties.length" class="actions-hint">
             该单机的架次都来自三方平台，没有本地主键，无法绑定 CSV 表
@@ -439,163 +306,17 @@ function onInferingSuccess() {
           </div>
         </div>
         <el-table
-          :data="Object.entries(dataMappingStore.previewResult.analysis.columnTypes)"
+          :data="previewColumns"
           size="small"
           max-height="200"
         >
-          <el-table-column prop="0" label="列名" />
-          <el-table-column prop="1" label="SQL 类型" />
+          <el-table-column prop="original" label="原始列名" min-width="140" />
+          <el-table-column prop="sql" label="物理列名" min-width="140" />
+          <el-table-column prop="type" label="SQL 类型" width="120" />
         </el-table>
       </div>
     </div>
 
-    <!-- 架次管理（每个架次可关联多张 CSV 数据表，展开查看；外部只读时空则不展示以免误导） -->
-    <div class="records-section" v-if="!readonly || sortieRows.length > 0">
-      <div class="section-title sorties-title">
-        <span>
-          架次管理
-          <span class="record-count">{{ sortieRows.length }} 条</span>
-        </span>
-        <el-button v-if="!readonly" type="primary" size="small" @click="sortieDialogVisible = true">
-          + 添加架次
-        </el-button>
-      </div>
-      <el-table
-        v-if="sortieRows.length > 0"
-        :data="sortieRows"
-        size="small"
-        stripe
-        row-key="sortieId"
-        v-loading="sortiesLoading"
-        empty-text="暂无架次"
-      >
-        <!-- 展开行：该架次关联的全部 CSV 数据表（一个架次可有多张表） -->
-        <el-table-column type="expand">
-          <template #default="{ row }">
-            <div v-if="!hasLocalSortieId(row)" class="no-data-tag sub-empty">
-              三方架次的时序数据取自三方平台，不关联本地 CSV 表
-            </div>
-            <div v-else-if="row.mappings.length" class="sub-table-wrap">
-              <el-table :data="row.mappings" size="small" border>
-                <el-table-column label="数据表名" min-width="180">
-                  <template #default="{ row: m }">
-                    <span class="table-name-cell">{{ m.csvTableName }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="上传时间" width="180" align="center">
-                  <template #default="{ row: m }">
-                    <span class="time-text">{{ formatTime(m.createdAt) }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column v-if="!readonly" label="操作" width="240" align="center">
-                  <template #default="{ row: m }">
-                    <div class="action-btns">
-                      <el-button type="primary" text size="small" @click="handleGoToTraining(m)">
-                        去训练
-                      </el-button>
-                      <el-button type="success" text size="small" @click="handleGoToInfering(m)">
-                        去推理
-                      </el-button>
-                      <el-button
-                        type="danger"
-                        text
-                        size="small"
-                        :loading="dataMappingStore.dropping"
-                        @click="handleDropTable(row, m)"
-                      >
-                        删表
-                      </el-button>
-                    </div>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-            <div v-else class="no-data-tag sub-empty">该架次暂无数据表</div>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="sortieNumber" label="架次号" min-width="140">
-          <template #default="{ row }">
-            <span class="table-name-cell">{{ row.sortieNumber || row.sortieId || '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="来源" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="!hasLocalSortieId(row)" size="small" type="info">第三方</el-tag>
-            <span v-else class="source-local">本地</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="flightDate" label="飞行日期" width="120" align="center">
-          <template #default="{ row }">
-            <span>{{ cellText(row.flightDate) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="起止时间" width="180" align="center">
-          <template #default="{ row }">
-            <span class="time-text">
-              {{ cellText(row.startTime) }} ~ {{ cellText(row.endTime) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="数据表" min-width="140">
-          <template #default="{ row }">
-            <span v-if="!hasLocalSortieId(row)" class="no-data-tag">三方平台数据</span>
-            <span v-else-if="row.mappings.length" class="table-count">
-              {{ row.mappings.length }} 个数据表
-            </span>
-            <span v-else class="no-data-tag">暂无数据</span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="!readonly" label="操作" width="120" align="center">
-          <template #default="{ row }">
-            <!-- 三方架次没有本地主键，删除架次接口无从下手，故不提供 -->
-            <el-button
-              v-if="hasLocalSortieId(row)"
-              type="danger"
-              text
-              size="small"
-              :loading="deletingSortie"
-              @click="handleDeleteSortie(row)"
-            >
-              删除架次
-            </el-button>
-            <span v-else class="no-data-tag">—</span>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 空状态 -->
-      <div v-else class="empty-hint">
-        <div class="empty-icon">🛫</div>
-        <p>暂无架次</p>
-        <p class="empty-sub">点击上方「添加架次」开始管理飞行任务与数据</p>
-      </div>
-    </div>
-
-    <!-- 添加架次对话框 -->
-    <SortieDialog
-      v-model:visible="sortieDialogVisible"
-      :loading="addingSortie"
-      @confirm="onSortieConfirm"
-    />
-
-    <!-- 去训练对话框 -->
-    <TrainingDialog
-      v-model="trainingDialogVisible"
-      :mapping="trainingMapping"
-      :aircraft-number="aircraftNumber"
-      @success="onTrainingSuccess"
-      @navigate-to-tasks="emit('navigate-to-tasks')"
-    />
-
-    <!-- 去推理对话框 -->
-    <InferingDialog
-      v-model="inferingDialogVisible"
-      :mapping="inferingMapping"
-      :aircraft-number="aircraftNumber"
-      @success="onInferingSuccess"
-      @navigate-to-tasks="emit('navigate-to-tasks')"
-    />
   </div>
 </template>
 
@@ -636,26 +357,6 @@ function onInferingSuccess() {
   border-radius: 10px;
   padding: 20px;
   border: 1px solid #e0e8f5;
-}
-
-.upload-title {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.section-hint {
-  font-size: 12px;
-  font-weight: 400;
-  color: #909399;
-}
-
-.section-hint code,
-.field-hint code {
-  background: #f2f5fa;
-  border-radius: 4px;
-  padding: 0 4px;
-  color: #1a6cf0;
 }
 
 .upload-form {
@@ -704,14 +405,6 @@ function onInferingSuccess() {
   padding: 16px;
 }
 
-.upload-tip {
-  width: 100%;
-  font-size: 12px;
-  color: #909399;
-  line-height: 1.8;
-  text-align: center;
-}
-
 .upload-fields {
   display: flex;
   flex-direction: column;
@@ -722,11 +415,8 @@ function onInferingSuccess() {
   margin-bottom: 12px;
 }
 
-.field-hint {
+.field-link {
   font-size: 12px;
-  color: #909399;
-  line-height: 1.8;
-  word-break: break-all;
 }
 
 .form-actions {
@@ -788,89 +478,4 @@ function onInferingSuccess() {
   margin-left: 12px;
 }
 
-.records-section {
-  margin-top: 8px;
-  background: #fff;
-  border-radius: 10px;
-  padding: 20px;
-  border: 1px solid #e0e8f5;
-}
-
-.sorties-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.record-count {
-  font-size: 12px;
-  font-weight: 400;
-  color: #909399;
-  margin-left: 8px;
-}
-
-.table-name-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.no-data-tag {
-  font-size: 12px;
-  color: #c0c4cc;
-}
-
-.source-local {
-  font-size: 13px;
-  color: #3a4a5c;
-}
-
-.sub-table-wrap {
-  padding: 6px 16px 6px 48px;
-}
-
-.sub-empty {
-  padding-left: 48px;
-}
-
-.table-count {
-  font-size: 13px;
-  color: #1a6cf0;
-  font-weight: 500;
-}
-
-.action-btns {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
-}
-
-.time-text {
-  font-size: 13px;
-  color: #606266;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 空状态 */
-.empty-hint {
-  text-align: center;
-  padding: 32px 16px 20px;
-  color: #909399;
-}
-
-.empty-icon {
-  font-size: 36px;
-  margin-bottom: 12px;
-  opacity: 0.6;
-}
-
-.empty-hint p {
-  margin: 4px 0;
-  font-size: 14px;
-}
-
-.empty-sub {
-  font-size: 12px !important;
-  color: #c0c4cc;
-}
 </style>

@@ -6,8 +6,9 @@ import { expect, test, type Page } from '@playwright/test'
  *   但**不提供「数据管理」**：三方架次来自三方平台，不存在本地 config_data_mapping；
  * - 进入后与本地一样按会话列表决定停在对话还是会话管理，而不是默认甩到「数据管理」；
  * - 只读范围收窄到「构型 + CSV 数据」；
- * - 三方训练数据只能来自时序查询，故训练 / 推理入口挂在「时序数据查询」页，
- *   且本地单机不出现该入口（本地仍走数据管理里按 CSV 表训练那条链路）。
+ * - 训练 / 推理入口挂在「时序数据查询」页，本地与三方共用同一套入口 / 弹窗 / 请求体
+ *   （取数条件都是该页的架次 sortieKey + 属性 + 起止时间，由后端按 sortieKey 定向数据源）；
+ *   「数据管理」只做 CSV 上传，不再有按 CSV 表训练的第二条链路。
  *
  * 接口全部打桩，不依赖后端。
  */
@@ -72,6 +73,31 @@ async function gotoWorkspace(page: Page) {
   const side = page.locator('.ws-sidebar')
   await expect(side.getByText('当前对话')).toBeVisible({ timeout: 15_000 })
   return side
+}
+
+/**
+ * 在时序页选属性。三方参数组可下发上万条，界面用「按钮 + 右侧抽屉」承载
+ * （搜索 + 虚拟列表 + 已选区），故这里不能像以前那样直接点筛选栏的下拉。
+ */
+async function pickProperties(page: Page, names: string[]) {
+  await page.locator('main').getByRole('button', { name: /选择属性/ }).click()
+  const search = page.locator('.prop-search input')
+  await expect(search).toBeVisible()
+  for (const name of names) {
+    await search.fill(name)
+    const row = page.locator('.prop-row', { hasText: name })
+    // 候选里没有该名字时回车直接添加（参数组不保证覆盖平台全部字段）；
+    // 已在默认选中里的名字点一次会取消勾选，故只点未选中的行
+    if (await row.count()) {
+      const first = row.first()
+      if (!(await first.getAttribute('class'))?.includes('checked')) await first.click()
+    } else {
+      await search.press('Enter')
+    }
+  }
+  await expect(page.locator('.prop-selected-tags .el-tag')).toHaveCount(names.length)
+  await page.locator('.el-drawer__footer').getByRole('button', { name: '完成' }).click()
+  await expect(search).toBeHidden()
 }
 
 test('三方单机：菜单与本地同构，默认按会话情况落在会话管理 / 当前对话', async ({ page }) => {
@@ -146,6 +172,8 @@ test('三方单机：时序数据查询可直接发起训练，无会话时引�
   await expect(trainBtn).toBeVisible({ timeout: 10_000 })
   await expect(main.getByRole('button', { name: '去推理' })).toBeVisible()
 
+  // 面板默认选中候选项的第一条，训练 / 推理直接按它取数
+  await pickProperties(page, ['ALTITUDE'])
   await trainBtn.click()
 
   const dialog = page.locator('.el-dialog').filter({ hasText: '基于时序数据的训练配置' })
@@ -212,17 +240,8 @@ test('三方单机：有会话时可按所选属性提交训练，请求体带 s
   const main = page.locator('main')
   await expect(main.getByRole('button', { name: '去训练' })).toBeVisible({ timeout: 10_000 })
 
-  // 再选一个属性，让数据列 / 标签列各有一列（面板默认只选第一条）
-  const props = main.locator('.w-props')
-  await props.click()
-  // 从下拉里点选第二列（属性候选取自参数组）
-  await page
-    .locator('.el-popper[aria-hidden="false"] .el-select-dropdown__item')
-    .filter({ hasText: 'N1' })
-    .first()
-    .click()
-  await expect(props.locator('.el-tag')).toHaveText(['ALTITUDE', 'N1'])
-  await page.keyboard.press('Escape')
+  // 再选一列，让数据列 / 标签列各有一列（默认已选第一条，这里补上 N1）
+  await pickProperties(page, ['ALTITUDE', 'N1'])
 
   await main.getByRole('button', { name: '去训练' }).click()
   const dialog = page.locator('.el-dialog').filter({ hasText: '基于时序数据的训练配置' })
@@ -250,7 +269,7 @@ test('三方单机：有会话时可按所选属性提交训练，请求体带 s
   })
 })
 
-test('本地单机：时序页不出现训练 / 推理入口（仍走数据管理的 CSV 链路）', async ({ page }) => {
+test('本地单机：时序页与三方同构地提供训练 / 推理入口，数据源同样是时序查询', async ({ page }) => {
   await page.route((url) => url.pathname.startsWith('/api/'), (r) => r.fulfill(json([])))
   await page.route('**/api/aircraft/plane**', (r) =>
     r.fulfill(
@@ -320,6 +339,20 @@ test('本地单机：时序页不出现训练 / 推理入口（仍走数据管�
 
   const main = page.locator('main')
   await expect(main).toContainText('本地', { timeout: 10_000 })
-  await expect(main.getByRole('button', { name: '去训练' })).toHaveCount(0)
-  await expect(main.getByRole('button', { name: '去推理' })).toHaveCount(0)
+  // 本地与三方共用同一套入口 / 弹窗 / 请求体，取数条件就是本页的查询条件
+  const trainBtn = main.getByRole('button', { name: '去训练' })
+  await expect(trainBtn).toBeVisible()
+  await expect(main.getByRole('button', { name: '去推理' })).toBeVisible()
+
+  await trainBtn.click()
+  const dialog = page.locator('.el-dialog').filter({ hasText: '基于时序数据的训练配置' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('数据源：时序数据查询')
+  await expect(dialog).toContainText('机号 B-1234')
+  await expect(dialog).toContainText('架次 dsafasfa')
+  // 本地默认选中 CSV 的第一列 → 预填进数据列，标签列留给用户挑
+  await expect(dialog.locator('.el-select').nth(1)).toContainText('ALTITUDE')
+  // 当前没有会话，训练按钮保持禁用
+  await expect(dialog).toContainText('暂无可用会话')
+  await expect(dialog.getByRole('button', { name: '开始训练' })).toBeDisabled()
 })

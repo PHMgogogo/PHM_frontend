@@ -88,7 +88,8 @@ test('表名默认取架次号：已有同名表时自动加序号，切换架�
   // CA1201 已存在 csv_CA1201 → 默认表名避让为 CA1201_2
   await pickSortie(page, 0)
   await expect(name).toHaveValue('CA1201_2')
-  await expect(panel).toContainText('csv_CA1201_2')
+  // 默认表名本身就是架次号形态，未改名前不出现「恢复为架次号」
+  await expect(panel.getByText('恢复为架次号')).toHaveCount(0)
 
   // 换成没有数据表的架次 → 直接用架次号
   await pickSortie(page, 1)
@@ -102,14 +103,17 @@ test('表名可手工改名，也能一键恢复为架次号', async ({ page }) 
   const name = panel.locator('input[placeholder="选择架次后自动填充"]')
 
   await pickSortie(page, 1)
+  await expect(panel.getByText('恢复为架次号')).toHaveCount(0)
+
   await name.fill('CA1202_左发')
-  await expect(panel).toContainText('物理表名 csv_CA1202_左发')
+  await expect(panel.getByText('恢复为架次号')).toBeVisible()
 
   await panel.getByText('恢复为架次号').click()
   await expect(name).toHaveValue('CA1202')
+  await expect(panel.getByText('恢复为架次号')).toHaveCount(0)
 })
 
-test('本地单机混有三方架次：可绑定 CSV 的只有本地架次，三方行不提供任何本地写入口', async ({ page }) => {
+test('本地单机混有三方架次：可绑定 CSV 的只有本地架次，三方架次不发任何本地映射请求', async ({ page }) => {
   const uploads: string[] = []
   const mappingQueries: string[] = []
   await stub(page, uploads)
@@ -136,24 +140,25 @@ test('本地单机混有三方架次：可绑定 CSV 的只有本地架次，三
   })
 
   const panel = await gotoDataPanel(page)
-  const table = page.locator('.records-section')
 
-  // 三方架次不查本地映射：不能出现 ?sortieId=null 这种请求
-  await expect(table.getByText('CA1203')).toBeVisible()
-  expect(mappingQueries.some((u) => u.includes('sortieId=null'))).toBe(false)
-
-  // 行上标明来源；三方行的数据表与操作都不给本地入口
-  const thirdRow = table.locator('tbody tr').filter({ hasText: 'CA1203' })
-  await expect(thirdRow).toContainText('第三方')
-  await expect(thirdRow).toContainText('三方平台数据')
-  await expect(thirdRow).not.toContainText('删除架次')
-  await expect(table.locator('tr', { hasText: 'CA1201' })).toContainText('本地')
+  // 本页只有上传表单：架次列表 / 数据表列表都不在这里（架次在「架次查询」页，
+  // 训练推理在「时序数据查询」页），因此没选架次前不会查任何映射
+  await expect(panel).not.toContainText('CSV 数据表')
+  await expect(panel).not.toContainText('删除架次')
+  await expect(panel).not.toContainText('关联构型')
+  expect(mappingQueries).toEqual([])
 
   // 「关联架次」下拉只列本地架次，三方架次不参与 CSV 表绑定
   await panel.locator('.el-select').first().click()
   const options = page.locator('.el-select-dropdown__item')
   await expect(options).toHaveCount(SORTIES.length)
   await expect(page.locator('.el-select-dropdown').first()).not.toContainText('CA1203')
+
+  // 选中本地架次后才查它自己的表名，且不可能出现 ?sortieId=null
+  await options.nth(0).click()
+  await expect.poll(() => mappingQueries.length).toBeGreaterThan(0)
+  expect(mappingQueries.every((u) => !u.includes('sortieId=null'))).toBe(true)
+  expect(mappingQueries[0]).toContain('sortieId=1')
 })
 
 test('上传请求带 tableName 与 sortieId，成功后保留架次选择', async ({ page }) => {
@@ -179,4 +184,32 @@ test('上传请求带 tableName 与 sortieId，成功后保留架次选择', asy
   // 上传成功后保留架次选择，便于同架次连传多张表
   await expect(name).toHaveValue('CA1202')
   await expect(panel.locator('input[type="file"]')).toHaveValue('')
+})
+
+test('上传失败时回显后端给的原因，而不是泛化的「上传失败」', async ({ page }) => {
+  const uploads: string[] = []
+  await stub(page, uploads)
+  // 覆盖：后端拒绝重复绑定，错误体是数据后端的 { "error": "…" } 形态（没有 message）
+  await page.route('**/api/csv/upload**', (r) => {
+    uploads.push(r.request().url())
+    return r.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: '该架次已绑定CSV表，不能重复绑定' }),
+    })
+  })
+
+  const panel = await gotoDataPanel(page)
+  await pickSortie(page, 1)
+  await panel.locator('input[type="file"]').setInputFiles({
+    name: 'raw.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('time,ALTITUDE\n0,1000\n'),
+  })
+  await panel.getByRole('button', { name: '上传', exact: true }).click()
+
+  await expect.poll(() => uploads.length).toBe(1)
+  await expect(page.locator('.el-message')).toContainText('该架次已绑定CSV表，不能重复绑定')
+  // 失败不重置表单：文件还在，用户改个表名 / 换个架次就能重试
+  await expect(panel.locator('input[type="file"]')).not.toHaveValue('')
 })

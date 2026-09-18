@@ -118,8 +118,10 @@ src/
 │   ├── ChatPanel.vue, MessageFeed.vue     # 对话
 │   ├── TaskPanel.vue, TaskDialog.vue      # 会话管理
 │   ├── DataPanel.vue, CsvPreview.vue      # 数据管理
-│   ├── SortieDialog.vue                   # 架次
-│   ├── TrainingDialog.vue, InferingDialog.vue   # 去训练 / 去推理
+│   ├── SortieDialog.vue                   # 架次新增（架次查询页）
+│   ├── SortieTimeSeriesPanel.vue, TimeseriesJobDialog.vue, PropertyPicker.vue
+│   │                                      # 时序查询 / 去训练去推理 / 属性选择抽屉
+│   ├── TrainingDialog.vue, InferingDialog.vue   # （已下线）按 CSV 表训练 / 推理，暂无引用
 │   ├── ConfigForceGraph.vue               # 构型力导向图（D3）
 │   ├── knowledge/                         # 知识中心文档、检索、Agent、来源与会话组件
 │   ├── dashboard/                         # 数据看板（栅格 + ECharts）
@@ -215,7 +217,7 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 | 菜单 | 组件 | 数据源 | 说明 |
 |---|---|---|---|
 | 🗂️ 会话管理 | [TaskPanel](src/components/TaskPanel.vue) | 真实后端 | 会话 / 实例 / 训练推理状态 |
-| 📦 数据管理 | [DataPanel](src/components/DataPanel.vue) | 真实后端 | 架次 + CSV 上传 / 去训练 / 去推理（**仅本地单机**） |
+| 📦 数据管理 | [DataPanel](src/components/DataPanel.vue) | 真实后端 | CSV 表上传（**仅本地单机**） |
 | 💬 当前对话 | [ChatPanel](src/components/ChatPanel.vue) | OpenCode | LLM 流式对话 |
 | 📡 实时监控 | DemoRealtimeView | Mock | 关键参数看板 + 告警 |
 | 🩺 增强诊断 | DemoDiagnosisView | Mock | 飞参判读 + 地面综合诊断 |
@@ -226,7 +228,7 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 > 三方单机（`GET /aircraft/plane` 中外源行）走同一套工作区：可建会话、可对话、可查构型（只读）与架次。
 > 但**不提供「数据管理」入口**——它的架次来自三方平台、没有本地 `config_data_mapping`，谈不上
-> CSV 表绑定；训练 / 推理改由「时序数据查询」页发起（见 § 2.4）。
+> CSV 表绑定。训练 / 推理不在「数据管理」而在「时序数据查询」页，本地与三方同一套（见 § 2.4）。
 > 本地单机的架次列表里若混有三方架次（同机号多源），那些行同样不出本地 CSV 写入口。
 
 > 前 3 项为真实业务，后 6 项为**纯前端 Mock 演示**（围绕 J-20 有人机 P001–P004、无人机-A P005–P006 的完整 PHM 业务闭环），不调用任何后端。
@@ -242,25 +244,33 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 #### 2.2 数据管理（[DataPanel](src/components/DataPanel.vue)）
 
-管理单机的 **架次（Sortie）** 及其关联的 **CSV 数据表**（一个架次可关联多张表）。
+只有一件事：把 CSV 文件传成该单机的数据表。架次增删在「架次查询」页（见 § 2.5），
+训练 / 推理在「时序数据查询」页（见 § 2.4），本页两者都不留入口。
 
-- **CSV 上传**：先选关联架次（必选，「数据表名」随即带出架次号，同架次已有同名表时自动追加 `_2`/`_3`…，也可手工改名或一键「恢复为架次号」）→ 选 CSV 文件 → 可选关联构型项目；「分析预览」展示行数 / 有效行 / 列类型校验；上传后入库为 `csv_<表名>` 表并建立数据映射。上传成功后保留架次与构型选择，方便同一架次连传多张表。表名唯一性约束在**架次内**（后端确认）：不同架次、不同机号允许同名表，前端只在所选架次的已有表名内避让。
-- **架次管理**：列表展示架次号 / 来源 / 飞行日期 / 起止时间，展开行查看其下全部数据表；支持添加架次（[SortieDialog](src/components/SortieDialog.vue)）、删除架次（级联删表）、单表删表。
-- **三方架次只读**：`sortieId` 为 `null` 的行没有本地主键，也就不存在 `config_data_mapping`。这类行在「关联架次」下拉、数据表列、删除架次与去训练 / 去推理上都**不出现**，也不会为它请求 `/aircraft/mappings`（判定见 [hasLocalSortieId](src/utils/aircraft-source.ts)，只认主键、不叠加时间占位符启发式——本地架次允许日期留空）。三方单机整台还会摘掉「数据管理」菜单。
-- **去训练 / 去推理**：每张数据表可触发 [TrainingDialog](src/components/TrainingDialog.vue) / [InferingDialog](src/components/InferingDialog.vue)，基于该表列在当前会话的实例上发起训练 / 推理，完成后跳转会话管理查看进度与结果。
+- **CSV 上传**：先选关联架次（必选，「数据表名」随即带出架次号，同架次已有同名表时自动追加 `_2`/`_3`…，可手工改名；改名后才出现一键「恢复为架次号」）→ 选 CSV 文件 →「分析预览」展示行数 / 有效行 / 列类型校验 → 上传后入库为 `csv_<表名>` 表并建立数据映射。上传成功后保留架次选择，方便同一架次连传多张表。表名唯一性约束在**架次内**（后端确认）：不同架次、不同机号允许同名表，前端只在所选架次的已有表名内避让。
+- **避让重名只查所选架次**：默认表名要靠该架次已有的表名算，但不必为整机每个架次都拉一次 `/aircraft/mappings`——只查当前选中的那一个；连点两个架次时用 token 丢弃过期响应。
+- **只认本地架次**：`sortieId` 为 `null` 的三方架次没有本地主键，也就不存在 `config_data_mapping`。这类架次不在「关联架次」下拉里，也不会为它请求 `/aircraft/mappings`（判定见 [hasLocalSortieId](src/utils/aircraft-source.ts)，只认主键、不叠加时间占位符启发式——本地架次允许日期留空）。三方单机整台还会摘掉「数据管理」菜单。
 
 #### 2.3 当前对话（[ChatPanel](src/components/ChatPanel.vue)）
 
 详见 [§ OpenCode 对话集成](#opencode-对话集成)。
 
-#### 2.4 三方单机的训练 / 推理（[SortieTimeSeriesPanel](src/components/SortieTimeSeriesPanel.vue)）
+#### 2.4 训练 / 推理（[SortieTimeSeriesPanel](src/components/SortieTimeSeriesPanel.vue)）
 
-三方（航新/633）单机没有本地 CSV 表，训练 / 推理的数据只能来自时序查询，因此入口不在「数据管理」
-（三方单机的工作台已摘掉该菜单：三方架次没有本地主键，无法绑定 CSV 表），
-而在「时序数据查询」页的「去训练 / 去推理」：
-[TimeseriesJobDialog](src/components/TimeseriesJobDialog.vue) 把该页的定位条件（`sortieKey` + 机号 +
-起止时间）与所选属性一并提交，取数属性 = 数据列 ∪ 标签列。本地单机不出这个入口，仍走数据管理里
-按 CSV 表训练的既有链路。
+本地与三方共用同一套入口、同一个弹窗（[TimeseriesJobDialog](src/components/TimeseriesJobDialog.vue)）与同一个请求体：
+入口都挂在「时序数据查询」页的「去训练 / 去推理」，把该页的定位条件（架次 `sortieKey` + 机号 + 起止时间）
+与所选属性一并提交，取数属性 = 数据列 ∪ 标签列——后端按 `sortieKey` 自己定向到本地 CSV 表或三方平台。
+「数据管理」里按 CSV 表训练的那条链路已下线，同一件事不再有两个入口、两套请求体。
+
+从菜单直接进本页（没在架次查询里点过行）时，默认取该单机的**第一条架次**并自动查询；只有该单机
+确实没有架次时才落到「去架次查询」的引导。切换飞行器会丢弃上一台的架次选择。
+
+属性选择由 [PropertyPicker](src/components/PropertyPicker.vue) 承载：三方参数组实测可下发 12000+ 个名字，
+在筛选栏摆下拉既没法「浏览」也扛不住渲染，故改成「按钮 + 右侧抽屉」——抽屉内是搜索框（回车可直接添加
+候选里没有的名字）+ 固定行高虚拟列表（只渲染可视区几十行）+ 已选区 + 批量粘贴。已选属性只体现在
+按钮上的「已选 N」与抽屉内的已选区——属性名动辄十几个汉字，平铺在页面上只是噪声。默认选中候选的
+第一条；清空后留空会走「后端按平台原始列名返回」（三方是 `Column4`/`Column5` 这种），
+也因此「去训练 / 去推理」要求至少选一个属性。
 
 对应的后端契约为 `POST /tasks/train-timeseries`、`POST /tasks/infer-timeseries`（**待后端提供**）：
 
@@ -280,6 +290,12 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
   "detach": true
 }
 ```
+
+#### 2.5 架次查询（[SortieQueryPanel](src/components/SortieQueryPanel.vue)）
+
+按机号（默认当前飞行器，可改可清空查全部）与架次号关键字查架次；点任一行下钻到同级的「时序数据查询」。
+
+- **架次增删只在本地单机**：本地单机的页面上有「+ 添加架次」（[SortieDialog](src/components/SortieDialog.vue)）与行内「删除架次」（接口级联删除该架次的 CSV 表）。三方单机不出现这两个入口；本地单机列表里混入的三方架次行（`sortieId` 为 `null`）也不出「删除架次」。
 
 ---
 

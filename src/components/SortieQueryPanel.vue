@@ -2,13 +2,21 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { Search, RefreshRight } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { getSorties } from '@/api/aircraft'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { addSortie, deleteSortie, getSorties } from '@/api/aircraft'
+import { hasLocalSortieId } from '@/utils/aircraft-source'
+import SortieDialog from '@/components/SortieDialog.vue'
 import type { Sortie } from '@/types/entities'
 
 const props = defineProps<{
   /** 当前飞行器机号：进入本页即预填到机号框，只查该机的架次；切换飞行器时回填并重查 */
   aircraftNumber: string
+  /**
+   * 当前飞行器来自外部平台（航新/633）。
+   * 架次本身也分来源：三方架次由平台下发，没有本地主键，既不能新增也不该删除，
+   * 故整台三方单机不出现「添加架次」，行上的「删除架次」只认带本地主键的行。
+   */
+  external?: boolean
 }>()
 
 /**
@@ -60,6 +68,55 @@ function resetFilters() {
   runQuery()
 }
 
+// ---- 架次增删（仅本地） ----
+// 架次管理从「数据管理」页移到这里：架次列表本来就是本页的主体，边看边改更顺手，
+// 「数据管理」则只留 CSV 表相关的事。
+const sortieDialogVisible = ref(false)
+const addingSortie = ref(false)
+const deletingSortie = ref(false)
+
+async function onSortieConfirm(payload: {
+  sortieNumber: string
+  flightDate: string
+  startTime: string
+  endTime: string
+}) {
+  addingSortie.value = true
+  try {
+    // 新架次落在当前工作台的飞行器上（机号框只影响查询，不改变「给谁加架次」）
+    await addSortie({ ...payload, aircraftNumber: props.aircraftNumber })
+    ElMessage.success('架次添加成功')
+    sortieDialogVisible.value = false
+    runQuery()
+  } catch (e) {
+    ElMessage.error('添加架次失败: ' + (e as Error).message)
+  } finally {
+    addingSortie.value = false
+  }
+}
+
+async function handleDeleteSortie(row: Sortie) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除架次「${row.sortieNumber || row.sortieId}」？该架次关联的 CSV 数据表会一并删除，且不可恢复。`,
+      '确认删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  deletingSortie.value = true
+  try {
+    const res = await deleteSortie(row.sortieId)
+    ElMessage.success(res?.message || '删除成功')
+    runQuery()
+  } catch (e) {
+    ElMessage.error('删除失败: ' + (e as Error).message)
+  } finally {
+    deletingSortie.value = false
+  }
+}
+
 onMounted(runQuery)
 
 // 切换飞行器时重置为新的机号并重查
@@ -99,6 +156,14 @@ function rowKey(row: Sortie, idx: number) {
   <div class="sortie-page">
     <div class="page-header">
       <h2 class="page-title">架次查询</h2>
+      <el-button
+        v-if="!external"
+        type="primary"
+        size="small"
+        @click="sortieDialogVisible = true"
+      >
+        + 添加架次
+      </el-button>
     </div>
 
     <!-- 筛选区 -->
@@ -175,9 +240,34 @@ function rowKey(row: Sortie, idx: number) {
               </span>
             </template>
           </el-table-column>
+
+          <!-- 只在本地单机出现：三方架次由平台下发，没有本地主键，谈不上增删 -->
+          <el-table-column v-if="!external" label="操作" width="120" align="center">
+            <template #default="{ row }">
+              <el-button
+                v-if="hasLocalSortieId(row)"
+                type="danger"
+                text
+                size="small"
+                :loading="deletingSortie"
+                @click.stop="handleDeleteSortie(row)"
+              >
+                删除架次
+              </el-button>
+              <span v-else class="no-op">—</span>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
     </div>
+
+    <!-- 添加架次对话框（仅本地单机） -->
+    <SortieDialog
+      v-if="!external"
+      v-model:visible="sortieDialogVisible"
+      :loading="addingSortie"
+      @confirm="onSortieConfirm"
+    />
   </div>
 </template>
 
@@ -193,6 +283,9 @@ function rowKey(row: Sortie, idx: number) {
 .page-header {
   padding: 24px 32px 0;
   flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
 }
 
 .page-title {
@@ -200,6 +293,11 @@ function rowKey(row: Sortie, idx: number) {
   font-weight: 700;
   color: #0d1f3c;
   margin: 0 0 16px;
+}
+
+.no-op {
+  font-size: 12px;
+  color: #c0c4cc;
 }
 
 /* ---- 筛选区 ---- */

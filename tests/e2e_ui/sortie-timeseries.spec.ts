@@ -144,10 +144,10 @@ test('三方单机：点架次进时序页，默认带出架次记录的起止�
 
   const side = await gotoSorties(page, 'B-001')
 
-  // 时序数据查询与架次查询同级，且在没选过架次时给引导而非空白
+  // 不点架次直接进时序页：默认取该单机的第一条架次直接出数据，不再要求先回列表挑一次
   await side.getByText('时序数据查询').click()
   const main = page.locator('main')
-  await expect(main).toContainText('请先在「架次查询」中选择一个架次')
+  await expect(main).toContainText('架次号 20260723-1')
 
   await side.getByText('架次查询').click()
   const rows = page.locator('.el-table__body tr.el-table__row')
@@ -179,15 +179,22 @@ test('三方单机：点架次进时序页，默认带出架次记录的起止�
     endTime: '2026-07-23 14:20:00',
   })
 
-  // 手填参数名（三方没有候选可选）后重查，名称进入 paralist
-  const props = main.locator('.w-props')
-  await props.click()
-  const propsInput = props.locator('input')
-  await propsInput.pressSequentially('ALTITUDE')
-  await propsInput.press('Enter')
-  await expect(props.locator('.el-tag')).toHaveText(['ALTITUDE'])
-  // 手填后下拉仍开着（便于连续录入），先关掉再点查询，否则会挡住按钮
-  await propsInput.press('Escape')
+  // 属性候选可达万级（实测航新 12000+），故不在筛选栏摆下拉，改在右侧抽屉里选：
+  // 搜索 + 命中数 + 虚拟列表；候选里没有的名字可直接回车添加（本用例该架次没有参数组）
+  const propsBtn = main.getByRole('button', { name: /选择属性/ })
+  await expect(propsBtn).toContainText('未选')
+  await propsBtn.click()
+  const propSearch = page.locator('.prop-search input')
+  await expect(propSearch).toBeVisible()
+  await propSearch.fill('ALTITUDE')
+  await propSearch.press('Enter')
+  await expect(page.locator('.prop-selected-tags .el-tag')).toHaveText(['ALTITUDE'])
+  // 抽屉是浮层，不关掉会挡住「查询」按钮
+  await page.locator('.el-drawer__footer').getByRole('button', { name: '完成' }).click()
+  await expect(propSearch).toBeHidden()
+  // 关闭后按钮上仍带着已选数量，属性名不离开抽屉
+  await expect(propsBtn).toContainText('已选 1')
+
   await main.getByText('查询', { exact: true }).click()
   await expect.poll(() => tsBodies.length).toBeGreaterThan(1)
   expect(JSON.parse(tsBodies[tsBodies.length - 1])).toEqual({
@@ -231,14 +238,58 @@ test('本地单机：点架次进时序页，按 sortieKey 查且属性取本地
   await expect(main).toContainText('数据表 0805')
 
   // 本地行只有 HH:mm:ss、拼不出完整时间，故时间留空由后端按架次起止查；
-  // 属性由 /csv/overview 的 columnTypes 推导并预选
+  // 属性由 /csv/overview 的 columnTypes 推导，默认选中第一条
   await expect.poll(() => tsBodies.length, { timeout: 10_000 }).toBeGreaterThan(0)
   expect(JSON.parse(tsBodies[0])).toEqual({
     sortieId: '1',
     aircraftNumber: 'B-1234',
-    paralist: ['ALTITUDE', 'SPEED'],
+    paralist: ['ALTITUDE'],
   })
   await expect(main.locator('.w-time input').nth(0)).toHaveValue('')
 
   expect(errors).toEqual([])
+})
+
+test('直接进时序页：默认带出该单机的第一条架次并查询', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  const tsBodies: string[] = []
+  await stub(page, tsBodies, [])
+
+  await page.goto('aircraft/B-1234')
+  const side = page.locator('.ws-sidebar')
+  await expect(side.getByText('架次查询')).toBeVisible({ timeout: 15_000 })
+  // 不经过架次查询，直接点菜单进时序页
+  await side.getByText('时序数据查询').click()
+
+  const main = page.locator('main')
+  await expect(main).toContainText('架次号 dsafasfa')
+  await expect(main).toContainText('数据表 0805')
+
+  await expect.poll(() => tsBodies.length, { timeout: 10_000 }).toBeGreaterThan(0)
+  expect(JSON.parse(tsBodies[0])).toEqual({
+    sortieId: '1',
+    aircraftNumber: 'B-1234',
+    paralist: ['ALTITUDE'],
+  })
+
+  expect(errors).toEqual([])
+})
+
+test('该单机没有架次时：时序页才落到「去架次查询」引导', async ({ page }) => {
+  const tsBodies: string[] = []
+  await stub(page, tsBodies, [])
+  // 覆盖：该单机一条架次都没有
+  await page.route('**/api/aircraft/sorties**', (r) => r.fulfill(json([])))
+
+  await page.goto('aircraft/B-1234')
+  const side = page.locator('.ws-sidebar')
+  await expect(side.getByText('架次查询')).toBeVisible({ timeout: 15_000 })
+  await side.getByText('时序数据查询').click()
+
+  const main = page.locator('main')
+  await expect(main).toContainText('该单机暂无架次')
+  await expect(main.getByRole('button', { name: '去架次查询' })).toBeVisible()
+  // 没有架次就不该发时序查询
+  expect(tsBodies).toEqual([])
 })

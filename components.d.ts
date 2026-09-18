@@ -85,6 +85,7 @@ declare module 'vue' {
     MessageFeed: typeof import('./src/components/MessageFeed.vue')['default']
     ModelCard: typeof import('./src/components/ModelCard.vue')['default']
     PlaneSelector: typeof import('./src/components/demo/PlaneSelector.vue')['default']
+    PropertyPicker: typeof import('./src/components/PropertyPicker.vue')['default']
     ProxyRuleEditor: typeof import('./src/components/ProxyRuleEditor.vue')['default']
     ProxyRuleForm: typeof import('./src/components/ProxyRuleForm.vue')['default']
     ReleaseSupport: typeof import('./src/components/demo/ReleaseSupport.vue')['default']

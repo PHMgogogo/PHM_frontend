@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { getSorties } from '@/api/aircraft'
 import { useAircraftStore } from '@/stores/aircraft'
 import { isExternalAircraft } from '@/utils/aircraft-source'
 import { useChatStore } from '@/stores/chat'
@@ -120,6 +122,8 @@ onUnmounted(() => {
 watch(aircraftNumber, async (newVal, oldVal) => {
   if (oldVal && newVal !== oldVal) {
     chatStore.dispose()
+    // 架次是「某台飞机的一条记录」，换机必须丢掉，否则会拿上一台的架次去查时序
+    selectedSortie.value = null
     if (aircraft.value?.modelCode && !isExternal.value) {
       configItemStore.fetchAll(aircraft.value.modelCode)
     }
@@ -138,14 +142,40 @@ function onNavigateToTasks() {
 
 /**
  * 架次查询点了某行 → 记住架次并切到同级的「时序数据查询」页面。
- * 选中的架次放在工作台而非时序页里：从菜单直接进该页时（selectedSortie 为空）
- * 会提示先选架次，切走再回来也能保留上一次的选择。
+ * 选中的架次放在工作台而非时序页里：切走再回来能保留上一次的选择。
  */
 const selectedSortie = ref<Sortie | null>(null)
+/** 从菜单直接进时序页时，正在自动定位该单机的第一条架次 */
+const sortieResolving = ref(false)
 
 function onSelectSortie(sortie: Sortie) {
   selectedSortie.value = sortie
   activeMenu.value = 'timeseries'
+}
+
+/**
+ * 直接进「时序数据查询」时没点过架次：默认取该单机的第一条架次，让页面直接出数据。
+ * 先让用户看一条真实的（多半也是最新的）架次，比让他先去列表里挑一次少一步；
+ * 只有该单机确实没有架次时才落到引导态。
+ */
+async function ensureSortieForTimeseries() {
+  if (selectedSortie.value || sortieResolving.value) return
+  sortieResolving.value = true
+  try {
+    const list = await getSorties(aircraftNumber.value)
+    selectedSortie.value = list[0] ?? null
+    if (!selectedSortie.value) ElMessage.info('该单机暂无架次')
+  } catch (e) {
+    ElMessage.error('获取架次失败: ' + (e as Error).message)
+  } finally {
+    sortieResolving.value = false
+  }
+}
+
+/** 菜单切换：进时序页时补齐默认架次 */
+function onMenuChange(key: string) {
+  activeMenu.value = key
+  if (key === 'timeseries') void ensureSortieForTimeseries()
 }
 </script>
 
@@ -162,7 +192,7 @@ function onSelectSortie(sortie: Sortie) {
       :active-menu="activeMenu"
       :collapsed="sidebarCollapsed"
       :menus="workspaceMenus"
-      @update:active-menu="activeMenu = $event"
+      @update:active-menu="onMenuChange"
       @update:collapsed="sidebarCollapsed = $event"
       @navigate-home="router.push('/')"
     />
@@ -191,11 +221,11 @@ function onSelectSortie(sortie: Sortie) {
           v-else-if="activeMenu === 'data'"
           :aircraft-number="aircraftNumber"
           :readonly="isExternal"
-          @navigate-to-tasks="onNavigateToTasks"
         />
         <SortieQueryPanel
           v-else-if="activeMenu === 'sortie'"
           :aircraft-number="aircraftNumber"
+          :external="isExternal"
           @select-sortie="onSelectSortie"
         />
         <SortieTimeSeriesPanel
@@ -205,10 +235,15 @@ function onSelectSortie(sortie: Sortie) {
           @back="activeMenu = 'sortie'"
           @navigate-to-tasks="onNavigateToTasks"
         />
-        <!-- 从菜单直接进入该页且还没选过架次时的引导 -->
+        <!-- 该单机没有任何架次（或架次拉取失败）时的兜底引导 -->
         <div v-else-if="activeMenu === 'timeseries'" class="empty-hint">
-          <p>请先在「架次查询」中选择一个架次</p>
-          <el-button type="primary" @click="activeMenu = 'sortie'">去架次查询</el-button>
+          <template v-if="sortieResolving">
+            <p>正在加载该单机的架次...</p>
+          </template>
+          <template v-else>
+            <p>该单机暂无架次，无法查看时序数据</p>
+            <el-button type="primary" @click="activeMenu = 'sortie'">去架次查询</el-button>
+          </template>
         </div>
         <DemoRealtimeView
           v-else-if="activeMenu === 'monitor-old'"

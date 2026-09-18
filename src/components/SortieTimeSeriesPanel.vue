@@ -10,17 +10,16 @@ import {
   buildTimeseriesTable,
   cellText,
   DEFAULT_PAGE_SIZE,
-  filterOptions,
+  normalizeProperties,
   PAGE_SIZE_OPTIONS,
   paginate,
   pickDeviceName,
   propertyCandidates,
   resolveSortie,
-  toOptions,
-  type PropertyOption,
   type TimeseriesRow,
   type TimeseriesTable,
 } from '@/utils/timeseries'
+import PropertyPicker from '@/components/PropertyPicker.vue'
 import TimeseriesJobDialog from '@/components/TimeseriesJobDialog.vue'
 import type { Sortie } from '@/types/entities'
 
@@ -58,29 +57,24 @@ const endTime = ref(resolved.value.endTime ?? '')
 // ---- 可选属性 ----
 // 本地：从 /csv/overview 的 columnTypes 取；三方：按架次行的 parameterGroupId 查参数组字段名
 const candidates = ref<string[]>([])
-/**
- * 下拉的 options（虚拟滚动用）。
- * 航新参数组实测可下发 10000+ 列名，若逐项渲染 el-option 会一次性挂载上万节点卡死页面，
- * 故用 el-select-v2：options 只传数据，DOM 只渲染可视区那几十项。
- * 用 computed 而非在 prepare() 里赋值，是为了让候选只有一个真源（candidates），不会两处不同步。
- */
-const options = computed<PropertyOption[]>(() => toOptions(candidates.value))
+/** 已选属性（交给 PropertyPicker 管理：搜索 + 虚拟列表 + 批量粘贴） */
 const paralist = ref<string[]>([])
 const preparing = ref(false)
 /** 本地分支定位到的 CSV 表名（deviceName），仅用于界面提示 */
 const deviceName = ref('')
 
-/** el-select-v2 的输入框内过滤：万级候选下也要跟手 */
-function onFilter(query: string) {
-  return filterOptions(options.value, query)
+/**
+ * 默认选中：候选的第一条。
+ *
+ * 属性名可能很长（如 `主燃油加速供油量_JDK_GME_FDR2_A`），平铺在筛选栏既占地方
+ * 也读不出重点；选中结果只在 PropertyPicker 的按钮徽标与抽屉内呈现。
+ * 留空会走「后端按平台原始列名返回」（三方是 Column4/Column5 这种），
+ * 进页面即有一条真实列名，用户才有继续查询 / 去训练的抓手。
+ */
+function defaultSelection(): string[] {
+  const first = normalizeProperties(candidates.value)[0]
+  return first ? [first] : []
 }
-
-/** 命中多项时给出数量提示，避免用户以为下拉「只有前几条」 */
-const filterSummary = computed(() => {
-  const total = options.value.length
-  if (!total) return ''
-  return `共 ${total} 个属性`
-})
 
 /** 本地分支取属性候选。两步辅助请求不可避免：表名只有 /aircraft/mappings 给得出 */
 async function loadLocalCandidates() {
@@ -114,9 +108,7 @@ async function prepare() {
   try {
     if (external.value) await loadExternalCandidates()
     else await loadLocalCandidates()
-    // 默认只选第一条：全选在万级候选下既无意义（请求体与结果表都撑不住）又拖慢首屏，
-    // 用户按需再往下拉选；候选为空时留空，与「无可选属性」的表现一致
-    paralist.value = candidates.value.length ? [candidates.value[0]] : []
+    paralist.value = defaultSelection()
   } catch (e) {
     ElMessage.error('获取属性列表失败: ' + (e as Error).message)
   } finally {
@@ -168,8 +160,8 @@ async function runQuery() {
 }
 
 function resetFilters() {
-  // 与进页面时的默认一致：只选第一条（不是全选，理由见 prepare）
-  paralist.value = candidates.value.length ? [candidates.value[0]] : []
+  // 与进页面时的默认一致（理由见 prepare）
+  paralist.value = defaultSelection()
   // 时间回到架次记录的默认值（不是清空）——这正是「默认采用架次记录的起止时间」
   startTime.value = resolved.value.startTime ?? ''
   endTime.value = resolved.value.endTime ?? ''
@@ -191,8 +183,9 @@ function rowKey(row: TimeseriesRow, idx: number) {
 }
 
 // ---- 训练 / 推理（仅三方单机） ----
-// 三方单机没有本地 CSV 表，训练与推理的数据只能来自本页的时序查询，
-// 故入口放在这里（本地仍走数据管理里按 CSV 表训练的那条链路）。
+// 本地与三方的入口、弹窗、请求体完全一致：本页查询用的 sortieKey + 属性 + 起止时间就是取数条件，
+// 后端按 sortieKey 自己定向到本地 CSV 表或三方平台（见 buildTimeseriesJobRequest）。
+// 「数据管理」里的按 CSV 表训练那条链路已下线，避免同一件事有两个入口、两套请求体。
 const jobDialogVisible = ref(false)
 const jobMode = ref<'train' | 'infer'>('train')
 
@@ -241,30 +234,12 @@ function timeText(v?: string | null) {
     <!-- 查询条件 -->
     <div class="filter-bar">
       <div class="filters">
-        <!--
-          属性下拉：候选可达万级（航新参数组），必须用虚拟滚动的 select-v2，
-          普通 el-select 会为每个候选渲染一个 el-option 节点，直接卡死。
-          默认只选第一条，故 collapse-tags 是兜底：用户手动多选到很多项时，
-          若逐个渲染 tag 照样上万节点，折叠后只画前几个 + 「+N」。
-          allow-create 仍保留：后端只返回列名，不保证覆盖平台所有可查字段。
-        -->
-        <el-select-v2
+        <!-- 属性候选可达万级（航新参数组），故不在筛选栏摆下拉，改由抽屉承载（见 PropertyPicker） -->
+        <PropertyPicker
           v-model="paralist"
-          multiple
-          filterable
-          allow-create
-          collapse-tags
-          collapse-tags-tooltip
-          :max-collapse-tags="3"
-          default-first-option
-          :reserve-keyword="false"
+          :options="candidates"
           :loading="preparing"
-          :options="options"
-          :filter-method="onFilter"
-          :item-height="34"
-          :height="274"
-          :placeholder="external ? '选择属性（可输入回车新建）' : '选择属性'"
-          class="w-props"
+          :disabled="loading"
         />
 
         <!-- 起止时间：默认取架次记录的值（三方），可手改；留空由后端按架次起止查 -->
@@ -295,37 +270,29 @@ function timeText(v?: string | null) {
         <el-button :disabled="loading" @click="resetFilters">
           <el-icon style="margin-right: 4px"><RefreshRight /></el-icon>重置
         </el-button>
-        <template v-if="external">
-          <el-divider direction="vertical" />
-          <el-tooltip content="以当前查询的架次 / 属性 / 时间范围作为训练数据" placement="top">
-            <el-button
-              type="primary"
-              plain
-              :disabled="loading || !paralist.length"
-              @click="openJob('train')"
-            >
-              去训练
-            </el-button>
-          </el-tooltip>
-          <el-tooltip content="以当前查询的架次 / 属性 / 时间范围作为推理输入" placement="top">
-            <el-button plain :disabled="loading || !paralist.length" @click="openJob('infer')">
-              去推理
-            </el-button>
-          </el-tooltip>
-        </template>
+        <el-divider direction="vertical" />
+        <!-- 本地 / 三方同一套入口：取数条件就是本页的查询条件 -->
+        <el-tooltip content="以当前查询的架次 / 属性 / 时间范围作为训练数据" placement="top">
+          <el-button
+            type="primary"
+            plain
+            :disabled="loading || !paralist.length"
+            @click="openJob('train')"
+          >
+            去训练
+          </el-button>
+        </el-tooltip>
+        <el-tooltip content="以当前查询的架次 / 属性 / 时间范围作为推理输入" placement="top">
+          <el-button plain :disabled="loading || !paralist.length" @click="openJob('infer')">
+            去推理
+          </el-button>
+        </el-tooltip>
       </div>
     </div>
 
     <!-- 命中统计 -->
     <div class="stat-line">
       <span class="stat-total">共 {{ table.rows.length }} 条数据</span>
-      <span v-if="table.rows.length" class="stat-hint">
-        当前渲染第 {{ paged.page }} / {{ paged.pageCount }} 页（{{ pageRows.length }} 条，其余在内存中，翻页即时切换）
-      </span>
-      <span v-if="filterSummary" class="stat-hint">{{ filterSummary }}（下拉为虚拟滚动，可输入筛选）</span>
-      <span v-if="external" class="stat-hint">
-        第三方平台数据由对应平台按机号 / 架次号 / 起止时间实时取回；属性列表按参数组取回，可输入回车补充，留空则按平台原始列名返回
-      </span>
     </div>
 
     <!-- 结果表格：时间列 + 每个参数一列，列随查询结果变化 -->
@@ -372,9 +339,8 @@ function timeText(v?: string | null) {
       </div>
     </div>
 
-    <!-- 三方单机：以时序数据为数据源发起训练 / 推理 -->
+    <!-- 以时序数据为数据源发起训练 / 推理（本地与三方同一套） -->
     <TimeseriesJobDialog
-      v-if="external"
       v-model="jobDialogVisible"
       :mode="jobMode"
       :sortie="sortie"
@@ -450,10 +416,6 @@ function timeText(v?: string | null) {
   flex-wrap: wrap;
 }
 
-.w-props {
-  width: 320px;
-}
-
 .w-time {
   width: 210px;
 }
@@ -486,10 +448,6 @@ function timeText(v?: string | null) {
 .stat-total {
   color: #3a4a5c;
   font-weight: 600;
-}
-
-.stat-hint {
-  color: #909399;
 }
 
 /* ---- 表格卡 ---- */

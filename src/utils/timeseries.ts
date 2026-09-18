@@ -69,48 +69,47 @@ export function propertyCandidates(
   return Object.keys(types).filter((k) => normalizeKey(k) !== ts)
 }
 
-/** 属性下拉的一项（el-select-v2 的 options 元素） */
-export interface PropertyOption {
-  label: string
-  value: string
-}
-
 /**
- * 候选列名 → 下拉 option。
+ * 候选属性名归一：去空白、去重（后端参数组可能重名）、非数组按空处理。
  *
- * 航新参数组实测可下发 10000+ 列名，若直接 `v-for` 渲染 el-option 会一次性挂载
- * 上万节点把页面卡死；故统一走 el-select-v2 的虚拟滚动（只渲染可视区选项）。
- * option 只保留 label/value 两个字段：虚拟列表按 itemHeight 估算高度，
- * 对象越简单越省内存，也避免把大字符串复制到多份。
- *
- * 顺手做三件容错：去重（后端列名可能重名）、剔除空白项、非数组按空处理。
+ * 三方参数组实测可下发 10000+ 个名字，界面用虚拟列表承载（见 PropertyPicker），
+ * 这里只把数据结构整干净，不引入任何与渲染层耦合的形态。
  */
-export function toOptions(candidates?: string[] | null): PropertyOption[] {
+export function normalizeProperties(candidates?: string[] | null): string[] {
   if (!Array.isArray(candidates)) return []
   const seen = new Set<string>()
-  const options: PropertyOption[] = []
+  const names: string[] = []
   for (const raw of candidates) {
     if (typeof raw !== 'string') continue
-    const value = raw.trim()
-    if (!value || seen.has(value)) continue
-    seen.add(value)
-    options.push({ label: value, value })
+    const name = raw.trim()
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    names.push(name)
   }
-  return options
+  return names
 }
 
 /**
- * 输入框内过滤（el-select-v2 的 filter-method）。
+ * 按关键字过滤候选（折叠大小写的子串匹配）。
  *
- * 默认过滤是 O(n) 全量正则匹配，1 万项每次输入都要扫一遍；这里改为
- * 折叠大小写的 indexOf 子串匹配 —— 对「用户敲的是列名片段」这个场景足够，
- * 且不需要为正则转义 / 编译付费。空查询直接返回原数组，不复制。
+ * 万级候选下每次输入都要扫一遍，故不用正则（默认实现会为正则转义/编译付费），
+ * indexOf 对「用户敲的是属性名片段」这个场景足够。空查询直接返回原数组，不复制。
  */
-export function filterOptions(options: PropertyOption[], query: string): PropertyOption[] {
-  if (!Array.isArray(options)) return []
+export function filterProperties(names: string[], query: string): string[] {
+  if (!Array.isArray(names)) return []
   const q = query.trim().toLowerCase()
-  if (!q) return options
-  return options.filter((o) => o.label.toLowerCase().includes(q))
+  if (!q) return names
+  return names.filter((n) => n.toLowerCase().includes(q))
+}
+
+/**
+ * 解析「批量粘贴」的文本：换行 / 逗号 / 分号 / 顿号 / 制表符 都是分隔符。
+ *
+ * 刻意**不**按空格切分：属性名里带空格的情况没法与「空格分隔多个名字」区分开，
+ * 按空格切会把一个名字拆成两个查不到的属性。去重与归一交给 normalizeProperties。
+ */
+export function parsePropertyInput(text: string): string[] {
+  return normalizeProperties(String(text ?? '').split(/[\n,;\uFF0C\uFF1B\u3001\t]+/))
 }
 
 /**
