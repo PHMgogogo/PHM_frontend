@@ -50,6 +50,12 @@ export interface Sortie {
    * 时序查询请求体回传的就是本字段（见 TimeSeriesQuery.sortieId）。
    */
   sortieKey: string
+  /**
+   * 所属机型：由 GET /aircraft/sorties 下发（该接口本身已按 modelCode 路由，故与查询时的机型一致）。
+   * 时序查询 / 时序训练推理的请求体 `airplaneType` 取的就是它——必须与查架次时的机型保持一致，
+   * 否则后端可能路由到别的源而返回空数据。
+   */
+  modelCode?: string
 }
 
 export interface ConfigItem {
@@ -127,16 +133,19 @@ export interface ConfigDataMapping {
 }
 
 // ---- 时序数据查询（POST /csv/query-timeseries）----
-// 入参只有一种形态（后端 UnifiedTimeSeriesRequest）：`sortieId` 走 String，
-// 装的是 /aircraft/sorties 下发的 sortieKey —— 本地是数字主键的字符串，三方是平台原始 id。
-// 后端按该标识定向到唯一数据源（本地 CSV 表 / 航新 / 633），前端因此**不必再按分支选字段**
-// （旧的「本地发 sortieId、三方发 aircraftNumber+sortieNumber」形态已废弃，实测会 400）。
+// `sortieId` 走 String，装的是 /aircraft/sorties 下发的 sortieKey —— 本地是数字主键的字符串，
+// 三方是平台原始 id。后端按该标识定向到唯一数据源（本地 CSV 表 / 航新 / 633），
+// 前端因此**不必再按分支选字段**（旧的「本地发 sortieId、三方发 aircraftNumber+sortieNumber」形态已废弃）。
+// `airplaneType` 为**新增必填**：机型取值与查架次时用的 modelCode 保持一致，
+// 不一致时后端可能路由到别的源而查不到数据（返回空 timestamps / parameters）。
 // startTime / endTime 可选，留空则由后端按架次自身起止时间推算。
 
 export interface TimeSeriesQuery {
+  /** 机型：**必填**，取自 /aircraft/models 的 modelCode（三方为 `K4-WS19:6` 这种合成码） */
+  airplaneType: string
   /** 架次标识：取自 /aircraft/sorties 的 sortieKey */
   sortieId: string
-  /** 机号：仅当后端路由索引缺该架次的机号时作补充，带上无副作用 */
+  /** 机号：仅作补充，带上无副作用 */
   aircraftNumber?: string
   startTime?: string
   endTime?: string
@@ -344,11 +353,15 @@ export interface InferTaskRequest {
  * - 作业参数用 snake_case，与既有 TrainTaskRequest / InferTaskRequest 保持一致。
  * 后端按 `sortieId` 定向到唯一数据源（本地 CSV 表 / 航新 / 633），
  * 取数属性 = data_cols ∪ label_cols，前端不额外传 paralist。
+ *
+ * ⚠️ 与 query-timeseries 一样需要 `airplaneType`（机型必填），且必须与查架次时的 modelCode 一致。
  */
 export interface TimeseriesJobRequest {
+  /** 机型：**必填**，取自 /aircraft/models 的 modelCode，须与查架次时用的机型一致 */
+  airplaneType: string
   /** 架次标识：取自 /aircraft/sorties 的 sortieKey，与 query-timeseries 同源 */
   sortieId: string
-  /** 机号：仅当后端路由索引缺该架次的机号时作补充，带上无副作用 */
+  /** 机号：仅作补充，带上无副作用 */
   aircraftNumber?: string
   /** 取数时间范围，留空由后端按架次自身起止推算（与 query-timeseries 一致） */
   startTime?: string

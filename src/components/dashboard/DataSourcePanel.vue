@@ -2,7 +2,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getMappings, getSorties, getPlanes } from '@/api/aircraft'
+import { getMappings, getSorties, getPlanes, getModels } from '@/api/aircraft'
 import { isLocalAircraft } from '@/utils/aircraft-source'
 import { getCsvOverview } from '@/api/csv'
 import { DISPLAY_TYPE, CHART_STYLE } from '@/api/display'
@@ -215,20 +215,26 @@ watch(
   },
 )
 
-// ---- 拉取单机候选（getPlanes 不传参 → 库内全部单机）----
+// ---- 拉取单机候选（按机型逐个拉取后合并）----
 // 本面板配置的是本地 CSV 数据源，只有本地单机有架次/映射可配：
 // /aircraft/plane 已聚合本地/航新/633 三源，需滤掉外源单机，并按机号去重
 // （同一机号可能三源各有一条）。
+// ⚠️ 机型现在是必填参数（后端按机型路由到唯一平台），不再有「一次拿全部单机」的入口，
+// 故先取机型列表再逐个机型查单机。
 async function fetchPlanes() {
   planesLoading.value = true
   try {
-    const all = await getPlanes()
+    const models = await getModels()
+    const codes = [...new Set(models.map((m) => m.modelCode).filter(Boolean))]
+    const results = await Promise.allSettled(codes.map((code) => getPlanes(code)))
     const seen = new Set()
-    planes.value = all.filter((p) => {
-      if (!isLocalAircraft(p) || seen.has(p.aircraftNumber)) return false
-      seen.add(p.aircraftNumber)
-      return true
-    })
+    planes.value = results
+      .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+      .filter((p) => {
+        if (!isLocalAircraft(p) || seen.has(p.aircraftNumber)) return false
+        seen.add(p.aircraftNumber)
+        return true
+      })
   } catch (e) {
     ElMessage.error('获取单机列表失败: ' + (e instanceof Error ? e.message : String(e)))
     planes.value = []
@@ -238,6 +244,15 @@ async function fetchPlanes() {
 }
 
 // ---- 单机号变化 → 拉取架次列表 ----
+/**
+ * 取某机号对应的机型（基础编码）。架次 / 列名查询都要带机型（必填）。
+ * 从已拉取的单机候选里查；查不到时返回空串，调用方据此跳过请求并提示。
+ */
+function modelCodeFor(aircraftNumber) {
+  const plane = planes.value.find((p) => p.aircraftNumber === aircraftNumber)
+  return plane?.modelCode ?? ''
+}
+
 async function fetchSorties() {
   const num = localAircraftNumber.value.trim()
   if (!num) {
@@ -246,9 +261,17 @@ async function fetchSorties() {
     mappings.value = []
     return
   }
+  const modelCode = modelCodeFor(num)
+  if (!modelCode) {
+    ElMessage.warning('未找到该机号对应的机型，无法查询架次')
+    sorties.value = []
+    selectedSortieId.value = null
+    mappings.value = []
+    return
+  }
   sortiesLoading.value = true
   try {
-    sorties.value = await getSorties(num)
+    sorties.value = await getSorties(modelCode, num)
     selectedSortieId.value = null
     mappings.value = []
     resetDownstream()
@@ -286,9 +309,10 @@ watch(localAircraftNumber, () => {
   fetchSorties()
 })
 
-// 组件挂载：拉取全部单机候选；若外部注入了初始单机号，直接拉取其架次
-onMounted(() => {
-  fetchPlanes()
+// 组件挂载：先拉单机候选（机型必填，需要先有 planes 才能由机号反查机型），
+// 若外部注入了初始单机号，再拉取其架次。
+onMounted(async () => {
+  await fetchPlanes()
   if (localAircraftNumber.value) fetchSorties()
 })
 
@@ -363,7 +387,9 @@ async function loadConfig(cfg, currentSize) {
     localAircraftNumber.value = cfg.aircraftNumber || ''
     if (cfg.aircraftNumber) {
       try {
-        sorties.value = await getSorties(cfg.aircraftNumber)
+        // 机型必填；快照里若存了机型优先用（此时 planes 可能还没拉完）
+        const modelCode = cfg.modelCode || modelCodeFor(cfg.aircraftNumber)
+        sorties.value = modelCode ? await getSorties(modelCode, cfg.aircraftNumber) : []
       } catch (e) {
         sorties.value = []
       }
@@ -451,6 +477,8 @@ function handleSubmit() {
     title: selectedTitle.value.trim(),
     // 回填专用：
     aircraftNumber: localAircraftNumber.value,
+    // 机型：架次 / 列名查询的必填参数，存进快照以便编辑态回填时能直接复用
+    modelCode: modelCodeFor(localAircraftNumber.value),
     sortieId: selectedSortieId.value,
     mappingId: selectedMappingId.value,
     csvTableName,

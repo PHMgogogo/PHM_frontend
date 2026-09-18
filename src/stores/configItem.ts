@@ -10,8 +10,9 @@ export const useConfigItemStore = defineStore('configItem', () => {
   const loading = ref(false)
   const currentModelCode = ref('')
 
-  // ---- 第三方构型（GET /aircraft/config-items 不传 modelCode）----
-  // 三方行的 modelCode 装的即上游的 SSFJH（后端映射：SSFJH→modelCode），故架号列表由它去重而来
+  // ---- 第三方构型（GET /aircraft/config-items?modelCode=，机型必填）----
+  // 三方行的 modelCode 装的即上游的 SSFJH（后端映射：SSFJH→modelCode），故架号列表由它去重而来。
+  // 机型改成必填后不再有「一次拉全部三方构型」的入口，改为遍历机型列表逐个拉取后合并。
   const thirdItems = ref<ConfigItem[]>([])
   const currentSsfjh = ref('')
   const ssfjhItems = ref<ConfigItem[]>([])
@@ -75,13 +76,22 @@ export const useConfigItemStore = defineStore('configItem', () => {
     }
   }
 
-  /** 拉取全部第三方构型并缓存，供机型下拉里的架号选项使用 */
-  async function fetchThirdItems() {
-    try {
-      thirdItems.value = await aircraftApi.getConfigItems()
-    } catch {
+  /**
+   * 拉取全部第三方构型并缓存，供机型下拉里的架号选项使用。
+   *
+   * ⚠️ 机型现在是必填（后端按机型路由），不再支持「不传机型拉全部三方构型」，
+   * 故由调用方传入机型编码列表，逐个拉取后合并去重。
+   */
+  async function fetchThirdItems(modelCodes: string[]) {
+    const codes = [...new Set((modelCodes ?? []).filter(Boolean))]
+    if (!codes.length) {
       thirdItems.value = []
+      return
     }
+    const results = await Promise.allSettled(
+      codes.map((code) => aircraftApi.getConfigItems(code)),
+    )
+    thirdItems.value = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
   }
 
   /**

@@ -19,6 +19,8 @@ const props = defineProps<{
   /** train = 训练（多 epoch / 学习率）；infer = 推理 */
   mode: 'train' | 'infer'
   sortie: Sortie
+  /** 当前飞行器机型（基础编码），作为请求体的 airplaneType（必填，须与查架次时一致） */
+  modelCode: string
   /** 时序页当前的属性候选，作为数据列 / 标签列的选项 */
   properties: string[]
   startTime?: string
@@ -132,6 +134,7 @@ async function handleConfirm() {
 
   const request = buildTimeseriesJobRequest({
     sortie: props.sortie,
+    modelCode: props.modelCode,
     mode: props.mode,
     dataCols: selectedDataCols.value,
     labelCols: selectedLabelCols.value,

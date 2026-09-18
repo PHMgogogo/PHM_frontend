@@ -10,6 +10,8 @@ import type { Sortie } from '@/types/entities'
 
 const props = defineProps<{
   aircraftNumber: string
+  /** 当前飞行器机型（基础编码）：架次查询机型必填，后端按机型路由 */
+  modelCode: string
   /**
    * 整台只读：隐藏上传 / 新增架次 / 训练推理删表等本地写操作。
    * 三方单机的工作台已摘掉「数据管理」菜单（三方架次没有本地 config_data_mapping），
@@ -40,7 +42,7 @@ async function loadSorties() {
   if (!props.aircraftNumber) return
   sortiesLoading.value = true
   try {
-    sorties.value = await getSorties(props.aircraftNumber)
+    sorties.value = await getSorties(props.modelCode, props.aircraftNumber)
   } catch (e) {
     ElMessage.error('获取架次列表失败: ' + (e as Error).message)
     sorties.value = []

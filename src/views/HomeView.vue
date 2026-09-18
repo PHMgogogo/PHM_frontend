@@ -47,13 +47,20 @@ watch(activeMenu, (menu) => {
 // 单机与机型均走本地聚合接口：GET /aircraft/plane、GET /aircraft/models
 
 /**
- * 按当前机型筛选重拉单机列表。
+ * 重拉单机列表。
+ *
+ * ⚠️ 机型现在是**必填**（后端按机型路由到唯一平台，不传会 400）。
+ * - 选了机型：只查该机型；
+ * - 未选机型：遍历全部机型各拉一遍、汇总显示（不再有「一次拿全部单机」的接口）。
+ *
  * 筛选值可能是外源机型（如 JX-20A:10001），须截断 ':modelId' 后缀再查 ——
  * 后端 /aircraft/plane 只认基础编码，传带后缀的值会返回空列表。
  */
 function reload() {
-  const code = selectedModel.value ? baseModelCode(selectedModel.value) : undefined
-  return aircraftStore.fetchAircrafts(code)
+  if (!selectedModel.value) {
+    return aircraftStore.fetchAllAircrafts()
+  }
+  return aircraftStore.fetchAircrafts(baseModelCode(selectedModel.value))
 }
 
 // 机型筛选改为服务端查询（原先是内存里精确比对 modelCode）
@@ -68,8 +75,8 @@ watch(selectedModel, () => reload())
 watch(activeMenu, async (menu) => {
   if (menu !== 'aircraft') return
   await aircraftStore.fetchModels()
-  // 机型管理页可能刚删掉当前筛选的机型；筛选值失效就清空
-  // （清空会由 watch(selectedModel) 自行触发重拉，避免这里重复请求）
+  // 机型管理页可能刚删掉当前筛选的机型；筛选值失效就回到「全部机型」（未选机型 = 汇总显示，
+  // 由 reload 遍历全部机型拉取）。值没变时（如仍为空）显式补一次，避免 watcher 不触发。
   const stillExists = aircraftStore.models.some((m) => m.modelCode === selectedModel.value)
   if (selectedModel.value && !stillExists) {
     selectedModel.value = ''
@@ -145,9 +152,10 @@ function bindGridObserver() {
   })
 }
 
-onMounted(() => {
-  aircraftStore.fetchModels()
-  reload()
+onMounted(async () => {
+  // 未指定机型时按全部机型汇总显示，故机型必须先到（reload 要用它遍历）。
+  await aircraftStore.fetchModels()
+  await reload()
   // 侧栏折叠/窗口变化会导致列数变化，重新同步行高
   gridResizeObserver = new ResizeObserver(() => syncCardRowHeight())
   bindGridObserver()
@@ -183,7 +191,7 @@ watch(
         <div class="toolbar">
           <el-select
             v-model="selectedModel"
-            placeholder="按机型筛选"
+            placeholder="全部机型"
             clearable
             class="model-filter"
           >

@@ -33,7 +33,7 @@ async function handleDelete(e: Event) {
       '删除飞机确认',
       { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
     )
-    await aircraftStore.deleteAircraft(props.aircraft.aircraftNumber)
+    await aircraftStore.deleteAircraft(props.aircraft.aircraftNumber, props.aircraft.modelCode)
     ElMessage.success('飞机已删除')
     emit('deleted')
   } catch { /* cancelled */ }

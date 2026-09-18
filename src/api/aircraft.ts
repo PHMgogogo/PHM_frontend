@@ -24,9 +24,12 @@ export function deleteModel(modelCode: string) {
 
 // ---- 单机（plane） ----
 
-export function getPlanes(modelCode?: string) {
-  const params = modelCode ? { modelCode } : undefined
-  return client.get<Aircraft[]>('/aircraft/plane', params)
+/**
+ * 单机列表。`modelCode` **必填**（后端按机型路由到唯一平台，缺省会 400「机型不能为空」）。
+ * 不再支持「不传机型返回全部单机」；需要全量机队请先取 GET /aircraft/models 后按机型逐个查。
+ */
+export function getPlanes(modelCode: string) {
+  return client.get<Aircraft[]>('/aircraft/plane', { modelCode })
 }
 
 export function createPlane(data: Omit<Aircraft, 'createdAt'>) {
@@ -43,9 +46,16 @@ export function getAircraftNumbers(modelCode: string) {
 
 // ---- 架次（sortie） ----
 
-/** 获取某单机下的架次列表（按 sortieId 降序） */
-export function getSorties(aircraftNumber: string) {
-  return client.get<Sortie[]>('/aircraft/sorties', { aircraftNumber })
+/**
+ * 获取架次列表。`modelCode` **必填**（后端按机型路由到唯一平台），
+ * `aircraftNumber` 可选（不传则返回该机型下各源全部架次）。
+ *
+ * 每行带 `sortieKey`——它才是时序查询要回传的架次标识（`sortieId` 三方行可能为 null）。
+ */
+export function getSorties(modelCode: string, aircraftNumber?: string) {
+  const params: Record<string, string> = { modelCode }
+  if (aircraftNumber) params.aircraftNumber = aircraftNumber
+  return client.get<Sortie[]>('/aircraft/sorties', params)
 }
 
 /** 获取架次详情 */
@@ -74,13 +84,14 @@ export function deleteSortie(sortieId: number) {
 // ---- 构型项目 ----
 
 /**
- * 构型项目列表。
- * - 传 modelCode：该机型的本地构型（itemId 为数字）
- * - 不传 modelCode：返回全部第三方构型（后端从外部平台汇总，itemId / parentItemId 均为 null）
+ * 构型项目列表。`modelCode` **必填**（后端按机型路由到唯一平台，缺省会 400）。
+ *
+ * - 传该机型：命中三方平台的机型返回该平台构型（`itemId` / `parentItemId` 为 null）；
+ *   否则返回本地该机型的构型（`itemId` 为数字）。
+ * - 不再支持「不传机型返回全部第三方构型」。
  */
-export function getConfigItems(modelCode?: string) {
-  const params = modelCode ? { modelCode } : undefined
-  return client.get<ConfigItem[]>('/aircraft/config-items', params)
+export function getConfigItems(modelCode: string) {
+  return client.get<ConfigItem[]>('/aircraft/config-items', { modelCode })
 }
 
 export function getConfigItemTree(modelCode: string) {

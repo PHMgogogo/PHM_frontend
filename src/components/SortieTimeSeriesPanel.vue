@@ -30,6 +30,11 @@ const props = defineProps<{
    */
   sortie: Sortie
   /**
+   * 当前飞行器所属机型（基础编码）。时序查询请求体的 `airplaneType` 必填，
+   * 且必须与查架次时用的机型一致，否则后端会路由到别的源而查不到数据。
+   */
+  modelCode: string
+  /**
    * 当前单机是否来自外部平台（工作台由 GET /aircraft/plane 的占位符判定后传入）。
    * 这是判分支的**主要**依据：三方平台有数据时 /aircraft/sorties 的时间字段是真实值，
    * 光看架次行分不出本地/三方。
@@ -87,6 +92,7 @@ async function loadLocalCandidates() {
   deviceName.value = name
 
   const overview = await getCsvOverview({
+    modelCode: props.modelCode,
     aircraftNumber: props.sortie.aircraftNumber,
     deviceName: name,
   })
@@ -139,6 +145,7 @@ async function runQuery() {
     const data = await queryTimeseries(
       buildTimeseriesQuery({
         sortie: props.sortie,
+        modelCode: props.modelCode,
         paralist: paralist.value,
         startTime: startTime.value,
         endTime: endTime.value,
@@ -148,7 +155,8 @@ async function runQuery() {
     // 新结果从头看：否则上一次停在第 N 页、这次只有几行时会看到一张空表
     page.value = 1
     if (!table.value.rows.length) {
-      ElMessage.info('该查询条件下没有数据')
+      // 空结果属预期（机型与数据源不匹配 / 该源当前不可达会回落本地后返回空），不是接口异常
+      ElMessage.info('当前架次 / 机型暂无数据，或数据源暂不可用')
     }
   } catch (e) {
     table.value = { columns: [], rows: [] }
@@ -344,6 +352,7 @@ function timeText(v?: string | null) {
       v-model="jobDialogVisible"
       :mode="jobMode"
       :sortie="sortie"
+      :model-code="modelCode"
       :properties="paralist"
       :start-time="startTime"
       :end-time="endTime"

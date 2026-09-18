@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { getSorties } from '@/api/aircraft'
 import { useAircraftStore } from '@/stores/aircraft'
 import { isExternalAircraft } from '@/utils/aircraft-source'
+import { baseModelCode } from '@/utils/model-code'
 import { useChatStore } from '@/stores/chat'
 import { useConfigItemStore } from '@/stores/configItem'
 import { useTaskStore } from '@/stores/task'
@@ -51,6 +52,13 @@ const aircraft = computed(() =>
 
 /** 外部平台单机（航新/633）：整台只读。接口不返回 source，按占位符判定 */
 const isExternal = computed(() => !!aircraft.value && isExternalAircraft(aircraft.value))
+
+/**
+ * 当前飞行器的机型（基础编码）。
+ * 架次查询 / 时序查询 / 时序训练推理的机型参数必填，统一从这里取，
+ * 保证「选机型 → 选架次 → 查时序」三步用的是同一个机型值。
+ */
+const currentModelCode = computed(() => baseModelCode(aircraft.value?.modelCode ?? ''))
 
 // ---- UI 状态 ----
 // 注意：isExternal 依赖异步拉取到的单机数据，挂载时才能确定，故在 onMounted 里校正
@@ -105,8 +113,10 @@ async function bootstrapFor(id: string) {
 }
 
 onMounted(async () => {
-  // 拉全量单机列表，以便按机号解析当前飞行器（含外部平台单机）
-  await aircraftStore.fetchAircrafts()
+  // 单机与机型：GET /aircraft/plane 现在按机型必填过滤，故先取机型再汇总全部机型的单机，
+  // 之后才能按路由里的机号解析出当前飞行器（含外部平台单机）。
+  await aircraftStore.fetchModels()
+  await aircraftStore.fetchAllAircrafts()
   // 只有本地机型才有本地构型；三方机型编码不在本地构型表里，不去拉
   if (aircraft.value?.modelCode && !isExternal.value) {
     configItemStore.fetchAll(aircraft.value.modelCode)
@@ -162,7 +172,14 @@ async function ensureSortieForTimeseries() {
   if (selectedSortie.value || sortieResolving.value) return
   sortieResolving.value = true
   try {
-    const list = await getSorties(aircraftNumber.value)
+    // 架次查询机型必填：用当前飞行器所属机型（三方机型的合成码需截断基础编码）
+    const code = aircraft.value?.modelCode
+    if (!code) {
+      selectedSortie.value = null
+      ElMessage.warning('无法确定该飞行器的机型，不能查询架次')
+      return
+    }
+    const list = await getSorties(baseModelCode(code), aircraftNumber.value)
     selectedSortie.value = list[0] ?? null
     if (!selectedSortie.value) ElMessage.info('该单机暂无架次')
   } catch (e) {
@@ -220,17 +237,20 @@ function onMenuChange(key: string) {
         <DataPanel
           v-else-if="activeMenu === 'data'"
           :aircraft-number="aircraftNumber"
+          :model-code="currentModelCode"
           :readonly="isExternal"
         />
         <SortieQueryPanel
           v-else-if="activeMenu === 'sortie'"
           :aircraft-number="aircraftNumber"
+          :model-code="currentModelCode"
           :external="isExternal"
           @select-sortie="onSelectSortie"
         />
         <SortieTimeSeriesPanel
           v-else-if="activeMenu === 'timeseries' && selectedSortie"
           :sortie="selectedSortie"
+          :model-code="currentModelCode"
           :external="isExternal"
           @back="activeMenu = 'sortie'"
           @navigate-to-tasks="onNavigateToTasks"

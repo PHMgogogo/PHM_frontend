@@ -883,7 +883,7 @@ function handleEditTask(task: Task) {
         v-if="filteredTasks.length === 0 && !taskStore.loading"
         class="inner-empty"
       >
-        暂无会话，点击"创建会话"开始
+        暂无会话，点击<span class="inner-empty-link" @click="handleCreateTaskClick">"创建会话"</span>开始
       </div>
     </div>
   </div>
@@ -1085,6 +1085,15 @@ function handleEditTask(task: Task) {
   font-size: 14px;
   text-align: center;
   padding: 40px 0;
+}
+
+.inner-empty-link {
+  color: #1a6cf0;
+  cursor: pointer;
+}
+
+.inner-empty-link:hover {
+  text-decoration: underline;
 }
 
 .create-progress {

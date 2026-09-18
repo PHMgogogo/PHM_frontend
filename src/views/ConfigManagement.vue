@@ -66,8 +66,10 @@ function onModelChange(value: string) {
 }
 
 onMounted(async () => {
-  // 进页面即取全部第三方构型，架号用于下拉的「第三方平台」组
-  await Promise.all([aircraftStore.fetchModels(), configItemStore.fetchThirdItems()])
+  // 进页面即取全部第三方构型，架号用于下拉的「第三方平台」组。
+  // 构型查询机型必填，故先取机型列表再逐个机型拉取后合并（不再有「不传机型拉全部」的入口）。
+  await aircraftStore.fetchModels()
+  await configItemStore.fetchThirdItems(aircraftStore.models.map((m) => m.modelCode))
   // 沿用原交互：默认选中首个本地机型；没有本地机型则保持空态
   const first = localModelOptions.value[0]?.value || ''
   if (first) {

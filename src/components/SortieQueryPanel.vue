@@ -12,6 +12,11 @@ const props = defineProps<{
   /** 当前飞行器机号：进入本页即预填到机号框，只查该机的架次；切换飞行器时回填并重查 */
   aircraftNumber: string
   /**
+   * 当前飞行器所属机型（三方机型的合成码需先截断为基础编码）。
+   * 架次查询机型**必填**——后端按机型路由到唯一平台，不传会 400。
+   */
+  modelCode: string
+  /**
    * 当前飞行器来自外部平台（航新/633）。
    * 架次本身也分来源：三方架次由平台下发，没有本地主键，既不能新增也不该删除，
    * 故整台三方单机不出现「添加架次」，行上的「删除架次」只认带本地主键的行。
@@ -51,8 +56,8 @@ const filteredRows = computed(() => {
 async function runQuery() {
   loading.value = true
   try {
-    // 按机号过滤；机号框被手动清空时后端返回全部架次
-    rows.value = await getSorties(queryNumber.value.trim())
+    // 机型必填（后端按机型路由到唯一平台）；机号框被手动清空时返回该机型下各源全部架次
+    rows.value = await getSorties(props.modelCode, queryNumber.value.trim() || undefined)
   } catch (e) {
     rows.value = []
     ElMessage.error('架次查询失败: ' + (e as Error).message)

@@ -162,6 +162,8 @@ src/
 #### 1.1 飞行器管理
 
 - **按构型筛选**：选择机型（`modelCode`）后重新拉取该构型下的单机列表。
+  ⚠️ `GET /aircraft/plane` 的机型现在是**必填**（后端按机型路由到唯一平台，缺省返回 400「机型不能为空」），
+  不再支持「不传机型返回全部单机」；未选机型时列表为空。
 - **实时搜索**：匹配机号、构型代码、航司。
 - **添加飞行器**（[AddAircraftDialog](src/components/AddAircraftDialog.vue)）：机号（必填）、构型（必填，可在弹窗内「新建构型」）、航司、构型版本、状态（活跃 / 已退役 / 维护中）。
 
@@ -187,6 +189,8 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 - 第三方构型为**只读**：不显示「添加子项 / 删除」「+ 添加项目」「删除当前构型」，图谱里选中节点也不弹增删按钮。
 - 三方行后端不下发 `itemId`（为 `null`）与 GJB 章节号，`configItemStore.ssfjhTree` 会补一个页内唯一的合成
   `itemId` 供 `el-tree` 的 `node-key` 与力导向图节点 id 使用，章节号缺失处用 `—` 占位，保持与本地行对齐。
+- ⚠️ `GET /aircraft/config-items` 的机型现在是**必填**（缺省 400），不再支持「不传机型返回全部第三方构型」；
+  架号下拉改为按 `GET /aircraft/models` 的机型列表逐个拉取后合并去重。
 
 #### 1.3 知识中心
 
@@ -258,8 +262,8 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 #### 2.4 训练 / 推理（[SortieTimeSeriesPanel](src/components/SortieTimeSeriesPanel.vue)）
 
 本地与三方共用同一套入口、同一个弹窗（[TimeseriesJobDialog](src/components/TimeseriesJobDialog.vue)）与同一个请求体：
-入口都挂在「时序数据查询」页的「去训练 / 去推理」，把该页的定位条件（架次 `sortieKey` + 机号 + 起止时间）
-与所选属性一并提交，取数属性 = 数据列 ∪ 标签列——后端按 `sortieKey` 自己定向到本地 CSV 表或三方平台。
+入口都挂在「时序数据查询」页的「去训练 / 去推理」，把该页的定位条件（机型 `modelCode` + 架次 `sortieKey` + 机号 + 起止时间）
+与所选属性一并提交，取数属性 = 数据列 ∪ 标签列——后端按机型路由到唯一平台、按 `sortieKey` 定向到该平台的架次。
 「数据管理」里按 CSV 表训练的那条链路已下线，同一件事不再有两个入口、两套请求体。
 
 从菜单直接进本页（没在架次查询里点过行）时，默认取该单机的**第一条架次**并自动查询；只有该单机
@@ -276,6 +280,7 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 ```jsonc
 {
+  "airplaneType": "K4-WS19:6",  // 机型，必填；与查架次时的 modelCode 保持一致
   "sortieId": "08b29a13-...",   // 架次 sortieKey，与 POST /csv/query-timeseries 同源
   "aircraftNumber": "B-001",    // 机号兜底，可选
   "startTime": "2026-07-23 10:30:00", // 可选，留空按架次起止推算
@@ -295,6 +300,7 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 按机号（默认当前飞行器，可改可清空查全部）与架次号关键字查架次；点任一行下钻到同级的「时序数据查询」。
 
+- ⚠️ 机型**必填**：`aircraftNumber` 只作过滤，机型才是后端路由到唯一平台（本地 / 航新 / 633）的依据，缺省返回 400。
 - **架次增删只在本地单机**：本地单机的页面上有「+ 添加架次」（[SortieDialog](src/components/SortieDialog.vue)）与行内「删除架次」（接口级联删除该架次的 CSV 表）。三方单机不出现这两个入口；本地单机列表里混入的三方架次行（`sortieId` 为 `null`）也不出「删除架次」。
 
 ---
@@ -353,17 +359,39 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 | 域 | 代表接口 |
 |---|---|
-| 机型 / 单机 | `GET/POST /aircraft/models`、`GET/POST /aircraft/plane`、`GET /aircraft/aircraft-numbers` |
-| 架次 | `GET/POST /aircraft/sorties`、`DELETE /aircraft/sorties/{id}` |
-| 构型项目 | `GET /aircraft/config-items[/tree\|/select-list]`、`POST/DELETE /aircraft/config-items` |
+| 机型 / 单机 | `GET/POST /aircraft/models`、`GET/POST /aircraft/plane`（**机型必填**）、`GET /aircraft/aircraft-numbers` |
+| 架次 | `GET/POST /aircraft/sorties`（**机型必填**）、`DELETE /aircraft/sorties/{id}` |
+| 构型项目 | `GET /aircraft/config-items[/tree\|/select-list]`（**机型必填**）、`POST/DELETE /aircraft/config-items` |
 | 数据映射 | `GET /aircraft/mappings` |
-| CSV | `POST /csv/preview`、`POST /csv/upload`、`GET /csv/overview`、`POST /csv/drop` |
+| CSV | `POST /csv/preview`、`POST /csv/upload`、`GET /csv/overview`（**机型必填**）、`POST /csv/drop` |
 | 会话任务 | `GET /tasks/aircraft/{id}`、`POST/DELETE/PUT /tasks`、`POST /tasks/train`、`POST /tasks/infer` |
 | 时序训练 / 推理 | `POST /tasks/train-timeseries`、`POST /tasks/infer-timeseries`（三方单机，**待后端提供**） |
 | 实例管理 | `GET /highlevel`（启动）、`DELETE /highlevel/{id}`、`GET /highlevel/{id}/restart` |
 | 实例 Worker | `POST /load\|/unload\|/save\|/train\|/infer`、`GET /state/{n}`、`GET /stop`、`GET /wait` |
 | 数据展示 | `POST /display/raw-data` |
 | 知识中心 | `POST /documents/upload`、`GET /documents[/{id}]`、`DELETE /documents/{id}`、`POST /retrieval[/dense\|/sparse]`、`POST /chat/stream`、`GET /chat/history/{id}`、`POST /feedback` |
+
+### 查询接口的「机型必填」约定
+
+后端每 5 秒轮询三方平台的机型接口，把「机型 → 平台」映射维护在内存里（兼作保活）。
+因此**所有查询类接口都要带机型**，后端据此只向归属平台发一次请求，不再三源都打一遍；
+写操作接口不受影响。缺机型一律返回 400。
+
+| 接口 | 机型参数名 |
+|---|---|
+| `/aircraft/**`、`/csv/query`、`/csv/overview`、`/csv/query-range`、`/csv/list` | `modelCode` |
+| `/unified/**` | `airplaneType` |
+| `POST /csv/query-timeseries`、`POST /tasks/{train,infer}-timeseries`（body） | `airplaneType` |
+
+- **机型取值范围**：统一用 `GET /aircraft/models` 下发的 `modelCode`。三方机型是合成码（形如 `K4-WS19:6`），
+  本地机型就是普通编码（形如 `B737-800`）。后端也兼容传三方原始 `airplaneType`（形如 `K4-WS19`），但推荐统一回传上层给的值。
+- **三步必须同源**：`GET /aircraft/models` → `GET /aircraft/sorties` → `POST /csv/query-timeseries`，
+  第三步的 `airplaneType` 必须与第二步的 `modelCode` 一致，否则后端可能路由到别的源而查不到数据。
+- **空结果属预期**：机型不存在、或归属平台当前不可达时，后端自动回落查本地，通常返回空数组（不是接口异常），
+  界面上应提示「当前机型暂无数据 / 数据源暂不可用」。
+- `POST /unified/timeseries/query` 已下线（固定返回 410），请改用 `POST /csv/query-timeseries`；
+  其余 `/unified/*` 也建议尽快迁移到 `/aircraft/*` 与 `/csv/*` 的替代接口。
+- 受影响接口的完整清单见 [FRONTEND_API_CHANGES.md](FRONTEND_API_CHANGES.md)。
 
 > PHM 既有服务的真实地址仍由 `vite.config.ts` 的 proxy `target` 管理；RAG 开发地址优先用 `VITE_RAG_PROXY_TARGET` 配置，缺省为 `http://127.0.0.1:8000`。[endpoints.ts](src/config/endpoints.ts) 只负责浏览器可见的相对前缀。
 
