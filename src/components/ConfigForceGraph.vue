@@ -47,7 +47,13 @@
     </svg>
 
     <!-- 选中节点旁的浮动工具栏（HTML 叠加层，随节点屏幕坐标移动） -->
-    <div v-if="selected" class="node-toolbar" :style="toolbarStyle" @click.stop @mousedown.stop>
+    <div
+      v-if="selected && (canAddChild || canDelete)"
+      class="node-toolbar"
+      :style="toolbarStyle"
+      @click.stop
+      @mousedown.stop
+    >
       <!-- <span class="tb-chip">{{ selected.type === 'MODEL' ? selected.label : selected.item.gjbChapter }}</span> -->
       <button v-if="canAddChild" class="tb-btn primary" @click="onAddChild">添加子项</button>
       <button v-if="canDelete" class="tb-btn danger" @click="onDelete">删除</button>
@@ -71,7 +77,12 @@ import {
 import type { D3DragEvent, D3ZoomEvent, Simulation, ForceLink } from 'd3'
 import type { ConfigItem, ConfigItemType } from '@/types/entities'
 
-const props = defineProps<{ tree: ConfigItem[]; rootLabel?: string }>()
+const props = defineProps<{
+  tree: ConfigItem[]
+  rootLabel?: string
+  /** 只读模式（第三方构型）：隐藏增删入口，仅保留缩放与选中 */
+  readonly?: boolean
+}>()
 const emit = defineEmits<{
   (e: 'select', item: ConfigItem | null): void
   (e: 'add-child', item: ConfigItem): void
@@ -138,10 +149,11 @@ const hoveredId = ref<number | null>(null)
 const selected = ref<SimNode | null>(null)
 
 const canAddChild = computed(() => {
+  if (props.readonly) return false
   const t = selected.value?.type
   return t === 'SYSTEM' || t === 'SUBSYSTEM' || t === 'MODEL'
 })
-const canDelete = computed(() => selected.value?.type !== 'MODEL')
+const canDelete = computed(() => !props.readonly && selected.value?.type !== 'MODEL')
 
 // ---- zoom / 变换 ----
 const zoomTransform = ref({ x: 0, y: 0, k: 1 })

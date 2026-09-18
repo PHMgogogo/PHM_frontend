@@ -33,6 +33,10 @@ export interface Aircraft {
 
 /** 架次（飞行任务）：单机 → 架次 → CSV数据表（一对多，一个架次可关联多张数据表） */
 export interface Sortie {
+  /**
+   * 本地行是 sortie 表主键；三方（航新/633）行实测下发 null，
+   * 故**不能**拿它当「架次唯一标识」用（要唯一标识请用 sortieKey）。
+   */
   sortieId: number
   aircraftNumber: string
   sortieNumber: string
@@ -41,6 +45,11 @@ export interface Sortie {
   endTime: string // "HH:mm:ss"
   /** 参数组ID：仅航新（三方）行下发，用于查该架次的参数字段名；本地行为 null */
   parameterGroupId?: string | null
+  /**
+   * 架次统一标识：本地为 sortieId 的字符串形态（如 "1"），三方为平台原始 id（GUID）。
+   * 时序查询请求体回传的就是本字段（见 TimeSeriesQuery.sortieId）。
+   */
+  sortieKey: string
 }
 
 export interface ConfigItem {
@@ -118,18 +127,17 @@ export interface ConfigDataMapping {
 }
 
 // ---- 时序数据查询（POST /csv/query-timeseries）----
-// 该接口按 本地 → 航新 → 633 优先级择一返回，两种入参形态互斥：
-// - 本地：sortieId（+ paralist 为 CSV 列名，大小写不敏感，且必须显式给出——实测无「全部列」写法）
-// - 三方：aircraftNumber + sortieNumber（+ paralist 为参数名，可留空由后端决定）
-// startTime / endTime 可选，留空则由后端按架次自身起止时间取。
+// 入参只有一种形态（后端 UnifiedTimeSeriesRequest）：`sortieId` 走 String，
+// 装的是 /aircraft/sorties 下发的 sortieKey —— 本地是数字主键的字符串，三方是平台原始 id。
+// 后端按该标识定向到唯一数据源（本地 CSV 表 / 航新 / 633），前端因此**不必再按分支选字段**
+// （旧的「本地发 sortieId、三方发 aircraftNumber+sortieNumber」形态已废弃，实测会 400）。
+// startTime / endTime 可选，留空则由后端按架次自身起止时间推算。
 
 export interface TimeSeriesQuery {
-  /** 本地架次：与 config_data_mapping 关联，据此定位 csv_xxx 表 */
-  sortieId?: number
-  /** 三方架次：机号 */
+  /** 架次标识：取自 /aircraft/sorties 的 sortieKey */
+  sortieId: string
+  /** 机号：仅当后端路由索引缺该架次的机号时作补充，带上无副作用 */
   aircraftNumber?: string
-  /** 三方架次：架次号 */
-  sortieNumber?: string
   startTime?: string
   endTime?: string
   /** 本地 → CSV 列名；三方 → 参数名 */
@@ -324,6 +332,39 @@ export interface InferTaskRequest {
   batch_size?: number
   detach?: boolean
   device?: 'cpu' | 'cuda'
+}
+
+/**
+ * 以「时序数据查询」为数据源的训练 / 推理请求体
+ * （POST /tasks/train-timeseries | /tasks/infer-timeseries）。
+ *
+ * 三方（航新/633）单机没有本地 CSV 表，训练 / 推理的数据只能来自
+ * POST /csv/query-timeseries，故这里复用它定位数据源的那几个字段：
+ * - 定位字段用 camelCase，与 TimeSeriesQuery / 后端 UnifiedTimeSeriesRequest 保持一致；
+ * - 作业参数用 snake_case，与既有 TrainTaskRequest / InferTaskRequest 保持一致。
+ * 后端按 `sortieId` 定向到唯一数据源（本地 CSV 表 / 航新 / 633），
+ * 取数属性 = data_cols ∪ label_cols，前端不额外传 paralist。
+ */
+export interface TimeseriesJobRequest {
+  /** 架次标识：取自 /aircraft/sorties 的 sortieKey，与 query-timeseries 同源 */
+  sortieId: string
+  /** 机号：仅当后端路由索引缺该架次的机号时作补充，带上无副作用 */
+  aircraftNumber?: string
+  /** 取数时间范围，留空由后端按架次自身起止推算（与 query-timeseries 一致） */
+  startTime?: string
+  endTime?: string
+  /** 输入列 / 标签列（属性名，来自时序查询的属性候选） */
+  data_cols: string[]
+  label_cols: string[]
+  /** 承载训练的算法实例（来自所选会话） */
+  instance_id: string
+  batch_size?: number
+  /** 仅训练有 */
+  epoch?: number
+  /** 仅训练有 */
+  learning_rate?: number
+  device?: 'cpu' | 'cuda'
+  detach?: boolean
 }
 
 /** 前端任务实体（camelCase） */

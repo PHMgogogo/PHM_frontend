@@ -47,6 +47,7 @@ declare module 'vue' {
     ElInput: typeof import('element-plus/es')['ElInput']
     ElInputNumber: typeof import('element-plus/es')['ElInputNumber']
     ElInputTag: typeof import('element-plus/es')['ElInputTag']
+    ElLink: typeof import('element-plus/es')['ElLink']
     ElMenu: typeof import('element-plus/es')['ElMenu']
     ElMenuItem: typeof import('element-plus/es')['ElMenuItem']
     ElOption: typeof import('element-plus/es')['ElOption']
@@ -100,6 +101,7 @@ declare module 'vue' {
     TaskDialog: typeof import('./src/components/TaskDialog.vue')['default']
     TaskPanel: typeof import('./src/components/TaskPanel.vue')['default']
     TimeSeriesChart: typeof import('./src/components/demo/TimeSeriesChart.vue')['default']
+    TimeseriesJobDialog: typeof import('./src/components/TimeseriesJobDialog.vue')['default']
     TrainingDialog: typeof import('./src/components/TrainingDialog.vue')['default']
     WorkspaceSidebar: typeof import('./src/components/WorkspaceSidebar.vue')['default']
   }

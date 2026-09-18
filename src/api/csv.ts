@@ -90,7 +90,8 @@ export function getCsvOverview(
 
 /**
  * POST /csv/query-timeseries —— 查某个架次的时序数据。
- * 后端按 本地 → 航新 → 633 优先级择一返回，故只需按其分支填入对应字段（见 TimeSeriesQuery）。
+ * 请求体只有一种形态：`sortieId` 装架次的 sortieKey，后端据此定向到唯一数据源
+ * （本地 CSV 表 / 航新 / 633），前端不再按分支填字段（见 TimeSeriesQuery）。
  *
  * 返回信封 `{code, message, data}`，此处拆包后返回 data。
  */

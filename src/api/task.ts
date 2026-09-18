@@ -11,6 +11,7 @@ import type {
   AircraftTaskListResponse,
   TrainTaskRequest,
   InferTaskRequest,
+  TimeseriesJobRequest,
   ApiResponse,
 } from '@/types/entities'
 
@@ -68,6 +69,20 @@ export const taskApi = {
   /** 通过已上传的 CSV 数据启动推理 */
   inferWithCsv(data: InferTaskRequest) {
     return client.post<ApiResponse>('/tasks/infer', data)
+  },
+
+  /**
+   * 以「时序数据查询」为数据源启动训练。
+   * 三方（航新/633）单机没有本地 CSV 表，这是它们唯一的训练入口；
+   * 数据定位字段与 /csv/query-timeseries 完全同源（见 TimeseriesJobRequest）。
+   */
+  trainWithTimeseries(data: TimeseriesJobRequest) {
+    return client.post<ApiResponse>('/tasks/train-timeseries', data)
+  },
+
+  /** 以「时序数据查询」为数据源的推理，入口与入参同 trainWithTimeseries（少 epoch / learning_rate） */
+  inferWithTimeseries(data: TimeseriesJobRequest) {
+    return client.post<ApiResponse>('/tasks/infer-timeseries', data)
   }
 }
 

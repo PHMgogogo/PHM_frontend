@@ -154,7 +154,7 @@ src/
 |---|---|---|
 | ✈️ 飞行器管理 | 内嵌卡片网格 | 单机列表，按构型筛选 + 关键字搜索，点击卡片进入工作区 |
 | 📚 知识库管理 | [DocumentView](src/views/DocumentView.vue) | 文档生命周期、检索验证与知识库 Agent |
-| 🔧 构型管理 | [ConfigManagement](src/views/ConfigManagement.vue) | 构型项目树管理 |
+| 🔧 构型管理 | [ConfigManagement](src/views/ConfigManagement.vue) | 本机构型项目树 + 第三方平台构型（同一套树形 / 图谱展示） |
 | 📡 数据展示 | [MonitorView](src/views/MonitorView.vue) | 可配置数据看板 |
 
 #### 1.1 飞行器管理
@@ -178,6 +178,14 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 支持新建构型项目、删除项目（级联删除子项）、删除整个构型。
 
+机型下拉分**本地机型**与**第三方平台**（架号 `SSFJH`）两组，两个来源在页面上共用同一套渲染：
+同一个机型 / 架号选择器、同一张白卡、同一棵 `el-tree`（章节号 / 名称 / 类型标签 / 件号）与同一个
+「树形 ⇄ 构型图谱」切换。差异只有读写权限与字段可得性：
+
+- 第三方构型为**只读**：不显示「添加子项 / 删除」「+ 添加项目」「删除当前构型」，图谱里选中节点也不弹增删按钮。
+- 三方行后端不下发 `itemId`（为 `null`）与 GJB 章节号，`configItemStore.ssfjhTree` 会补一个页内唯一的合成
+  `itemId` 供 `el-tree` 的 `node-key` 与力导向图节点 id 使用，章节号缺失处用 `—` 占位，保持与本地行对齐。
+
 #### 1.3 知识中心
 
 知识中心将 RAG 能力组织成三个保持挂载的任务区：
@@ -196,12 +204,18 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 ### 二、单机工作区（`/aircraft/:aircraftNumber`，[AircraftWorkspace.vue](src/views/AircraftWorkspace.vue)）
 
-进入后自动初始化该单机的任务上下文：拉取会话列表，若无专属会话则**静默自动创建默认会话**，随后切到「当前对话」。侧栏 9 个菜单：
+进入后自动初始化该单机的任务上下文：拉取会话列表；**有会话**则自动选中并切到「当前对话」，
+**无会话**则停在「会话管理」等待用户创建（不再静默自动建会话）。
+
+本地单机与三方（航新/633）单机共用这一套菜单与初始化流程 —— 会话与对话是本地产物
+（算法实例 + OpenCode 会话），与单机来自哪个平台无关；三方单机的差异只有两处：构型只读，
+以及不提供本地 CSV 链路的「数据管理」入口（下方说明）。
+侧栏菜单：
 
 | 菜单 | 组件 | 数据源 | 说明 |
 |---|---|---|---|
 | 🗂️ 会话管理 | [TaskPanel](src/components/TaskPanel.vue) | 真实后端 | 会话 / 实例 / 训练推理状态 |
-| 📦 数据管理 | [DataPanel](src/components/DataPanel.vue) | 真实后端 | 架次 + CSV 上传 / 去训练 / 去推理 |
+| 📦 数据管理 | [DataPanel](src/components/DataPanel.vue) | 真实后端 | 架次 + CSV 上传 / 去训练 / 去推理（**仅本地单机**） |
 | 💬 当前对话 | [ChatPanel](src/components/ChatPanel.vue) | OpenCode | LLM 流式对话 |
 | 📡 实时监控 | DemoRealtimeView | Mock | 关键参数看板 + 告警 |
 | 🩺 增强诊断 | DemoDiagnosisView | Mock | 飞参判读 + 地面综合诊断 |
@@ -209,6 +223,11 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 | 📈 趋势分析 | DemoTrendView | Mock | 到检信息 + 整机 / 系统趋势 |
 | 🔮 故障预测 | DemoPredictionView | Mock | 寿命监控 + 故障风险预测 |
 | 🔧 维修建议 | DemoMaintenanceView | Mock | 故障信息 + 排故步骤 + IETM |
+
+> 三方单机（`GET /aircraft/plane` 中外源行）走同一套工作区：可建会话、可对话、可查构型（只读）与架次。
+> 但**不提供「数据管理」入口**——它的架次来自三方平台、没有本地 `config_data_mapping`，谈不上
+> CSV 表绑定；训练 / 推理改由「时序数据查询」页发起（见 § 2.4）。
+> 本地单机的架次列表里若混有三方架次（同机号多源），那些行同样不出本地 CSV 写入口。
 
 > 前 3 项为真实业务，后 6 项为**纯前端 Mock 演示**（围绕 J-20 有人机 P001–P004、无人机-A P005–P006 的完整 PHM 业务闭环），不调用任何后端。
 
@@ -225,13 +244,42 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 
 管理单机的 **架次（Sortie）** 及其关联的 **CSV 数据表**（一个架次可关联多张表）。
 
-- **CSV 上传**：选择文件 → 填表名 → 选关联架次（必选）→ 可选关联构型项目；「分析预览」展示行数 / 有效行 / 列类型校验；上传后入库为 `csv_<表名>` 表并建立数据映射。
-- **架次管理**：列表展示架次号 / 飞行日期 / 起止时间，展开行查看其下全部数据表；支持添加架次（[SortieDialog](src/components/SortieDialog.vue)）、删除架次（级联删表）、单表删表。
+- **CSV 上传**：先选关联架次（必选，「数据表名」随即带出架次号，同架次已有同名表时自动追加 `_2`/`_3`…，也可手工改名或一键「恢复为架次号」）→ 选 CSV 文件 → 可选关联构型项目；「分析预览」展示行数 / 有效行 / 列类型校验；上传后入库为 `csv_<表名>` 表并建立数据映射。上传成功后保留架次与构型选择，方便同一架次连传多张表。表名唯一性约束在**架次内**（后端确认）：不同架次、不同机号允许同名表，前端只在所选架次的已有表名内避让。
+- **架次管理**：列表展示架次号 / 来源 / 飞行日期 / 起止时间，展开行查看其下全部数据表；支持添加架次（[SortieDialog](src/components/SortieDialog.vue)）、删除架次（级联删表）、单表删表。
+- **三方架次只读**：`sortieId` 为 `null` 的行没有本地主键，也就不存在 `config_data_mapping`。这类行在「关联架次」下拉、数据表列、删除架次与去训练 / 去推理上都**不出现**，也不会为它请求 `/aircraft/mappings`（判定见 [hasLocalSortieId](src/utils/aircraft-source.ts)，只认主键、不叠加时间占位符启发式——本地架次允许日期留空）。三方单机整台还会摘掉「数据管理」菜单。
 - **去训练 / 去推理**：每张数据表可触发 [TrainingDialog](src/components/TrainingDialog.vue) / [InferingDialog](src/components/InferingDialog.vue)，基于该表列在当前会话的实例上发起训练 / 推理，完成后跳转会话管理查看进度与结果。
 
 #### 2.3 当前对话（[ChatPanel](src/components/ChatPanel.vue)）
 
 详见 [§ OpenCode 对话集成](#opencode-对话集成)。
+
+#### 2.4 三方单机的训练 / 推理（[SortieTimeSeriesPanel](src/components/SortieTimeSeriesPanel.vue)）
+
+三方（航新/633）单机没有本地 CSV 表，训练 / 推理的数据只能来自时序查询，因此入口不在「数据管理」
+（三方单机的工作台已摘掉该菜单：三方架次没有本地主键，无法绑定 CSV 表），
+而在「时序数据查询」页的「去训练 / 去推理」：
+[TimeseriesJobDialog](src/components/TimeseriesJobDialog.vue) 把该页的定位条件（`sortieKey` + 机号 +
+起止时间）与所选属性一并提交，取数属性 = 数据列 ∪ 标签列。本地单机不出这个入口，仍走数据管理里
+按 CSV 表训练的既有链路。
+
+对应的后端契约为 `POST /tasks/train-timeseries`、`POST /tasks/infer-timeseries`（**待后端提供**）：
+
+```jsonc
+{
+  "sortieId": "08b29a13-...",   // 架次 sortieKey，与 POST /csv/query-timeseries 同源
+  "aircraftNumber": "B-001",    // 机号兜底，可选
+  "startTime": "2026-07-23 10:30:00", // 可选，留空按架次起止推算
+  "endTime": "2026-07-23 14:20:00",
+  "data_cols": ["ALTITUDE"],    // 输入列
+  "label_cols": ["N1"],         // 标签列
+  "instance_id": "inst-1",      // 承接训练的算法实例（来自所选会话）
+  "batch_size": 32,
+  "epoch": 10,                  // 仅训练
+  "learning_rate": 0.001,       // 仅训练
+  "device": "cpu",
+  "detach": true
+}
+```
 
 ---
 
@@ -295,6 +343,7 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 | 数据映射 | `GET /aircraft/mappings` |
 | CSV | `POST /csv/preview`、`POST /csv/upload`、`GET /csv/overview`、`POST /csv/drop` |
 | 会话任务 | `GET /tasks/aircraft/{id}`、`POST/DELETE/PUT /tasks`、`POST /tasks/train`、`POST /tasks/infer` |
+| 时序训练 / 推理 | `POST /tasks/train-timeseries`、`POST /tasks/infer-timeseries`（三方单机，**待后端提供**） |
 | 实例管理 | `GET /highlevel`（启动）、`DELETE /highlevel/{id}`、`GET /highlevel/{id}/restart` |
 | 实例 Worker | `POST /load\|/unload\|/save\|/train\|/infer`、`GET /state/{n}`、`GET /stop`、`GET /wait` |
 | 数据展示 | `POST /display/raw-data` |

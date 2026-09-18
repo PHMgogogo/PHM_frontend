@@ -72,3 +72,18 @@ export function isExternalSortie(sortie: SortieSourceFields): boolean {
 export function isLocalSortie(sortie: SortieSourceFields): boolean {
   return !isExternalSortie(sortie)
 }
+
+/**
+ * 架次是否带本地主键（sortie 表自增主键）。
+ *
+ * 三方行的 `sortieId` 下发 **null**，这类架次必然没有本地 `config_data_mapping`：
+ * CSV 表绑定（POST /csv/upload 要 sortieId）、单表删表、去训练 / 去推理、删除架次
+ * 全都以这个主键为锚点。因此凡涉及**写入口 / 本地 CSV 表**的判断都以本函数为准。
+ *
+ * 刻意不叠加 isExternalSortie 的时间占位符启发式：本地架次允许日期与起止时间留空
+ * （SortieDialog 只强制架次号），空值会被当成占位符，导致刚建好的本地架次被误判为三方、
+ * 连自己的 CSV 表都传不上去。这里只认「有没有本地主键」这个事实。
+ */
+export function hasLocalSortieId(sortie: { sortieId?: number | null }): boolean {
+  return sortie.sortieId != null
+}

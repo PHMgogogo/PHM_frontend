@@ -58,8 +58,11 @@ export function getSortieParameters(parameterGroupId: string) {
   return client.get<string[]>('/aircraft/sortie/parameters', { parameterGroupId })
 }
 
-/** 添加架次（aircraftNumber 由调用方注入） */
-export function addSortie(data: Omit<Sortie, 'sortieId'>) {
+/**
+ * 添加架次（aircraftNumber 由调用方注入）。
+ * sortieId 与 sortieKey 均由后端生成（本地架次的 key 即主键的字符串形态），调用方不传。
+ */
+export function addSortie(data: Omit<Sortie, 'sortieId' | 'sortieKey'>) {
   return client.post<ApiResponse>('/aircraft/sorties', data)
 }
 

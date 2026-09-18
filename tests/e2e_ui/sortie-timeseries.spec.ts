@@ -4,13 +4,14 @@ import { expect, test, type Page } from '@playwright/test'
  * 架次查询 → 时序数据查询的下钻（两个同级工作台页面）。
  *
  * 全部接口打桩，不依赖后端真实数据：本用例验的是前端接线
- * （点行是否切页、两条分支的请求体形态、起止时间是否默认带出、返回是否回到列表）。
+ * （点行是否切页、请求体是否回传 sortieKey、起止时间是否默认带出、返回是否回到列表）。
  * 接口契约另有 curl 实测记录，纯逻辑有 tests/unit/sortie-timeseries.test.ts。
  *
- * 分支由**单机来源**决定（GET /aircraft/plane 对三方单机下发占位符 `-`），
+ * 判分支由**单机来源**决定（GET /aircraft/plane 对三方单机下发占位符 `-`），
  * 与用户点的那一行无关，故本地/三方各用一个单机：
- * - B-001（标记字段为 `-`）→ 三方分支，走机号 / 架次号 / 起止时间；
- * - B-1234（标记字段是真实值）→ 本地分支，走 sortieId。
+ * - B-001（标记字段为 `-`）→ 三方分支，属性候选走参数组、起止时间由架次行拼出；
+ * - B-1234（标记字段是真实值）→ 本地分支，属性候选走本地 CSV 表。
+ * 但两条分支的**请求体形态相同**：都回传该架次的 sortieKey。
  */
 
 /** 实测形态：三方单机的 airline/status/createdAt 是占位符 */
@@ -30,17 +31,21 @@ const LOCAL_AIRCRAFT = {
   createdAt: '2026-08-04 11:22:18.276000',
 }
 
-/** 实测：GET /aircraft/sorties?aircraftNumber=B-001（三方，时间是真实值） */
+/**
+ * 实测：GET /aircraft/sorties?aircraftNumber=0003（三方行，时间是真实值）。
+ * 三方行没有本地主键（sortieId 下发 null），唯一标识只有平台侧的 sortieKey。
+ */
 const EXTERNAL_SORTIE = {
-  sortieId: 10001,
+  sortieId: null,
   aircraftNumber: 'B-001',
   sortieNumber: '20260723-1',
   flightDate: '2026-07-23',
   startTime: '10:30:00',
   endTime: '14:20:00',
+  sortieKey: '08b29a13-6108-58c6-a674-f7a325973ac7',
 }
 
-/** 实测：GET /aircraft/sorties?aircraftNumber=B-1234（本地） */
+/** 实测：GET /aircraft/sorties?aircraftNumber=B-1234（本地行，sortieKey 即主键字符串） */
 const LOCAL_SORTIE = {
   sortieId: 1,
   aircraftNumber: 'B-1234',
@@ -48,6 +53,7 @@ const LOCAL_SORTIE = {
   flightDate: '2026-07-23',
   startTime: '10:30:00',
   endTime: '14:20:00',
+  sortieKey: '1',
 }
 
 const TIMESERIES_RESPONSE = {
@@ -129,9 +135,7 @@ async function gotoSorties(page: Page, aircraft: string) {
   return side
 }
 
-test('三方单机：点架次进时序页，默认带出架次记录的起止时间且绝不带 sortieId', async ({
-  page,
-}) => {
+test('三方单机：点架次进时序页，默认带出架次记录的起止时间并回传 sortieKey', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
   const tsBodies: string[] = []
@@ -150,7 +154,7 @@ test('三方单机：点架次进时序页，默认带出架次记录的起止�
   // 机号框预填当前飞行器 → 首屏只列本机的架次，不会混进别的机号
   await expect(rows).toHaveCount(1)
   await expect(main.locator('.w-num input').first()).toHaveValue('B-001')
-  // 外源单机默认停在「数据管理」，那个面板自己会读 mappings；从点击行开始只算时序页的请求
+  // 清掉进工作台时的辅助请求，从点击行开始只算时序页的请求
   calls.length = 0
   await rows.filter({ hasText: 'B-001' }).click()
 
@@ -166,12 +170,11 @@ test('三方单机：点架次进时序页，默认带出架次记录的起止�
   await expect(timeInputs.nth(0)).toHaveValue('2026-07-23 10:30:00')
   await expect(timeInputs.nth(1)).toHaveValue('2026-07-23 14:20:00')
 
-  // 进页面自动查一次：机号 + 架次号 + 起止时间，属性留空（三方接口不给参数名），
-  // 且**绝不带 sortieId**——实测带 sortieId 查该航新架次得 0 行
+  // 进页面自动查一次：sortieKey 定位架次 + 机号兜底 + 起止时间，属性留空（三方接口不给参数名）
   await expect.poll(() => tsBodies.length, { timeout: 10_000 }).toBeGreaterThan(0)
   expect(JSON.parse(tsBodies[0])).toEqual({
+    sortieId: '08b29a13-6108-58c6-a674-f7a325973ac7',
     aircraftNumber: 'B-001',
-    sortieNumber: '20260723-1',
     startTime: '2026-07-23 10:30:00',
     endTime: '2026-07-23 14:20:00',
   })
@@ -188,8 +191,8 @@ test('三方单机：点架次进时序页，默认带出架次记录的起止�
   await main.getByText('查询', { exact: true }).click()
   await expect.poll(() => tsBodies.length).toBeGreaterThan(1)
   expect(JSON.parse(tsBodies[tsBodies.length - 1])).toEqual({
+    sortieId: '08b29a13-6108-58c6-a674-f7a325973ac7',
     aircraftNumber: 'B-001',
-    sortieNumber: '20260723-1',
     startTime: '2026-07-23 10:30:00',
     endTime: '2026-07-23 14:20:00',
     paralist: ['ALTITUDE'],
@@ -210,7 +213,7 @@ test('三方单机：点架次进时序页，默认带出架次记录的起止�
   expect(errors).toEqual([])
 })
 
-test('本地单机：点架次进时序页，按 sortieId 查且属性取本地表的列名', async ({ page }) => {
+test('本地单机：点架次进时序页，按 sortieKey 查且属性取本地表的列名', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
   const tsBodies: string[] = []
@@ -230,7 +233,11 @@ test('本地单机：点架次进时序页，按 sortieId 查且属性取本地�
   // 本地行只有 HH:mm:ss、拼不出完整时间，故时间留空由后端按架次起止查；
   // 属性由 /csv/overview 的 columnTypes 推导并预选
   await expect.poll(() => tsBodies.length, { timeout: 10_000 }).toBeGreaterThan(0)
-  expect(JSON.parse(tsBodies[0])).toEqual({ sortieId: 1, paralist: ['ALTITUDE', 'SPEED'] })
+  expect(JSON.parse(tsBodies[0])).toEqual({
+    sortieId: '1',
+    aircraftNumber: 'B-1234',
+    paralist: ['ALTITUDE', 'SPEED'],
+  })
   await expect(main.locator('.w-time input').nth(0)).toHaveValue('')
 
   expect(errors).toEqual([])

@@ -218,6 +218,27 @@ const treeProps = {
   label: 'systemName',
 }
 
+// ---- 统一展示：本地机型与第三方平台架号共用同一套树 / 图谱 ----
+/** 本机取构型项目树；三方取补过合成 id 的扁平/嵌套行，两者同形 */
+const displayTree = computed<ConfigItem[]>(() =>
+  isThird.value ? configItemStore.ssfjhTree : configItemStore.treeData,
+)
+const displayLoading = computed(() =>
+  isThird.value ? configItemStore.ssfjhLoading : configItemStore.loading,
+)
+/** 节点总数：本机 / 三方同一口径，按页面上实际渲染的节点统计 */
+function countNodes(nodes: ConfigItem[]): number {
+  return nodes.reduce((sum, node) => sum + 1 + countNodes(node.children ?? []), 0)
+}
+/** 工具栏条数：本机为构型项目，三方为部件（沿用三方只读区的口径） */
+const displayCount = computed(() => countNodes(displayTree.value))
+const countUnit = computed(() => (isThird.value ? '个部件' : '个构型项目'))
+
+/** 三方行后端不下发 GJB 章节号，用占位符保持与本地行一致的对齐 */
+function chapterText(data: ConfigItem): string {
+  return data.gjbChapter || '—'
+}
+
 function treeNodeName(data: ConfigItem): string {
   if (data.itemType === 'SUBSYSTEM') return data.subSystemName ?? ''
   if (data.itemType === 'EQUIPMENT' || data.itemType === 'LRU') return data.equipmentName ?? ''
@@ -258,50 +279,55 @@ function treeNodeName(data: ConfigItem): string {
     <!-- 未选机型时的提示 -->
     <div v-if="!hasSelection" class="empty-hint">
       <span class="empty-icon">🔧</span>
-      <p>请先选择机型，查看和管理其本地构型项目</p>
+      <p>请先选择机型 / 架号，查看其构型项目</p>
     </div>
 
-    <!-- 本地构型管理 -->
-    <template v-else-if="!isThird">
+    <!-- 构型内容：本地机型与第三方平台架号共用同一套渲染，三方只读（无增删入口） -->
+    <template v-else>
       <div class="toolbar">
-        <span class="current-model">当前构型：{{ selectedCode }}</span>
+        <span class="current-model">
+          当前构型：{{ selectedCode }}
+          <span class="current-count">共 {{ displayCount }} {{ countUnit }}</span>
+        </span>
         <div class="toolbar-actions">
           <el-radio-group v-model="viewMode" size="default">
             <el-radio-button value="tree">树形</el-radio-button>
             <el-radio-button value="graph">构型图谱</el-radio-button>
           </el-radio-group>
-          <el-button type="danger" @click="handleDeleteCurrentModel">
-            删除当前构型
-          </el-button>
-          <el-button type="primary" @click="openCreateConfig()">
-            + 添加项目
-          </el-button>
+          <template v-if="!isThird">
+            <el-button type="danger" @click="handleDeleteCurrentModel">
+              删除当前构型
+            </el-button>
+            <el-button type="primary" @click="openCreateConfig()">
+              + 添加项目
+            </el-button>
+          </template>
         </div>
       </div>
 
       <div class="config-scroll">
-        <!-- 本地构型白卡 -->
+        <!-- 构型白卡 -->
         <div
           class="tree-container"
-          :class="{ 'graph-mode': viewMode === 'graph' && configItemStore.treeData.length > 0 }"
+          :class="{ 'graph-mode': viewMode === 'graph' && displayTree.length > 0 }"
         >
           <!-- 加载中 -->
           <div
-            v-if="configItemStore.loading"
+            v-if="displayLoading"
             class="inner-empty"
-            v-loading="configItemStore.loading"
+            v-loading="displayLoading"
             style="min-height: 200px"
           ></div>
 
           <!-- 空状态 -->
-          <div v-else-if="configItemStore.treeData.length === 0" class="inner-empty">
-            <p>该构型暂无构型项目，点击上方按钮开始构建</p>
+          <div v-else-if="displayTree.length === 0" class="inner-empty">
+            <p>{{ isThird ? '该架号暂无构型数据' : '该构型暂无构型项目，点击上方按钮开始构建' }}</p>
           </div>
 
           <!-- 构型树 -->
           <el-tree
             v-else-if="viewMode === 'tree'"
-            :data="configItemStore.treeData"
+            :data="displayTree"
             :props="treeProps"
             node-key="itemId"
             default-expand-all
@@ -309,17 +335,17 @@ function treeNodeName(data: ConfigItem): string {
           >
             <template #default="{ data }">
               <div class="tree-node-content">
-                <span class="tree-node-label">{{ data.gjbChapter }}</span>
+                <span class="tree-node-label">{{ chapterText(data) }}</span>
                 <span class="tree-node-name">{{ treeNodeName(data) }}</span>
                 <el-tag
-                  :type="data.itemType === 'SYSTEM' ? '' : data.itemType === 'SUBSYSTEM' ? 'success' : 'info'"
+                  :type="data.itemType === 'SYSTEM' ? 'primary' : data.itemType === 'SUBSYSTEM' ? 'success' : 'info'"
                   class="tree-type-tag"
                 >
                   {{ configItemStore.itemTypeLabel[data.itemType as ConfigItemType] }}
                 </el-tag>
                 <span v-if="data.partNumber" class="tree-pn">{{ data.partNumber }}</span>
 
-                <span class="tree-actions">
+                <span v-if="!isThird" class="tree-actions">
                   <el-button
                     v-if="data.itemType === 'SYSTEM' || data.itemType === 'SUBSYSTEM'"
                     type="primary"
@@ -345,11 +371,12 @@ function treeNodeName(data: ConfigItem): string {
             </template>
           </el-tree>
 
-          <!-- 力导向图 -->
+          <!-- 力导向图（三方只读，仅保留缩放与选中） -->
           <div v-else class="graph-holder">
             <ConfigForceGraph
-              :tree="configItemStore.treeData"
+              :tree="displayTree"
               :root-label="selectedCode"
+              :readonly="isThird"
               @select="onGraphSelect"
               @add-child="onGraphAddChild"
               @delete="onGraphDelete"
@@ -357,40 +384,8 @@ function treeNodeName(data: ConfigItem): string {
             />
           </div>
         </div>
-
       </div>
     </template>
-
-    <!-- 第三方构型：选中某个架号后展示其全部部件（只读，无增删入口） -->
-    <div v-else class="third-area" v-loading="configItemStore.ssfjhLoading">
-      <div class="third-summary">
-        第三方构型 · 架号 {{ selectedCode }} · 共 {{ configItemStore.ssfjhItems.length }} 个部件
-      </div>
-
-      <el-table
-        :data="configItemStore.ssfjhItems"
-        class="third-table"
-        empty-text="该架号暂无构型数据"
-      >
-        <el-table-column label="名称" min-width="220">
-          <template #default="{ row }">
-            <span class="third-node-name">{{ treeNodeName(row) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="类型" width="120">
-          <template #default="{ row }">
-            <el-tag
-              :type="row.itemType === 'SYSTEM' ? '' : row.itemType === 'SUBSYSTEM' ? 'success' : 'info'"
-            >
-              {{ configItemStore.itemTypeLabel[row.itemType as ConfigItemType] }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="件号" min-width="180">
-          <template #default="{ row }">{{ row.partNumber || '—' }}</template>
-        </el-table-column>
-      </el-table>
-    </div>
 
     <!-- 新建构型项目弹窗 -->
     <el-dialog
@@ -506,7 +501,7 @@ function treeNodeName(data: ConfigItem): string {
   font-weight: 500;
 }
 
-/* 本地构型内容滚动区 */
+/* 构型内容滚动区（本机 / 三方共用） */
 .config-scroll {
   flex: 1;
   min-height: 0;
@@ -514,7 +509,7 @@ function treeNodeName(data: ConfigItem): string {
   padding: 0 32px 24px;
 }
 
-/* 本地构型白卡 */
+/* 构型白卡（本机 / 三方共用） */
 .tree-container {
   background: #fff;
   border-radius: 10px;
@@ -534,30 +529,12 @@ function treeNodeName(data: ConfigItem): string {
   min-height: 520px;
 }
 
-/* ---- 第三方构型区：不传 modelCode 的全量结果（只读表格） ---- */
-.third-area {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 32px 24px;
-}
-
-.third-summary {
+/* 工具栏条数 / 三方只读标签：本地与三方共用同一行 */
+.current-count {
+  margin-left: 8px;
   font-size: 13px;
-  color: #6a7a90;
-  font-weight: 500;
-  margin-bottom: 12px;
-}
-
-.third-table {
-  background: #fff;
-  border: 1px solid #e0e8f5;
-  border-radius: 10px;
-}
-
-.third-node-name {
-  color: #0d1f3c;
-  font-weight: 500;
+  color: #8c9ab0;
+  font-weight: 400;
 }
 
 /* 穿透 el-tree 内部高度限制 */

@@ -8,10 +8,12 @@
 import type {
   ConfigDataMapping,
   CsvOverview,
+  Sortie,
   TimeSeriesData,
   TimeSeriesQuery,
+  TimeseriesJobRequest,
 } from '@/types/entities'
-import { isExternalSortie } from './aircraft-source'
+import { hasLocalSortieId, isExternalSortie } from './aircraft-source'
 
 /** 归一化比较用的键：后端列名大小写混用（columnTypes 的键大写、返回的参数名小写），比较一律折叠大小写与空白 */
 function normalizeKey(v: string): string {
@@ -141,6 +143,8 @@ export function composeSortieTime(
  *
  * 注意三方架次有数据时列表里是**真实时间**，只靠占位符判不出来；这也是必须传
  * 单机级来源的原因（已废弃的统一查询曾用 source 字段兜住这点）。
+ * 第三条判据是**本地主键**：三方行的 sortieId 为 null，而本地 CSV 链路（mappings →
+ * csv_<表名>）正是以它为锚点，没有主键就无从绑定，必须按三方处理。
  */
 export interface ResolvedSortie {
   external: boolean
@@ -152,12 +156,17 @@ export interface ResolvedSortie {
 export function resolveSortie(
   aircraftExternal: boolean,
   sortie: {
+    /** 本地主键；三方行下发 null */
+    sortieId?: number | null
     flightDate?: string | null
     startTime?: string | null
     endTime?: string | null
   },
 ): ResolvedSortie {
-  const external = aircraftExternal || isExternalSortie(sortie)
+  // 没有本地主键 ⇒ 不可能有本地 config_data_mapping，绝不能进本地分支
+  // （否则会发 ?sortieId=null 查映射，再拿别人的表名去 /csv/overview 取列名）。
+  const external =
+    aircraftExternal || !hasLocalSortieId(sortie) || isExternalSortie(sortie)
   return {
     external,
     // 本地行只有 HH:mm:ss 没有日期，拼不出完整时间；不传后端也按该架次起止查（实测一致）
@@ -167,13 +176,11 @@ export function resolveSortie(
 }
 
 export interface TimeseriesQueryInput {
-  /** 被点击的架次（含 sortieId / aircraftNumber / sortieNumber） */
-  sortie: { sortieId: number; aircraftNumber: string; sortieNumber: string }
-  /** true → 三方分支，false → 本地分支 */
-  external: boolean
+  /** 被点击的架次（用其 sortieKey 定位；aircraftNumber 仅作后端路由索引的补充） */
+  sortie: { sortieKey: string; aircraftNumber?: string }
   /** 用户选择的属性（本地为 CSV 列名，三方为参数名） */
   paralist: string[]
-  /** 三方起止时间，默认由架次记录拼出，用户可改；本地为 undefined */
+  /** 起止时间，默认由架次记录拼出（三方），用户可改；本地为 undefined */
   startTime?: string
   endTime?: string
 }
@@ -181,12 +188,13 @@ export interface TimeseriesQueryInput {
 /**
  * 组装请求体。
  *
- * 两条分支的字段互斥：
- * - 本地 → `sortieId`（后端据此定位该架次关联的 csv_xxx 表）；
- * - 三方 → `aircraftNumber` + `sortieNumber`（后端转发给平台时即 airplaneNum / flightNum），
- *   外带该架次的真实 `startTime`/`endTime`。**绝不能给三方带 sortieId**：
- *   那是本地表的编号，对三方平台没有意义，后端会按「本地优先」去查本地表而查空。
- *   实测：同一航新架次，传 sortieId 得 0 行，传机号+架次号+起止时间得 20 行。
+ * 只有一种形态：`sortieId` 装架次的 `sortieKey`，后端据此定向到唯一数据源
+ * （本地 CSV 表 / 航新 / 633）。本地与三方的差别只体现在 key 的取值上，
+ * 不再按分支选字段——旧的「本地发 sortieId、三方发机号+架次号」契约已废弃，
+ * 实测三方仍按旧形态发会得到 400「请提供 sortieKey（取自 /aircraft/sorties 的 sortieKey）」。
+ *
+ * `aircraftNumber` 后端标为可选（仅当路由索引缺该架次机号时作补充），这里带上行自身的
+ * 机号：既无副作用，又能兜住索引缺机号的情况。
  *
  * 属性清空时**不带** paralist：本地不传会返回空表（不会有「全部列」兜底）；
  * 三方不传则返回上游的原始列名（实测为 Column4/Column5/Column6），故三方要手填
@@ -198,23 +206,75 @@ export interface TimeseriesQueryInput {
  * 自己填的名字（结果表列名即他所填），不要假装它是从平台查出来的元数据。
  */
 export function buildTimeseriesQuery(input: TimeseriesQueryInput): TimeSeriesQuery {
-  const query: TimeSeriesQuery = {}
+  const query: TimeSeriesQuery = { sortieId: input.sortie.sortieKey }
+  if (input.sortie.aircraftNumber) query.aircraftNumber = input.sortie.aircraftNumber
 
-  if (input.external) {
-    if (input.sortie.aircraftNumber) query.aircraftNumber = input.sortie.aircraftNumber
-    if (input.sortie.sortieNumber) query.sortieNumber = input.sortie.sortieNumber
-    const start = input.startTime?.trim()
-    if (start) query.startTime = start
-    const end = input.endTime?.trim()
-    if (end) query.endTime = end
-  } else {
-    query.sortieId = input.sortie.sortieId
-  }
+  const start = input.startTime?.trim()
+  if (start) query.startTime = start
+  const end = input.endTime?.trim()
+  if (end) query.endTime = end
 
   const paralist = input.paralist.map((s) => s.trim()).filter(Boolean)
   if (paralist.length) query.paralist = paralist
 
   return query
+}
+
+// ---- 以时序数据为数据源的训练 / 推理 ----
+
+export interface TimeseriesJobInput {
+  sortie: Sortie
+  /** 时序查询选中的属性（= 界面上的 paralist），作为训练/推理的候选列 */
+  dataCols: string[]
+  labelCols: string[]
+  instanceId: string
+  startTime?: string
+  endTime?: string
+  batchSize?: number
+  /** 仅训练 */
+  epoch?: number
+  /** 仅训练 */
+  learningRate?: number
+  device?: 'cpu' | 'cuda'
+  detach?: boolean
+  /** 训练才带 epoch / learning_rate；推理不带，否则后端可能按未知字段拒绝 */
+  mode: 'train' | 'infer'
+}
+
+/**
+ * 组装「以时序数据为数据源」的训练 / 推理请求体。
+ *
+ * 与 buildTimeseriesQuery 共用同一套定位字段（sortieId 装 sortieKey、机号兜底、
+ * 时间留空由后端按架次推算），这样三方单机的训练取数与用户在时序页看到的查询
+ * 走的是同一个数据源、同一段时间、同一批属性名。
+ *
+ * 列名去空白去重；data/label 全空时仍照发（由调用方先做必填校验，这里不悄悄改语义）。
+ */
+export function buildTimeseriesJobRequest(input: TimeseriesJobInput): TimeseriesJobRequest {
+  const clean = (list: string[]) => [...new Set(list.map((s) => s.trim()).filter(Boolean))]
+
+  const request: TimeseriesJobRequest = {
+    sortieId: input.sortie.sortieKey,
+    data_cols: clean(input.dataCols),
+    label_cols: clean(input.labelCols),
+    instance_id: input.instanceId,
+  }
+  if (input.sortie.aircraftNumber) request.aircraftNumber = input.sortie.aircraftNumber
+
+  const start = input.startTime?.trim()
+  if (start) request.startTime = start
+  const end = input.endTime?.trim()
+  if (end) request.endTime = end
+
+  if (input.batchSize !== undefined) request.batch_size = input.batchSize
+  if (input.device) request.device = input.device
+  if (input.detach !== undefined) request.detach = input.detach
+  if (input.mode === 'train') {
+    if (input.epoch !== undefined) request.epoch = input.epoch
+    if (input.learningRate !== undefined) request.learning_rate = input.learningRate
+  }
+
+  return request
 }
 
 export interface TimeseriesTable {

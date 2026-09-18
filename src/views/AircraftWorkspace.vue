@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAircraftStore } from '@/stores/aircraft'
-import { isExternalAircraft, aircraftSourceText } from '@/utils/aircraft-source'
+import { isExternalAircraft } from '@/utils/aircraft-source'
 import { useChatStore } from '@/stores/chat'
 import { useConfigItemStore } from '@/stores/configItem'
 import { useTaskStore } from '@/stores/task'
@@ -70,11 +70,17 @@ const allWorkspaceMenus = [
   { key: 'prediction', svg: predictionIcon, title: '故障预测' },
   { key: 'maintenance', svg: maintenanceIcon, title: '维修建议' },
 ]
-// 外部平台单机：隐藏依赖本地的会话/对话（本地任务初始化只对本地单机有意义）
-const externalHiddenKeys = new Set(['task', 'chat'])
+// 会话 / 对话是本地产物（算法实例 + OpenCode 会话），与单机来自哪个平台无关，两者都保留。
+// 但「数据管理」是本地 CSV 链路（架次 → config_data_mapping → csv_<表名>），三方单机的架次
+// 来自三方平台、不存在本地映射，故三方单机不再提供该入口；三方训练 / 推理走「时序数据查询」。
 const workspaceMenus = computed(() =>
-  allWorkspaceMenus.filter((m) => !isExternal.value || !externalHiddenKeys.has(m.key)),
+  isExternal.value ? allWorkspaceMenus.filter((m) => m.key !== 'data') : allWorkspaceMenus,
 )
+
+// 菜单随单机来源变化时兜底：三方单机若仍停在被摘掉的「数据管理」，挪回会话管理
+watch(isExternal, (external) => {
+  if (external && activeMenu.value === 'data') activeMenu.value = 'task'
+})
 
 // ---- 初始化指定飞机的任务上下文：拉取列表；有会话则自动选中第一个并进入对话，否则停在会话列表 ----
 async function bootstrapFor(id: string) {
@@ -99,13 +105,8 @@ async function bootstrapFor(id: string) {
 onMounted(async () => {
   // 拉全量单机列表，以便按机号解析当前飞行器（含外部平台单机）
   await aircraftStore.fetchAircrafts()
-  if (isExternal.value) {
-    // 外部平台单机：只读查看，无需本地任务/构型初始化
-    activeMenu.value = 'data'
-    initializing.value = false
-    return
-  }
-  if (aircraft.value?.modelCode) {
+  // 只有本地机型才有本地构型；三方机型编码不在本地构型表里，不去拉
+  if (aircraft.value?.modelCode && !isExternal.value) {
     configItemStore.fetchAll(aircraft.value.modelCode)
   }
   await bootstrapFor(aircraftNumber.value)
@@ -119,10 +120,8 @@ onUnmounted(() => {
 watch(aircraftNumber, async (newVal, oldVal) => {
   if (oldVal && newVal !== oldVal) {
     chatStore.dispose()
-    if (isExternal.value) {
-      initializing.value = false
-      activeMenu.value = 'data'
-      return
+    if (aircraft.value?.modelCode && !isExternal.value) {
+      configItemStore.fetchAll(aircraft.value.modelCode)
     }
     await bootstrapFor(newVal)
   }
@@ -130,11 +129,11 @@ watch(aircraftNumber, async (newVal, oldVal) => {
 
 // ---- 子组件事件处理 ----
 function onEnterChat() {
-  if (!isExternal.value) activeMenu.value = 'chat'
+  activeMenu.value = 'chat'
 }
 
 function onNavigateToTasks() {
-  activeMenu.value = isExternal.value ? 'data' : 'task'
+  activeMenu.value = 'task'
 }
 
 /**
@@ -170,9 +169,6 @@ function onSelectSortie(sortie: Sortie) {
 
     <!-- 右侧内容 -->
     <main class="ws-content">
-      <div v-if="isExternal && aircraft" class="readonly-banner">
-        该飞行器来自「{{ aircraftSourceText(aircraft) }}」，外部平台数据仅支持查看
-      </div>
       <div v-if="initializing" class="loading-state">
         <p>正在加载工作区...</p>
       </div>
@@ -207,6 +203,7 @@ function onSelectSortie(sortie: Sortie) {
           :sortie="selectedSortie"
           :external="isExternal"
           @back="activeMenu = 'sortie'"
+          @navigate-to-tasks="onNavigateToTasks"
         />
         <!-- 从菜单直接进入该页且还没选过架次时的引导 -->
         <div v-else-if="activeMenu === 'timeseries'" class="empty-hint">
@@ -262,15 +259,6 @@ function onSelectSortie(sortie: Sortie) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.readonly-banner {
-  padding: 8px 16px;
-  font-size: 13px;
-  color: #e6a23c;
-  background: rgba(230, 162, 60, 0.12);
-  border-bottom: 1px solid rgba(230, 162, 60, 0.3);
-  flex-shrink: 0;
 }
 
 .loading-state {

@@ -21,6 +21,7 @@ import {
   type TimeseriesRow,
   type TimeseriesTable,
 } from '@/utils/timeseries'
+import TimeseriesJobDialog from '@/components/TimeseriesJobDialog.vue'
 import type { Sortie } from '@/types/entities'
 
 const props = defineProps<{
@@ -39,6 +40,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'back'): void
+  /** 去训练 / 去推理前若没有可用会话，跳去会话管理新建 */
+  (e: 'navigate-to-tasks'): void
 }>()
 
 // ---- 分支判定 ----
@@ -144,7 +147,6 @@ async function runQuery() {
     const data = await queryTimeseries(
       buildTimeseriesQuery({
         sortie: props.sortie,
-        external: external.value,
         paralist: paralist.value,
         startTime: startTime.value,
         endTime: endTime.value,
@@ -186,6 +188,21 @@ onMounted(async () => {
  */
 function rowKey(row: TimeseriesRow, idx: number) {
   return `${row.time}-${(paged.value.page - 1) * pageSize.value + idx}`
+}
+
+// ---- 训练 / 推理（仅三方单机） ----
+// 三方单机没有本地 CSV 表，训练与推理的数据只能来自本页的时序查询，
+// 故入口放在这里（本地仍走数据管理里按 CSV 表训练的那条链路）。
+const jobDialogVisible = ref(false)
+const jobMode = ref<'train' | 'infer'>('train')
+
+function openJob(mode: 'train' | 'infer') {
+  if (!paralist.value.length) {
+    ElMessage.warning('请先选择至少一个属性，训练 / 推理按所选属性取数')
+    return
+  }
+  jobMode.value = mode
+  jobDialogVisible.value = true
 }
 
 /** 时间占位符与列表页保持一致 */
@@ -278,6 +295,24 @@ function timeText(v?: string | null) {
         <el-button :disabled="loading" @click="resetFilters">
           <el-icon style="margin-right: 4px"><RefreshRight /></el-icon>重置
         </el-button>
+        <template v-if="external">
+          <el-divider direction="vertical" />
+          <el-tooltip content="以当前查询的架次 / 属性 / 时间范围作为训练数据" placement="top">
+            <el-button
+              type="primary"
+              plain
+              :disabled="loading || !paralist.length"
+              @click="openJob('train')"
+            >
+              去训练
+            </el-button>
+          </el-tooltip>
+          <el-tooltip content="以当前查询的架次 / 属性 / 时间范围作为推理输入" placement="top">
+            <el-button plain :disabled="loading || !paralist.length" @click="openJob('infer')">
+              去推理
+            </el-button>
+          </el-tooltip>
+        </template>
       </div>
     </div>
 
@@ -336,6 +371,18 @@ function timeText(v?: string | null) {
         />
       </div>
     </div>
+
+    <!-- 三方单机：以时序数据为数据源发起训练 / 推理 -->
+    <TimeseriesJobDialog
+      v-if="external"
+      v-model="jobDialogVisible"
+      :mode="jobMode"
+      :sortie="sortie"
+      :properties="paralist"
+      :start-time="startTime"
+      :end-time="endTime"
+      @navigate-to-tasks="emit('navigate-to-tasks')"
+    />
   </div>
 </template>
 
