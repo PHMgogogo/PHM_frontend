@@ -84,22 +84,15 @@ export function deleteSortie(sortieId: number) {
 // ---- 构型项目 ----
 
 /**
- * 构型项目列表。`modelCode` **必填**（后端按机型路由到唯一平台，缺省会 400）。
+ * 构型项目列表。`modelCode` **必填**（后端按机型路由到唯一平台，缺省会 400），
+ * 且只认冒号前的基础编码（三方合成码 `K4-WS19:1` 须截断，见 baseModelCode）。
  *
  * - 传该机型：命中三方平台的机型返回该平台构型（`itemId` / `parentItemId` 为 null）；
  *   否则返回本地该机型的构型（`itemId` 为数字）。
- * - 不再支持「不传机型返回全部第三方构型」。
+ * - 返回扁平行，前端按 `parentItemId` 自行组装成树（见 store 的 displayTree）。
  */
 export function getConfigItems(modelCode: string) {
   return client.get<ConfigItem[]>('/aircraft/config-items', { modelCode })
-}
-
-export function getConfigItemTree(modelCode: string) {
-  return client.get<ConfigItem[]>('/aircraft/config-items/tree', { modelCode })
-}
-
-export function getConfigItemSelectList(modelCode: string) {
-  return client.get<ConfigItem[]>('/aircraft/config-items/select-list', { modelCode })
 }
 
 /** 创建构型项目：仅 modelCode / itemType / gjbChapter 必填，其余按 itemType 条件填写 */

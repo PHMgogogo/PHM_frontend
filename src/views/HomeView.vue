@@ -11,7 +11,7 @@ import InterfaceManagement from '@/views/InterfaceManagement.vue'
 import ExternalPlatformManagement from '@/views/ExternalPlatformManagement.vue'
 import ModelManagement from '@/views/ModelManagement.vue'
 import { useAircraftStore } from '@/stores/aircraft'
-import { baseModelCode } from '@/utils/model-code'
+import { baseModelCode } from '@/utils/aircraft-source'
 import { Search } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -53,8 +53,8 @@ watch(activeMenu, (menu) => {
  * - 选了机型：只查该机型；
  * - 未选机型：遍历全部机型各拉一遍、汇总显示（不再有「一次拿全部单机」的接口）。
  *
- * 筛选值可能是外源机型（如 JX-20A:10001），须截断 ':modelId' 后缀再查 ——
- * 后端 /aircraft/plane 只认基础编码，传带后缀的值会返回空列表。
+ * 筛选值取自 GET /aircraft/models，三方为 `K4-WS19:1` 这类合成码，
+ * 传给 /aircraft/plane 前须截断为冒号前的基础编码，否则返回空列表。
  */
 function reload() {
   if (!selectedModel.value) {

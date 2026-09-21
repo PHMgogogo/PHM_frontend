@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as aircraftApi from '@/api/aircraft'
-import { baseModelCode } from '@/utils/model-code'
+import { baseModelCode } from '@/utils/aircraft-source'
 import type { AircraftModel, Aircraft } from '@/types/entities'
 
 export const useAircraftStore = defineStore('aircraft', () => {
@@ -59,7 +59,8 @@ export const useAircraftStore = defineStore('aircraft', () => {
    *
    * /aircraft/plane 的机型必填后不再有「一次拿全部单机」的入口，故这里按机型并发拉取后
    * 合并；单个机型失败只跳过该机型（不整表清空，避免一个平台不可达时页面全空）。
-   * 机型编码可能是合成码（如 JX-20A:10001），须截断后缀再传（同 HomeView 的筛选逻辑）。
+   * 机型编码取自 GET /aircraft/models，三方为 `K4-WS19:1` 这类合成码，
+   * 传给 /aircraft/plane 前须截断为冒号前的基础编码，否则返回空列表。
    *
    * @param modelCodes 机型编码列表；缺省用已拉取的 models
    */

@@ -2,7 +2,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { useConfigItemStore } from '@/stores/configItem'
-import { isLocalModelCode } from '@/utils/model-code'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ConfigItem, ConfigItemType } from '@/types/entities'
 import ConfigForceGraph from '@/components/ConfigForceGraph.vue'
@@ -10,55 +9,28 @@ import ConfigForceGraph from '@/components/ConfigForceGraph.vue'
 const aircraftStore = useAircraftStore()
 const configItemStore = useConfigItemStore()
 
-// ---- 机型下拉：本地机型 + 第三方平台架号（SSFJH）两组 ----
-// 选项 value 带来源前缀，避免本地机型编码与架号恰好同名时走错分支
-const LOCAL_PREFIX = 'local:'
-const THIRD_PREFIX = 'third:'
-const selectedValue = ref('')
+// ---- 机型下拉：直接展示 GET /aircraft/models 的全部机型 ----
+// 后端在 /aircraft/models 里已按「合成码」聚合本地与三方（航新/633）机型，
+// 故不再自行拆分来源、也不再以架号（SSFJH）作为选项，一次列出全部模型。
+const selectedModelCode = ref('')
 
-// 「本地机型」组 = GET /aircraft/models 中的本地机型；外源机型编码含 ':'（如 JX-20AS:1），不在此列
-const localModelOptions = computed(() => {
+const modelOptions = computed(() => {
   const seen = new Set<string>()
   for (const m of aircraftStore.models) {
-    if (m.modelCode && isLocalModelCode(m.modelCode)) seen.add(m.modelCode)
+    if (m.modelCode) seen.add(m.modelCode)
   }
-  return [...seen].map((value) => ({ value: LOCAL_PREFIX + value, label: value }))
+  return [...seen].map((value) => ({ value, label: value }))
 })
 
-// 「第三方平台」组 = 全部第三方构型里的 SSFJH（后端映射 SSFJH→modelCode，store 已去重）
-const thirdSsfjhOptions = computed(() =>
-  configItemStore.thirdSsfjhList.map((value) => ({ value: THIRD_PREFIX + value, label: value })),
-)
+const hasSelection = computed(() => selectedModelCode.value !== '')
+const selectedCode = computed(() => selectedModelCode.value)
 
-const modelOptionGroups = computed(() => [
-  { category: '本地机型', items: localModelOptions.value },
-  { category: '第三方平台', items: thirdSsfjhOptions.value },
-])
-
-const hasSelection = computed(() => selectedValue.value !== '')
-const isThird = computed(() => selectedValue.value.startsWith(THIRD_PREFIX))
-
-/** 下拉选中值 → 裸编码（本地机型编码 / 架号） */
-function selectedCodeOf(value: string): string {
-  if (value.startsWith(LOCAL_PREFIX)) return value.slice(LOCAL_PREFIX.length)
-  if (value.startsWith(THIRD_PREFIX)) return value.slice(THIRD_PREFIX.length)
-  return ''
-}
-
-const selectedCode = computed(() => selectedCodeOf(selectedValue.value))
-
-// ---- 视图模式：树形 / 力导向图（仅本地构型有） ----
+// ---- 视图模式：树形 / 力导向图 ----
 const viewMode = ref<'tree' | 'graph'>('tree')
 
-function applySelection(value: string) {
-  const code = selectedCodeOf(value)
-  if (!code) return
-  // 第三方平台：点架号时把 modelCode 传成该架号，只读
-  if (value.startsWith(THIRD_PREFIX)) {
-    configItemStore.fetchSsfjhItems(code)
-    return
-  }
-  configItemStore.fetchAll(code)
+function applySelection(modelCode: string) {
+  if (!modelCode) return
+  configItemStore.fetchAll(modelCode)
 }
 
 function onModelChange(value: string) {
@@ -66,14 +38,11 @@ function onModelChange(value: string) {
 }
 
 onMounted(async () => {
-  // 进页面即取全部第三方构型，架号用于下拉的「第三方平台」组。
-  // 构型查询机型必填，故先取机型列表再逐个机型拉取后合并（不再有「不传机型拉全部」的入口）。
   await aircraftStore.fetchModels()
-  await configItemStore.fetchThirdItems(aircraftStore.models.map((m) => m.modelCode))
-  // 沿用原交互：默认选中首个本地机型；没有本地机型则保持空态
-  const first = localModelOptions.value[0]?.value || ''
+  // 沿用原交互：默认选中首个机型；没有机型则保持空态
+  const first = modelOptions.value[0]?.value || ''
   if (first) {
-    selectedValue.value = first
+    selectedModelCode.value = first
     applySelection(first)
   }
 })
@@ -182,11 +151,11 @@ async function handleDeleteCurrentModel() {
     )
     await aircraftStore.deleteModel(selectedCode.value)
     ElMessage.success('构型已删除')
-    // deleteModel 内部已刷新机型列表，这里改选删除后的首个本地机型
-    selectedValue.value = ''
-    const next = localModelOptions.value[0]?.value || ''
+    // deleteModel 内部已刷新机型列表，这里改选删除后的首个机型
+    selectedModelCode.value = ''
+    const next = modelOptions.value[0]?.value || ''
     if (next) {
-      selectedValue.value = next
+      selectedModelCode.value = next
       applySelection(next)
     }
   } catch { /* cancelled */ }
@@ -220,21 +189,16 @@ const treeProps = {
   label: 'systemName',
 }
 
-// ---- 统一展示：本地机型与第三方平台架号共用同一套树 / 图谱 ----
-/** 本机取构型项目树；三方取补过合成 id 的扁平/嵌套行，两者同形 */
-const displayTree = computed<ConfigItem[]>(() =>
-  isThird.value ? configItemStore.ssfjhTree : configItemStore.treeData,
-)
-const displayLoading = computed(() =>
-  isThird.value ? configItemStore.ssfjhLoading : configItemStore.loading,
-)
-/** 节点总数：本机 / 三方同一口径，按页面上实际渲染的节点统计 */
+// ---- 统一展示：本地与三方机型共用同一套树 / 图谱 ----
+/** 构型项目树：三方行的 itemId 由 store 补成合成 id，两者结构同形 */
+const displayTree = computed<ConfigItem[]>(() => configItemStore.displayTree)
+const displayLoading = computed(() => configItemStore.loading)
+/** 节点总数：按页面上实际渲染的节点统计 */
 function countNodes(nodes: ConfigItem[]): number {
   return nodes.reduce((sum, node) => sum + 1 + countNodes(node.children ?? []), 0)
 }
-/** 工具栏条数：本机为构型项目，三方为部件（沿用三方只读区的口径） */
 const displayCount = computed(() => countNodes(displayTree.value))
-const countUnit = computed(() => (isThird.value ? '个部件' : '个构型项目'))
+const countUnit = '个构型项目'
 
 /** 三方行后端不下发 GJB 章节号，用占位符保持与本地行一致的对齐 */
 function chapterText(data: ConfigItem): string {
@@ -254,34 +218,28 @@ function treeNodeName(data: ConfigItem): string {
       <h2 class="page-title">构型管理</h2>
     </div>
 
-    <!-- 机型选择器：本地机型走本地构型，第三方平台下是各架号（SSFJH） -->
+    <!-- 机型选择器：直接展示 GET /aircraft/models 的全部机型（含三方） -->
     <div class="aircraft-selector">
       <el-select
-        v-model="selectedValue"
-        placeholder="请选择机型 / 架号"
+        v-model="selectedModelCode"
+        placeholder="请选择机型"
         style="width: 320px"
         filterable
         @change="onModelChange"
       >
-        <el-option-group
-          v-for="group in modelOptionGroups"
-          :key="group.category"
-          :label="group.category"
-        >
-          <el-option
-            v-for="opt in group.items"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
-          />
-        </el-option-group>
+        <el-option
+          v-for="opt in modelOptions"
+          :key="opt.value"
+          :label="opt.label"
+          :value="opt.value"
+        />
       </el-select>
     </div>
 
     <!-- 未选机型时的提示 -->
     <div v-if="!hasSelection" class="empty-hint">
       <span class="empty-icon">🔧</span>
-      <p>请先选择机型 / 架号，查看其构型项目</p>
+      <p>请先选择机型，查看其构型项目</p>
     </div>
 
     <!-- 构型内容：本地机型与第三方平台架号共用同一套渲染，三方只读（无增删入口） -->
@@ -296,14 +254,12 @@ function treeNodeName(data: ConfigItem): string {
             <el-radio-button value="tree">树形</el-radio-button>
             <el-radio-button value="graph">构型图谱</el-radio-button>
           </el-radio-group>
-          <template v-if="!isThird">
-            <el-button type="danger" @click="handleDeleteCurrentModel">
-              删除当前构型
-            </el-button>
-            <el-button type="primary" @click="openCreateConfig()">
-              + 添加项目
-            </el-button>
-          </template>
+          <el-button type="danger" @click="handleDeleteCurrentModel">
+            删除当前构型
+          </el-button>
+          <el-button type="primary" @click="openCreateConfig()">
+            + 添加项目
+          </el-button>
         </div>
       </div>
 
@@ -323,7 +279,7 @@ function treeNodeName(data: ConfigItem): string {
 
           <!-- 空状态 -->
           <div v-else-if="displayTree.length === 0" class="inner-empty">
-            <p>{{ isThird ? '该架号暂无构型数据' : '该构型暂无构型项目，点击上方按钮开始构建' }}</p>
+            <p>该构型暂无构型项目，点击上方按钮开始构建</p>
           </div>
 
           <!-- 构型树 -->
@@ -347,7 +303,7 @@ function treeNodeName(data: ConfigItem): string {
                 </el-tag>
                 <span v-if="data.partNumber" class="tree-pn">{{ data.partNumber }}</span>
 
-                <span v-if="!isThird" class="tree-actions">
+                <span class="tree-actions">
                   <el-button
                     v-if="data.itemType === 'SYSTEM' || data.itemType === 'SUBSYSTEM'"
                     type="primary"
@@ -373,12 +329,11 @@ function treeNodeName(data: ConfigItem): string {
             </template>
           </el-tree>
 
-          <!-- 力导向图（三方只读，仅保留缩放与选中） -->
+          <!-- 力导向图 -->
           <div v-else class="graph-holder">
             <ConfigForceGraph
               :tree="displayTree"
               :root-label="selectedCode"
-              :readonly="isThird"
               @select="onGraphSelect"
               @add-child="onGraphAddChild"
               @delete="onGraphDelete"

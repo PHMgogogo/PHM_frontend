@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { modelSourceText } from '@/utils/model-code'
 import type { AircraftModel } from '@/types/entities'
 
 defineProps<{
@@ -32,10 +31,6 @@ function text(v?: string | null) {
       <span class="model-name">{{ model.modelCode }}</span>
     </div>
     <div class="card-body">
-      <div class="info-row">
-        <span class="info-label">来源</span>
-        <span class="info-value source">{{ modelSourceText(model.modelCode) }}</span>
-      </div>
       <div class="info-row">
         <span class="info-label">生产厂商</span>
         <span class="info-value">{{ text(model.manufacturer) }}</span>
@@ -107,10 +102,6 @@ function text(v?: string | null) {
   color: #3a4a5c;
   font-weight: 500;
   word-break: break-all;
-}
-
-.source {
-  color: #1a6cf0;
 }
 
 .desc {

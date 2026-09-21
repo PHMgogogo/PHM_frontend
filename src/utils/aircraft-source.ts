@@ -2,11 +2,23 @@
 // 单机来源判定
 // ============================================================
 // 约定：GET /aircraft/plane 已聚合本地/航新/633 三源，但不返回 source 字段，
-// 且单机的 modelCode 不带 ':modelId' 后缀（航新的 20018 与本地 20011 都是纯 'JX-20A'），
-// 因此无法像机型那样靠编码区分（见 model-code.ts）。
+// 且单机的 modelCode 不携带来源信息，因此无法像机型那样靠编码区分。
 // 可用的判据是占位符：外源行的 airline/status/configVersion/createdAt 统一为 '-'，本地行为真实值。
 
 const PLACEHOLDER = '-'
+
+/**
+ * 机型编码的「基础编码」：去掉三方合成码的 ':modelId' 后缀。
+ *
+ * /aircraft/models 下发的是含来源标识的合成码（如 `K4-WS19:1`），但按机型路由的查询接口
+ * 只认冒号前的基础编码，传带后缀的值会返回空：
+ * GET /aircraft/plane（单机）、GET /aircraft/sorties（架次）以及构型三兄弟
+ * （GET /aircraft/config-items、/tree、/select-list）都须先截断。
+ */
+export function baseModelCode(modelCode: string): string {
+  const i = modelCode.indexOf(':')
+  return i >= 0 ? modelCode.slice(0, i) : modelCode
+}
 
 /**
  * 字段是否为「无实际值」：缺失 / 空 / 纯空白 / 后端占位符 '-'。

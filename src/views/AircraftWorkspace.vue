@@ -4,8 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getSorties } from '@/api/aircraft'
 import { useAircraftStore } from '@/stores/aircraft'
-import { isExternalAircraft } from '@/utils/aircraft-source'
-import { baseModelCode } from '@/utils/model-code'
+import { isExternalAircraft, baseModelCode } from '@/utils/aircraft-source'
 import { useChatStore } from '@/stores/chat'
 import { useConfigItemStore } from '@/stores/configItem'
 import { useTaskStore } from '@/stores/task'
@@ -54,11 +53,12 @@ const aircraft = computed(() =>
 const isExternal = computed(() => !!aircraft.value && isExternalAircraft(aircraft.value))
 
 /**
- * 当前飞行器的机型（基础编码）。
+ * 当前飞行器的机型（GET /aircraft/models 下发的原始编码）。
  * 架次查询 / 时序查询 / 时序训练推理的机型参数必填，统一从这里取，
  * 保证「选机型 → 选架次 → 查时序」三步用的是同一个机型值。
+ * 三方模型的编码形如 `K4-WS19:1`，后端按该编码路由到唯一平台，不做截断。
  */
-const currentModelCode = computed(() => baseModelCode(aircraft.value?.modelCode ?? ''))
+const currentModelCode = computed(() => aircraft.value?.modelCode ?? '')
 
 // ---- UI 状态 ----
 // 注意：isExternal 依赖异步拉取到的单机数据，挂载时才能确定，故在 onMounted 里校正
@@ -172,7 +172,7 @@ async function ensureSortieForTimeseries() {
   if (selectedSortie.value || sortieResolving.value) return
   sortieResolving.value = true
   try {
-    // 架次查询机型必填：用当前飞行器所属机型（三方机型的合成码需截断基础编码）
+    // 架次查询机型必填：用当前飞行器所属机型（三方合成码须截断为冒号前的基础编码）
     const code = aircraft.value?.modelCode
     if (!code) {
       selectedSortie.value = null
