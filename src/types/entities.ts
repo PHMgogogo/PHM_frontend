@@ -10,11 +10,19 @@ export type ConfigItemType = 'SYSTEM' | 'SUBSYSTEM' | 'EQUIPMENT' | 'LRU'
 
 // ---- 实体 ----
 
+/**
+ * 机型来源：`local` 为本地机型，`hangxin` 等为对应三方平台。
+ * 单机的来源以**所属机型的 source** 为准（GET /aircraft/plane 自身不返回来源字段）。
+ */
+export type AircraftSource = 'local' | (string & {})
+
 export interface AircraftModel {
   modelCode: string
   manufacturer: string
   description: string
   createdAt?: string
+  /** 机型来源，见 AircraftSource */
+  source?: AircraftSource
 }
 
 export interface Aircraft {
@@ -24,11 +32,15 @@ export interface Aircraft {
   configVersion: string
   /**
    * 注意：GET /aircraft/plane 对外源（航新/633）单机返回 '-'，不属于 AircraftStatus 枚举。
-   * 当前无任何界面渲染或比较该字段，但取到外源行时它并非合法枚举值，需做判断请先走
-   * @/utils/aircraft-source 的 isExternalAircraft。
+   * 当前无任何界面渲染或比较该字段，但取到外源行时它并非合法枚举值。
    */
   status: AircraftStatus
   createdAt?: string
+  /**
+   * 单机来源**不由本接口下发**，由 store 从所属机型的 source 注入（见 useAircraftStore 的
+   * withModelSource）。字段缺失时再回落到占位符启发式，详见 @/utils/aircraft-source。
+   */
+  source?: AircraftSource
 }
 
 /** 架次（飞行任务）：单机 → 架次 → CSV数据表（一对多，一个架次可关联多张数据表） */

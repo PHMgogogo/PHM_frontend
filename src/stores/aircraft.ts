@@ -36,6 +36,33 @@ export const useAircraftStore = defineStore('aircraft', () => {
   const aircraftNumbers = ref<string[]>([])
 
   /**
+   * 取某机型编码对应的来源标识（大小写与前后空格不敏感）。
+   * 机型编码可能带 `:modelId` 后缀，故冒号前的基础编码也作为键。
+   */
+  function modelSourceOf(modelCode: string): string | undefined {
+    const raw = modelCode?.trim()
+    if (!raw) return undefined
+    const base = baseModelCode(raw)
+    const keys = new Set([raw, base])
+    return models.value.find((m) => {
+      const code = m.modelCode?.trim()
+      return !!code && (keys.has(code) || keys.has(baseModelCode(code)))
+    })?.source
+  }
+
+  /**
+   * 把机型的 source 注入单机行——单机的来源由所属机型决定，而 GET /aircraft/plane
+   * 不返回来源字段（详见 @/utils/aircraft-source）。找不到对应机型时保持原样，
+   * 由该模块回落到占位符启发式。
+   */
+  function withModelSource(planes: Aircraft[]): Aircraft[] {
+    return planes.map((p) => {
+      const source = p.source ?? modelSourceOf(p.modelCode)
+      return source ? { ...p, source } : p
+    })
+  }
+
+  /**
    * 拉取单机列表。`modelCode` 必填（后端按机型路由到唯一平台）。
    * 需要全量机队时用 fetchAllAircrafts()。
    */
@@ -46,7 +73,7 @@ export const useAircraftStore = defineStore('aircraft', () => {
     }
     aircraftsLoading.value = true
     try {
-      aircrafts.value = await aircraftApi.getPlanes(modelCode)
+      aircrafts.value = withModelSource(await aircraftApi.getPlanes(modelCode))
     } catch {
       aircrafts.value = []
     } finally {
@@ -79,7 +106,9 @@ export const useAircraftStore = defineStore('aircraft', () => {
     aircraftsLoading.value = true
     try {
       const results = await Promise.allSettled(codes.map((code) => aircraftApi.getPlanes(code)))
-      aircrafts.value = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+      aircrafts.value = withModelSource(
+        results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])),
+      )
     } finally {
       aircraftsLoading.value = false
     }

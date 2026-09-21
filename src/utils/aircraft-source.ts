@@ -1,9 +1,12 @@
 // ============================================================
 // 单机来源判定
 // ============================================================
-// 约定：GET /aircraft/plane 已聚合本地/航新/633 三源，但不返回 source 字段，
-// 且单机的 modelCode 不携带来源信息，因此无法像机型那样靠编码区分。
-// 可用的判据是占位符：外源行的 airline/status/configVersion/createdAt 统一为 '-'，本地行为真实值。
+// 来源以**所属机型的 source** 为准：GET /aircraft/models 明确下发 `source`
+// （`local` 为本地，`hangxin` 等为对应三方平台），GET /aircraft/plane 自身不返回来源字段，
+// 故单机的来源需由机型带出（store 拉取单机时按机型注入 aircraft.source）。
+//
+// 机型 source 缺失时才回落到占位符启发式：外源行的 airline/status/createdAt 统一为 '-'，
+// 本地行为真实值。该启发式不区分三方平台，且对本地的空值会误判为外源。
 
 const PLACEHOLDER = '-'
 
@@ -30,19 +33,35 @@ function isPlaceholder(v?: string | null): boolean {
   return !s || s === PLACEHOLDER
 }
 
-/** 判定所需的单机字段子集 */
+/** 判定所需的单机字段子集：source 优先，缺失时看占位符 */
 export interface AircraftSourceFields {
+  source?: string | null
   airline?: string | null
   status?: string | null
   createdAt?: string | null
 }
 
+/** 三方平台来源标识 → 展示名；未收录的标识原样透出，便于新增平台时不必改前端 */
+const SOURCE_TEXT: Record<string, string> = {
+  local: '本地',
+  hangxin: '航新',
+}
+
+/** 来源标识是否为本地（大小写与前后空格不敏感） */
+export function isLocalSource(source?: string | null): boolean {
+  return source?.trim().toLowerCase() === 'local'
+}
+
 /**
- * 是否为外源（航新/633）单机：任一关键字段为占位符即视为外源。
- * 刻意偏向判为外源——误判本地为外源只是少一个删除入口（安全），
- * 反过来则会给外源数据露出本地写操作。
+ * 是否为外源单机。
+ *
+ * 首选机型带出的 `source`：非 `local` 即外源；只有 source 缺失时才回落到占位符启发式
+ * （任一关键字段为 '-' 即视为外源，刻意偏向判为外源——误判本地为外源只是少一个删除入口，
+ * 反过来则会给外源数据露出本地写操作）。
  */
 export function isExternalAircraft(aircraft: AircraftSourceFields): boolean {
+  const source = aircraft.source?.trim()
+  if (source) return !isLocalSource(source)
   return (
     isPlaceholder(aircraft.airline) ||
     isPlaceholder(aircraft.status) ||
@@ -54,8 +73,10 @@ export function isLocalAircraft(aircraft: AircraftSourceFields): boolean {
   return !isExternalAircraft(aircraft)
 }
 
-/** 单机来源展示文案：接口不区分航新/633，只能二分 */
+/** 单机来源展示文案：优先用机型 source 对应的中文名，无 source 时按占位符二分 */
 export function aircraftSourceText(aircraft: AircraftSourceFields): string {
+  const source = aircraft.source?.trim()
+  if (source) return SOURCE_TEXT[source.toLowerCase()] ?? source
   return isExternalAircraft(aircraft) ? '第三方服务' : '本地'
 }
 

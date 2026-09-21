@@ -219,6 +219,7 @@ watch(
 // 本面板配置的是本地 CSV 数据源，只有本地单机有架次/映射可配：
 // /aircraft/plane 已聚合本地/航新/633 三源，需滤掉外源单机，并按机号去重
 // （同一机号可能三源各有一条）。
+// 单机来源由所属机型的 source 决定（单机接口不返回该字段），故按机型拉取时一并注入。
 // ⚠️ 机型现在是必填参数（后端按机型路由到唯一平台），不再有「一次拿全部单机」的入口，
 // 故先取机型列表再逐个机型查单机。
 async function fetchPlanes() {
@@ -230,6 +231,10 @@ async function fetchPlanes() {
     const seen = new Set()
     planes.value = results
       .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+      .map((p) => {
+        const model = models.find((m) => m.modelCode === p.modelCode)
+        return model?.source ? { ...p, source: model.source } : p
+      })
       .filter((p) => {
         if (!isLocalAircraft(p) || seen.has(p.aircraftNumber)) return false
         seen.add(p.aircraftNumber)
