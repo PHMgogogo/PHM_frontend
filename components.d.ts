@@ -75,6 +75,7 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElTree: typeof import('element-plus/es')['ElTree']
     ElUpload: typeof import('element-plus/es')['ElUpload']
+    FieldAliasDialog: typeof import('./src/components/dashboard/FieldAliasDialog.vue')['default']
     FlightParamRead: typeof import('./src/components/demo/FlightParamRead.vue')['default']
     GroundDiagnosis: typeof import('./src/components/demo/GroundDiagnosis.vue')['default']
     HealthTreeNode: typeof import('./src/components/demo/HealthTreeNode.vue')['default']

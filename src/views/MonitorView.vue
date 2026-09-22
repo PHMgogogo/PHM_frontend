@@ -11,6 +11,11 @@ import { queryDisplay, saveDisplay, loadDisplay, type DisplayRequest, type Displ
 // @ts-ignore – JS 模块，运行时正常
 // 补充一点(非本次必须):@ts-ignore 会连带丢掉 buildDisplayOption 的入参/返回类型提示。如果后续你想要保留类型提示,更优解是给 DisplayOptionBuilder.js 配一个 DisplayOptionBuilder.d.ts(声明 buildDisplayOption(displayType: DisplayType, response: DisplayResponse, size?: 'small'|'medium'|'large'): Record<string, unknown>),这样既不用改 tsconfig,也能拿到完整类型。现在先用 @ts-ignore 与现状对齐,等仪表盘配置那块稳定了再统一处理 .d.ts 也不迟。
 import { buildDisplayOption, buildTitle } from '@/components/dashboard/DisplayOptionBuilder.js'
+import { useFieldAliasStore } from '@/stores/fieldAlias'
+
+// 字段中文别名（内存态）：仅替换图表展示层（series.name/tooltip/默认标题），
+// 发给后端的 columns 恒为英文原名。别名变更不回溯已渲染图表，仅影响后续新建/更新的图表。
+const aliasStore = useFieldAliasStore()
 
 // @ts-ignore
 const dashboardRef = ref<any>(null)
@@ -92,9 +97,9 @@ async function resolveDisplay(payload: {
     return null
   }
 
-  const option = buildDisplayOption(payload.type, response, payload.size, payload.style)
-  // 用户自定义标题优先；留空则按参数名自动命名（buildTitle 兜底返回“数据展示”）
-  const title = payload.title?.trim() || buildTitle(response.parameter)
+  const option = buildDisplayOption(payload.type, response, payload.size, payload.style, aliasStore.aliasMap)
+  // 用户自定义标题优先；留空则按参数名自动命名（优先中文别名；buildTitle 兜底返回“数据展示”）
+  const title = payload.title?.trim() || buildTitle(response.parameter, aliasStore.aliasMap)
   return { option, title }
 }
 

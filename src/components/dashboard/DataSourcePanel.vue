@@ -1,11 +1,14 @@
 <!-- 数据源配置面板：单机 → 映射 → 列 → 图表配置 → 查询 -->
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { EditPen } from '@element-plus/icons-vue'
 import { getMappings, getSorties, getPlanes } from '@/api/aircraft'
 import { getCsvOverview } from '@/api/csv'
 import { DISPLAY_TYPE, CHART_STYLE } from '@/api/display'
 import { getRequiredColumnCount } from './DisplayOptionBuilder.js'
+import { useFieldAliasStore } from '@/stores/fieldAlias'
+import FieldAliasDialog from './FieldAliasDialog.vue'
 
 const props = defineProps({
   /** 可选初始单机号；用户可在输入框修改 */
@@ -63,6 +66,43 @@ const selectedMappingId = ref(null)
 // ---- 列候选 ----
 const columns = ref([])
 const columnsLoading = ref(false)
+
+// ---- 字段中文别名（内存态 store，不持久化） ----
+// :value 与提交的 columns 恒为原始英文名，别名仅替换下拉框与图表展示层。
+// 注意：各轴 el-select 若未来开启 filterable，需自定义 filter-method 同时匹配别名与原名。
+const aliasStore = useFieldAliasStore()
+const aliasDialogVisible = ref(false)
+
+// 单字段编辑：仿 PipelineWorkspace 的 ElMessageBox.prompt 先例（e !== 'cancel' 守卫）。
+// 刻意不设 inputPattern（别名允许中文）；留空并确定 = 清除别名恢复英文原名。
+async function openAliasPrompt(field) {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `为字段「${field}」设置中文别名，图表配置与图表展示处将优先显示别名`,
+      '字段中文别名',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputValue: aliasStore.aliases[field] || '',
+        inputPlaceholder: '留空并确定 = 恢复英文原名',
+      },
+    )
+    if (typeof value !== 'string') return
+    const v = value.trim()
+    if (v) {
+      aliasStore.setAlias(field, v)
+      ElMessage.success(`已设置别名：${v}`)
+    } else {
+      aliasStore.clearAlias(field)
+      ElMessage.success('已清除别名，恢复英文原名')
+    }
+  } catch (e) {
+    // 'cancel' = 点取消按钮；'close' = 点遮罩/右上角 X，均属正常放弃，不提示
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('设置别名失败: ' + (e instanceof Error ? e.message : String(e)))
+    }
+  }
+}
 
 // ---- 按轴分选（替代原"数据列"多选） ----
 // 各轴按图表类型展开为单选/多选；提交时按 [X, Y, ...] / [X, Y, Z] 组装，
@@ -624,9 +664,24 @@ function handleSubmit() {
                 v-for="c in columns"
                 :key="c"
                 :value="c"
-                :label="c"
+                :label="aliasStore.aliasOf(c)"
                 :disabled="selectedX !== c && takenAll.has(c)"
-              />
+              >
+                <div class="alias-option-row">
+                  <div class="alias-option-text">
+                    <span class="alias-main">{{ aliasStore.aliasOf(c) }}</span>
+                    <span v-if="aliasStore.hasAlias(c)" class="alias-origin" :title="c">{{ c }}</span>
+                  </div>
+                  <el-icon
+                    class="alias-edit-icon"
+                    :class="{ configured: aliasStore.hasAlias(c) }"
+                    :title="aliasStore.hasAlias(c) ? '修改别名' : '设置中文别名'"
+                    @click.stop="openAliasPrompt(c)"
+                  >
+                    <EditPen />
+                  </el-icon>
+                </div>
+              </el-option>
             </el-select>
           </div>
 
@@ -648,9 +703,24 @@ function handleSubmit() {
                 v-for="c in columns"
                 :key="c"
                 :value="c"
-                :label="c"
+                :label="aliasStore.aliasOf(c)"
                 :disabled="!selectedYMulti.includes(c) && takenAll.has(c)"
-              />
+              >
+                <div class="alias-option-row">
+                  <div class="alias-option-text">
+                    <span class="alias-main">{{ aliasStore.aliasOf(c) }}</span>
+                    <span v-if="aliasStore.hasAlias(c)" class="alias-origin" :title="c">{{ c }}</span>
+                  </div>
+                  <el-icon
+                    class="alias-edit-icon"
+                    :class="{ configured: aliasStore.hasAlias(c) }"
+                    :title="aliasStore.hasAlias(c) ? '修改别名' : '设置中文别名'"
+                    @click.stop="openAliasPrompt(c)"
+                  >
+                    <EditPen />
+                  </el-icon>
+                </div>
+              </el-option>
             </el-select>
           </div>
           <div class="form-group" v-else>
@@ -667,9 +737,24 @@ function handleSubmit() {
                 v-for="c in columns"
                 :key="c"
                 :value="c"
-                :label="c"
+                :label="aliasStore.aliasOf(c)"
                 :disabled="selectedY !== c && takenAll.has(c)"
-              />
+              >
+                <div class="alias-option-row">
+                  <div class="alias-option-text">
+                    <span class="alias-main">{{ aliasStore.aliasOf(c) }}</span>
+                    <span v-if="aliasStore.hasAlias(c)" class="alias-origin" :title="c">{{ c }}</span>
+                  </div>
+                  <el-icon
+                    class="alias-edit-icon"
+                    :class="{ configured: aliasStore.hasAlias(c) }"
+                    :title="aliasStore.hasAlias(c) ? '修改别名' : '设置中文别名'"
+                    @click.stop="openAliasPrompt(c)"
+                  >
+                    <EditPen />
+                  </el-icon>
+                </div>
+              </el-option>
             </el-select>
           </div>
 
@@ -688,10 +773,39 @@ function handleSubmit() {
                 v-for="c in columns"
                 :key="c"
                 :value="c"
-                :label="c"
+                :label="aliasStore.aliasOf(c)"
                 :disabled="selectedZ !== c && takenAll.has(c)"
-              />
+              >
+                <div class="alias-option-row">
+                  <div class="alias-option-text">
+                    <span class="alias-main">{{ aliasStore.aliasOf(c) }}</span>
+                    <span v-if="aliasStore.hasAlias(c)" class="alias-origin" :title="c">{{ c }}</span>
+                  </div>
+                  <el-icon
+                    class="alias-edit-icon"
+                    :class="{ configured: aliasStore.hasAlias(c) }"
+                    :title="aliasStore.hasAlias(c) ? '修改别名' : '设置中文别名'"
+                    @click.stop="openAliasPrompt(c)"
+                  >
+                    <EditPen />
+                  </el-icon>
+                </div>
+              </el-option>
             </el-select>
+          </div>
+
+          <!-- 字段别名批量入口：选项内铅笔图标适合单个微调，字段多时在此统一配置 -->
+          <div class="form-group">
+            <el-button
+              plain
+              size="small"
+              :icon="EditPen"
+              :disabled="columns.length === 0"
+              style="width: 100%"
+              @click="aliasDialogVisible = true"
+            >
+              批量配置字段别名{{ aliasStore.count ? `（已配置 ${aliasStore.count}）` : '' }}
+            </el-button>
           </div>
 
           <p class="hint" :class="{ invalid: !columnsValid }">{{ columnHint }}</p>
@@ -742,6 +856,9 @@ function handleSubmit() {
         </el-collapse-item>
       </el-collapse>
     </div>
+
+    <!-- 字段别名批量配置（visible 受控；columns 传当前列候选） -->
+    <FieldAliasDialog v-model:visible="aliasDialogVisible" :columns="columns" />
   </div>
 </template>
 
@@ -830,5 +947,40 @@ function handleSubmit() {
 
 :deep(.el-collapse-item__content) {
   padding-bottom: 8px;
+}
+
+/* 字段别名：el-option 自定义版式（主文本=别名/英文，已配置时英文名灰显，右侧编辑图标） */
+.alias-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.alias-option-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.alias-origin {
+  font-size: 11px;
+  color: #8c9ab0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alias-edit-icon {
+  flex-shrink: 0;
+  color: #8c9ab0;
+  cursor: pointer;
+}
+
+.alias-edit-icon:hover,
+.alias-edit-icon.configured {
+  color: #3b7cff;
 }
 </style>

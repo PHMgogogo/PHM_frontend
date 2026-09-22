@@ -78,25 +78,25 @@ export default defineConfig(({ command, mode }) => {
       },
       proxy: {
         '/api': {
-          target: 'http://192.168.31.178:8001',
+          target: 'http://152.136.119.117:8888',
           changeOrigin: true,
         },
         '/instance': {
-          target: 'http://192.168.31.178:8001',
+          target: 'http://152.136.119.117:8888',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/instance/, ''),
         },
         '/opencode': {
-          target: 'http://192.168.31.178:8001',
+          target: 'http://152.136.119.117:8888',
           changeOrigin: true,
         },
         '/task': {
-          target: 'http://127.0.0.1:8000',
+          target: 'http://152.136.119.117:8888',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/task/, '/api'),
         },
         '/document': {
-          target: ragProxyTarget,
+          target: 'http://152.136.119.117:8888',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/document(?=\/|$)/, '/api'),
         },

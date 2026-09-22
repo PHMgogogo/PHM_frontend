@@ -6,6 +6,19 @@ import { COMMON_CHART_CONFIG, DEFAULT_COLOR_PALETTE, RESPONSIVE_CONFIG } from '.
 import { DISPLAY_TYPE, CHART_STYLE } from '../../api/display.js'
 
 /**
+ * 展示名替换：有（非空白）别名返回别名，否则原样返回。
+ * 仅作用于展示层（series.name / tooltip 维度名 / 默认标题），
+ * 数据与请求列（原始英文字段名）不受影响。
+ * @param {string} name 原始字段名
+ * @param {Record<string, string>} [aliasMap] 原始字段名 → 中文别名
+ * @returns {string} 展示名
+ */
+function labelWithAlias(name, aliasMap) {
+  const v = name && aliasMap ? aliasMap[name] : ''
+  return (typeof v === 'string' && v.trim()) || name
+}
+
+/**
  * 各 type 所需的列数约束。
  * - 'N' 表示恰好 N 列
  * - 'N+' 表示至少 N 列（multi 时序：时间 + 多参数）
@@ -51,15 +64,17 @@ function resolveSeriesType(style, fallback) {
 }
 
 /**
- * 生成图表标题：用参数名拼接。
+ * 生成图表标题：用参数名拼接（优先显示中文别名）。
  * 既作为 ECharts 标题的备选来源，也供外部（如 MonitorView）在用户未自定义标题时推导默认标题。
  * @param {string[]} parameters 参数名列表
+ * @param {Record<string, string>} [aliasMap] 原始字段名 → 中文别名
  * @returns {string} 标题文本
  */
-export function buildTitle(parameters) {
+export function buildTitle(parameters, aliasMap = {}) {
   if (!parameters || parameters.length === 0) return '数据展示'
-  if (parameters.length === 1) return parameters[0]
-  return parameters.slice(0, 3).join(' / ') + (parameters.length > 3 ? ' …' : '')
+  const labels = parameters.map((p) => labelWithAlias(p, aliasMap))
+  if (labels.length === 1) return labels[0]
+  return labels.slice(0, 3).join(' / ') + (labels.length > 3 ? ' …' : '')
 }
 
 /**
@@ -68,9 +83,10 @@ export function buildTitle(parameters) {
  * @param {import('../../api/display').DisplayResponse} response
  * @param {string} [size='medium'] 'small' | 'medium' | 'large'
  * @param {string|null} [style=null] CHART_STYLE 之一；仅作用于 2D 类型，3D 点云忽略
+ * @param {Record<string, string>} [aliasMap={}] 原始字段名 → 中文别名；仅替换展示层
  * @returns {object} ECharts option
  */
-export function buildDisplayOption(displayType, response, size = 'medium', style = null) {
+export function buildDisplayOption(displayType, response, size = 'medium', style = null, aliasMap = {}) {
   if (!response || !Array.isArray(response.dimensions) || !Array.isArray(response.data)) {
     return emptyOption('无数据')
   }
@@ -80,11 +96,11 @@ export function buildDisplayOption(displayType, response, size = 'medium', style
   switch (displayType) {
     case DISPLAY_TYPE.SINGLE_TIMESERIES_2D:
     case DISPLAY_TYPE.MULTI_TIMESERIES_2D:
-      return buildTimeseriesOption(response, size, responsive, style)
+      return buildTimeseriesOption(response, size, responsive, style, aliasMap)
     case DISPLAY_TYPE.MAPPING_2D:
-      return buildMapping2DOption(response, size, responsive, style)
+      return buildMapping2DOption(response, size, responsive, style, aliasMap)
     case DISPLAY_TYPE.POINT_CLOUD_3D:
-      return buildPointCloud3DOption(response, size) // 3D 忽略 style
+      return buildPointCloud3DOption(response, size, aliasMap) // 3D 忽略 style
     default:
       return emptyOption(`不支持的类型: ${displayType}`)
   }
@@ -94,8 +110,9 @@ export function buildDisplayOption(displayType, response, size = 'medium', style
  * 2D 时序图：x 轴为 dimensions[0]（时间），每条 series 对应一个 parameter。
  * series 渲染样式由 style 决定（折线/散点/柱状/面积），数据格式保持 y-only 不变。
  * @param {string|null} [style=null] CHART_STYLE 之一；缺省回落折线
+ * @param {Record<string, string>} [aliasMap={}] 原始字段名 → 中文别名；作用于 series.name（图例/tooltip）
  */
-function buildTimeseriesOption(response, size, responsive, style = null) {
+function buildTimeseriesOption(response, size, responsive, style = null, aliasMap = {}) {
   // 时间轴数据：取第一条 series 的每个点的第 0 维（各 series 共享时间轴）
   const timeAxis = response.data[0]?.data?.map((point) => point[0]) ?? []
 
@@ -106,7 +123,7 @@ function buildTimeseriesOption(response, size, responsive, style = null) {
   const series = response.data.map((s, idx) => {
     const color = s.color || DEFAULT_COLOR_PALETTE[idx % DEFAULT_COLOR_PALETTE.length]
     const base = {
-      name: s.parameter,
+      name: labelWithAlias(s.parameter, aliasMap), // 图例/tooltip 展示名：优先中文别名
       type: resolved.type,
       data: s.data.map((point) => point[point.length - 1]), // 末位是该参数值；格式不变
       itemStyle: { color },
@@ -157,8 +174,9 @@ function buildTimeseriesOption(response, size, responsive, style = null) {
  * 2D 映射图：x=dimensions[0], y=dimensions[1]，两条 type:'value' 轴。
  * series 渲染样式由 style 决定（默认散点），数据格式保持 [x,y] 不变。
  * @param {string|null} [style=null] CHART_STYLE 之一；缺省回落散点
+ * @param {Record<string, string>} [aliasMap={}] 原始字段名 → 中文别名；作用于 series.name 与 tooltip 维度名
  */
-function buildMapping2DOption(response, size, responsive, style = null) {
+function buildMapping2DOption(response, size, responsive, style = null, aliasMap = {}) {
   const xDim = response.dimensions[0]
   const yDim = response.dimensions[1]
 
@@ -169,7 +187,7 @@ function buildMapping2DOption(response, size, responsive, style = null) {
   const series = response.data.map((s, idx) => {
     const color = s.color || DEFAULT_COLOR_PALETTE[idx % DEFAULT_COLOR_PALETTE.length]
     const base = {
-      name: s.parameter,
+      name: labelWithAlias(s.parameter, aliasMap), // 图例/tooltip 展示名：优先中文别名
       type: resolved.type,
       data: s.data.map((point) => [point[0], point[1]]), // 格式不变
       itemStyle: { color, opacity: 0.7 },
@@ -191,8 +209,11 @@ function buildMapping2DOption(response, size, responsive, style = null) {
     // 标题由 ChartWidget 外层 .chart-title 展示，这里不再内嵌 ECharts 标题，避免重复
     tooltip: {
       trigger: 'item',
+      // 维度名优先中文别名，无别名回退英文原名，缺失回退 x/y 占位
       formatter: (p) =>
-        `${xDim?.name ?? 'x'}: ${p.value[0]}<br/>${yDim?.name ?? 'y'}: ${p.value[1]}`,
+        `${labelWithAlias(xDim?.name, aliasMap) || 'x'}: ${p.value[0]}<br/>${
+          labelWithAlias(yDim?.name, aliasMap) || 'y'
+        }: ${p.value[1]}`,
     },
     legend: { show: parameters.length > 1, ...responsive.legend },
     grid: { ...responsive.grid },
@@ -211,7 +232,7 @@ function buildMapping2DOption(response, size, responsive, style = null) {
 }
 
 /** 3D 点云（scatter3D）：依赖 echarts-gl，x/y/z 三轴 */
-function buildPointCloud3DOption(response, size) {
+function buildPointCloud3DOption(response, size, aliasMap = {}) {
   const xDim = response.dimensions[0]
   const yDim = response.dimensions[1]
   const zDim = response.dimensions[2]
@@ -220,7 +241,7 @@ function buildPointCloud3DOption(response, size) {
   // 若存在多个 series，分别构造。
   const series = response.data.map((s, idx) => ({
     type: 'scatter3D',
-    name: s.parameter,
+    name: labelWithAlias(s.parameter, aliasMap), // 图例/tooltip 展示名：优先中文别名
     data: s.data.map((point) => [point[0], point[1], point[2]]),
     symbolSize: size === 'small' ? 4 : size === 'large' ? 8 : 6,
     itemStyle: {
@@ -235,10 +256,11 @@ function buildPointCloud3DOption(response, size) {
     ...COMMON_CHART_CONFIG,
     // 标题由 ChartWidget 外层 .chart-title 展示，这里不再内嵌 ECharts 标题，避免重复
     tooltip: {
+      // 维度名优先中文别名，无别名回退英文原名，缺失回退 x/y/z 占位
       formatter: (p) =>
-        `${xDim?.name ?? 'x'}: ${p.value[0]}<br/>${yDim?.name ?? 'y'}: ${p.value[1]}<br/>${
-          zDim?.name ?? 'z'
-        }: ${p.value[2]}`,
+        `${labelWithAlias(xDim?.name, aliasMap) || 'x'}: ${p.value[0]}<br/>${
+          labelWithAlias(yDim?.name, aliasMap) || 'y'
+        }: ${p.value[1]}<br/>${labelWithAlias(zDim?.name, aliasMap) || 'z'}: ${p.value[2]}`,
     },
     legend: { show: parameters.length > 1, top: 30 },
     // 三轴不设置轴名（单位）；维度名仅保留在 tooltip 中
