@@ -1,41 +1,23 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
-import { useUnifiedStore } from '@/stores/unified'
+import { useAircraftStore } from '@/stores/aircraft'
 import ModelCard from '@/components/ModelCard.vue'
-import { SOURCE_ORDER, sourceText } from '@/api/unified'
-import type { UnifiedSource } from '@/types/entities'
 
-const unifiedStore = useUnifiedStore()
+const aircraftStore = useAircraftStore()
 
-// 机型来源筛选（空 = 全部）
-const selectedSource = ref<UnifiedSource | ''>('')
 const searchQuery = ref('')
-
-const SOURCE_OPTIONS: { value: UnifiedSource; label: string }[] = SOURCE_ORDER.map((s) => ({
-  value: s,
-  label: sourceText(s),
-}))
-
-// 三源命中数：本地 x · 航新服务 x · 633服务 x
-const sourceCounts = computed(() =>
-  SOURCE_ORDER.map((s) => ({
-    source: s,
-    count: unifiedStore.models.filter((m) => m.source === s).length,
-  })),
-)
 
 const filteredModels = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  return unifiedStore.models.filter((m) => {
-    if (selectedSource.value && m.source !== selectedSource.value) return false
-    if (!q) return true
-    return [m.modelCode, m.manufacturer, m.description].some((v) => v && v.toLowerCase().includes(q))
-  })
+  if (!q) return aircraftStore.models
+  return aircraftStore.models.filter((m) =>
+    [m.modelCode, m.manufacturer, m.description].some((v) => v && v.toLowerCase().includes(q)),
+  )
 })
 
 onMounted(() => {
-  unifiedStore.fetchModels()
+  aircraftStore.fetchModels()
 })
 </script>
 
@@ -45,25 +27,8 @@ onMounted(() => {
       <h2 class="page-title">机型管理</h2>
     </div>
 
-    <p v-if="unifiedStore.modelsNotes.length" class="source-warning">
-      {{ unifiedStore.modelsNotes.join('；') }}
-    </p>
-
     <!-- 顶部功能区 -->
     <div class="toolbar">
-      <el-select
-        v-model="selectedSource"
-        placeholder="按来源筛选"
-        clearable
-        class="source-filter"
-      >
-        <el-option
-          v-for="opt in SOURCE_OPTIONS"
-          :key="opt.value"
-          :label="opt.label"
-          :value="opt.value"
-        />
-      </el-select>
       <el-input
         v-model="searchQuery"
         placeholder="搜索机型编码、生产厂商或描述..."
@@ -74,25 +39,17 @@ onMounted(() => {
           <el-icon><Search /></el-icon>
         </template>
       </el-input>
-      <span class="total-count">共 {{ unifiedStore.models.length }} 个机型</span>
+      <span class="total-count">共 {{ aircraftStore.models.length }} 个机型</span>
     </div>
 
-    <div class="source-counts">
-      <span
-        v-for="c in sourceCounts"
-        :key="c.source"
-        class="source-count"
-      >{{ sourceText(c.source) }} {{ c.count }}</span>
-    </div>
-
-    <!-- 卡片区 -->
-    <div class="card-grid" v-loading="unifiedStore.modelsLoading">
+    <!-- 卡片区：外源机型编码带 :modelId 后缀，可能出现重复 modelCode，key 需带下标 -->
+    <div class="card-grid" v-loading="aircraftStore.modelsLoading">
       <ModelCard
-        v-for="model in filteredModels"
-        :key="`${model.source}-${model.modelCode}`"
+        v-for="(model, idx) in filteredModels"
+        :key="`${model.modelCode}-${idx}`"
         :model="model"
       />
-      <div v-if="!unifiedStore.modelsLoading && filteredModels.length === 0" class="empty-state">
+      <div v-if="!aircraftStore.modelsLoading && filteredModels.length === 0" class="empty-state">
         <span class="empty-icon">🗂️</span>
         <p>暂无匹配的机型</p>
       </div>
@@ -120,14 +77,6 @@ onMounted(() => {
   margin: 0 0 16px;
 }
 
-.source-warning {
-  margin: -8px 0 14px;
-  padding: 0 32px;
-  font-size: 12px;
-  color: #e6a23c;
-  line-height: 1.6;
-}
-
 .toolbar {
   display: flex;
   align-items: center;
@@ -140,27 +89,10 @@ onMounted(() => {
   max-width: 400px;
 }
 
-.source-filter {
-  width: 180px;
-  flex-shrink: 0;
-}
-
 .total-count {
   margin-left: auto;
   font-size: 13px;
   color: #8c9ab0;
-  white-space: nowrap;
-}
-
-.source-counts {
-  display: flex;
-  gap: 18px;
-  padding: 2px 32px 18px;
-  font-size: 12px;
-  color: #6888aa;
-}
-
-.source-count {
   white-space: nowrap;
 }
 

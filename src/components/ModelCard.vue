@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { sourceText } from '@/api/unified'
-import type { UnifiedModelRow } from '@/types/entities'
+import type { AircraftModel } from '@/types/entities'
 
 defineProps<{
-  model: UnifiedModelRow
+  model: AircraftModel
 }>()
 
 function formatTime(dateStr?: string | null) {
@@ -33,10 +32,6 @@ function text(v?: string | null) {
     </div>
     <div class="card-body">
       <div class="info-row">
-        <span class="info-label">来源</span>
-        <span class="info-value source">{{ text(sourceText(model.source)) }}</span>
-      </div>
-      <div class="info-row">
         <span class="info-label">生产厂商</span>
         <span class="info-value">{{ text(model.manufacturer) }}</span>
       </div>
@@ -46,7 +41,7 @@ function text(v?: string | null) {
       </div>
       <div class="info-row">
         <span class="info-label">创建时间</span>
-        <span class="info-value">{{ text(formatTime(model.createdTime)) }}</span>
+        <span class="info-value">{{ text(formatTime(model.createdAt)) }}</span>
       </div>
     </div>
   </div>
@@ -107,10 +102,6 @@ function text(v?: string | null) {
   color: #3a4a5c;
   font-weight: 500;
   word-break: break-all;
-}
-
-.source {
-  color: #1a6cf0;
 }
 
 .desc {

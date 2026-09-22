@@ -24,9 +24,12 @@ export function deleteModel(modelCode: string) {
 
 // ---- 单机（plane） ----
 
-export function getPlanes(modelCode?: string) {
-  const params = modelCode ? { modelCode } : undefined
-  return client.get<Aircraft[]>('/aircraft/plane', params)
+/**
+ * 单机列表。`modelCode` **必填**（后端按机型路由到唯一平台，缺省会 400「机型不能为空」）。
+ * 不再支持「不传机型返回全部单机」；需要全量机队请先取 GET /aircraft/models 后按机型逐个查。
+ */
+export function getPlanes(modelCode: string) {
+  return client.get<Aircraft[]>('/aircraft/plane', { modelCode })
 }
 
 export function createPlane(data: Omit<Aircraft, 'createdAt'>) {
@@ -43,9 +46,16 @@ export function getAircraftNumbers(modelCode: string) {
 
 // ---- 架次（sortie） ----
 
-/** 获取某单机下的架次列表（按 sortieId 降序） */
-export function getSorties(aircraftNumber: string) {
-  return client.get<Sortie[]>('/aircraft/sorties', { aircraftNumber })
+/**
+ * 获取架次列表。`modelCode` **必填**（后端按机型路由到唯一平台），
+ * `aircraftNumber` 可选（不传则返回该机型下各源全部架次）。
+ *
+ * 每行带 `sortieKey`——它才是时序查询要回传的架次标识（`sortieId` 三方行可能为 null）。
+ */
+export function getSorties(modelCode: string, aircraftNumber?: string) {
+  const params: Record<string, string> = { modelCode }
+  if (aircraftNumber) params.aircraftNumber = aircraftNumber
+  return client.get<Sortie[]>('/aircraft/sorties', params)
 }
 
 /** 获取架次详情 */
@@ -53,8 +63,16 @@ export function getSortie(sortieId: number) {
   return client.get<Sortie>(`/aircraft/sorties/${sortieId}`)
 }
 
-/** 添加架次（aircraftNumber 由调用方注入） */
-export function addSortie(data: Omit<Sortie, 'sortieId'>) {
+/** 按参数组ID查该架次的参数字段名（仅航新支持，失败时后端返回空数组） */
+export function getSortieParameters(parameterGroupId: string) {
+  return client.get<string[]>('/aircraft/sortie/parameters', { parameterGroupId })
+}
+
+/**
+ * 添加架次（aircraftNumber 由调用方注入）。
+ * sortieId 与 sortieKey 均由后端生成（本地架次的 key 即主键的字符串形态），调用方不传。
+ */
+export function addSortie(data: Omit<Sortie, 'sortieId' | 'sortieKey'>) {
   return client.post<ApiResponse>('/aircraft/sorties', data)
 }
 
@@ -65,21 +83,21 @@ export function deleteSortie(sortieId: number) {
 
 // ---- 构型项目 ----
 
+/**
+ * 构型项目列表。`modelCode` **必填**（后端按机型路由到唯一平台，缺省会 400），
+ * 且只认冒号前的基础编码（三方合成码 `K4-WS19:1` 须截断，见 baseModelCode）。
+ *
+ * - 传该机型：命中三方平台的机型返回该平台构型（`itemId` / `parentItemId` 为 null）；
+ *   否则返回本地该机型的构型（`itemId` 为数字）。
+ * - 返回扁平行，前端按 `parentItemId` 自行组装成树（见 store 的 displayTree）。
+ */
 export function getConfigItems(modelCode: string) {
   return client.get<ConfigItem[]>('/aircraft/config-items', { modelCode })
 }
 
-export function getConfigItemTree(modelCode: string) {
-  return client.get<ConfigItem[]>('/aircraft/config-items/tree', { modelCode })
-}
-
-export function getConfigItemSelectList(modelCode: string) {
-  return client.get<ConfigItem[]>('/aircraft/config-items/select-list', { modelCode })
-}
-
-/** 创建构型项目：仅 modelCode / itemType / ataChapter 必填，其余按 itemType 条件填写 */
+/** 创建构型项目：仅 modelCode / itemType / gjbChapter 必填，其余按 itemType 条件填写 */
 export function createConfigItem(
-  data: Partial<Omit<ConfigItem, 'itemId' | 'children'>> & Pick<ConfigItem, 'modelCode' | 'itemType' | 'ataChapter'>,
+  data: Partial<Omit<ConfigItem, 'itemId' | 'children'>> & Pick<ConfigItem, 'modelCode' | 'itemType' | 'gjbChapter'>,
 ) {
   return client.post<ApiResponse>('/aircraft/config-items', data)
 }

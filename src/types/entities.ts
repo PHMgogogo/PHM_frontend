@@ -10,11 +10,19 @@ export type ConfigItemType = 'SYSTEM' | 'SUBSYSTEM' | 'EQUIPMENT' | 'LRU'
 
 // ---- 实体 ----
 
+/**
+ * 机型来源：`local` 为本地机型，`hangxin` 等为对应三方平台。
+ * 单机的来源以**所属机型的 source** 为准（GET /aircraft/plane 自身不返回来源字段）。
+ */
+export type AircraftSource = 'local' | (string & {})
+
 export interface AircraftModel {
   modelCode: string
   manufacturer: string
   description: string
   createdAt?: string
+  /** 机型来源，见 AircraftSource */
+  source?: AircraftSource
 }
 
 export interface Aircraft {
@@ -22,27 +30,53 @@ export interface Aircraft {
   modelCode: string
   airline: string
   configVersion: string
+  /**
+   * 注意：GET /aircraft/plane 对外源（航新/633）单机返回 '-'，不属于 AircraftStatus 枚举。
+   * 当前无任何界面渲染或比较该字段，但取到外源行时它并非合法枚举值。
+   */
   status: AircraftStatus
   createdAt?: string
-  /** 数据来源（统一聚合查询注入；本地创建/查询不带此字段） */
-  source?: UnifiedSource
+  /**
+   * 单机来源**不由本接口下发**，由 store 从所属机型的 source 注入（见 useAircraftStore 的
+   * withModelSource）。字段缺失时再回落到占位符启发式，详见 @/utils/aircraft-source。
+   */
+  source?: AircraftSource
 }
 
 /** 架次（飞行任务）：单机 → 架次 → CSV数据表（一对多，一个架次可关联多张数据表） */
 export interface Sortie {
+  /**
+   * 本地行是 sortie 表主键；三方（航新/633）行实测下发 null，
+   * 故**不能**拿它当「架次唯一标识」用（要唯一标识请用 sortieKey）。
+   */
   sortieId: number
   aircraftNumber: string
   sortieNumber: string
   flightDate: string // "YYYY-MM-DD"
   startTime: string // "HH:mm:ss"
   endTime: string // "HH:mm:ss"
+  /** 参数组ID：仅航新（三方）行下发，用于查该架次的参数字段名；本地行为 null */
+  parameterGroupId?: string | null
+  /**
+   * 架次统一标识：本地为 sortieId 的字符串形态（如 "1"），三方为平台原始 id（GUID）。
+   * 时序查询请求体回传的就是本字段（见 TimeSeriesQuery.sortieId）。
+   */
+  sortieKey: string
+  /**
+   * 所属机型：由 GET /aircraft/sorties 下发（该接口本身已按 modelCode 路由，故与查询时的机型一致）。
+   * 时序查询 / 时序训练推理的请求体 `airplaneType` 取的就是它——必须与查架次时的机型保持一致，
+   * 否则后端可能路由到别的源而返回空数据。
+   */
+  modelCode?: string
 }
 
 export interface ConfigItem {
+  /** 本地行有值；第三方构型行（GET /aircraft/config-items 不传 modelCode）为 null */
   itemId: number
   modelCode: string
   parentItemId: number | null
-  ataChapter: string
+  /** GJB 章节号（后端 DTO 字段名即 gjbChapter，非 ataChapter） */
+  gjbChapter: string
   // modify here
   systemName: string | null
   subSystemName: string | null
@@ -55,12 +89,12 @@ export interface ConfigItem {
 
 // ---- 外来平台配置 ----
 
-/** 外来平台配置（读接口返回形态：写/测接口用平台枚举 + ip/port，见 api/externalPlatform.ts） */
+/** 外来平台配置（读接口返回形态：写/测接口用平台枚举 + config JSON 字符串，见 api/externalPlatform.ts） */
 export interface ExternalPlatform {
   id: number
   platformName: string
-  platformIp: string
-  port: number
+  /** 平台配置 JSON 字符串，各平台 key 不同，如 {"ip":"...","port":8080} */
+  platformConfig: string
 }
 
 // ---- CSV 相关 ----
@@ -108,6 +142,50 @@ export interface ConfigDataMapping {
   createdAt: string
   /** 关联架次ID（一个架次可关联多条映射 / 多张 CSV 数据表，后端按需返回） */
   sortieId?: number
+}
+
+// ---- 时序数据查询（POST /csv/query-timeseries）----
+// `sortieId` 走 String，装的是 /aircraft/sorties 下发的 sortieKey —— 本地是数字主键的字符串，
+// 三方是平台原始 id。后端按该标识定向到唯一数据源（本地 CSV 表 / 航新 / 633），
+// 前端因此**不必再按分支选字段**（旧的「本地发 sortieId、三方发 aircraftNumber+sortieNumber」形态已废弃）。
+// `airplaneType` 为**新增必填**：机型取值与查架次时用的 modelCode 保持一致，
+// 不一致时后端可能路由到别的源而查不到数据（返回空 timestamps / parameters）。
+// startTime / endTime 可选，留空则由后端按架次自身起止时间推算。
+
+export interface TimeSeriesQuery {
+  /** 机型：**必填**，取自 /aircraft/models 的 modelCode（三方为 `K4-WS19:6` 这种合成码） */
+  airplaneType: string
+  /** 架次标识：取自 /aircraft/sorties 的 sortieKey */
+  sortieId: string
+  /** 机号：仅作补充，带上无副作用 */
+  aircraftNumber?: string
+  startTime?: string
+  endTime?: string
+  /** 本地 → CSV 列名；三方 → 参数名 */
+  paralist?: string[]
+}
+
+export interface TimeSeriesParameter {
+  /** 参数名，后端一律小写返回 */
+  name: string
+  /** 与 timestamps 按下标对齐；后端下发字符串，故不声明为 number[] */
+  values: unknown[]
+}
+
+export interface TimeSeriesData {
+  /** 毫秒时间戳 */
+  timestamps: number[]
+  parameters: TimeSeriesParameter[]
+}
+
+/** GET /csv/overview 响应中前端用到的字段（响应实际还含 tableName/deviceName 等） */
+export interface CsvOverview {
+  dataColumns: string[]
+  textColumns: string[]
+  /** 列名 → SQL 类型；注意键为大写（如 ALTITUDE），与 dataColumns 的小写不同 */
+  columnTypes: Record<string, string>
+  /** 时间轴列名（如 timestamps），不应当作 paralist 提交 */
+  timestampColumn: string
 }
 
 // ---- API 响应 ----
@@ -277,6 +355,43 @@ export interface InferTaskRequest {
   device?: 'cpu' | 'cuda'
 }
 
+/**
+ * 以「时序数据查询」为数据源的训练 / 推理请求体
+ * （POST /tasks/train-timeseries | /tasks/infer-timeseries）。
+ *
+ * 三方（航新/633）单机没有本地 CSV 表，训练 / 推理的数据只能来自
+ * POST /csv/query-timeseries，故这里复用它定位数据源的那几个字段：
+ * - 定位字段用 camelCase，与 TimeSeriesQuery / 后端 UnifiedTimeSeriesRequest 保持一致；
+ * - 作业参数用 snake_case，与既有 TrainTaskRequest / InferTaskRequest 保持一致。
+ * 后端按 `sortieId` 定向到唯一数据源（本地 CSV 表 / 航新 / 633），
+ * 取数属性 = data_cols ∪ label_cols，前端不额外传 paralist。
+ *
+ * ⚠️ 与 query-timeseries 一样需要 `airplaneType`（机型必填），且必须与查架次时的 modelCode 一致。
+ */
+export interface TimeseriesJobRequest {
+  /** 机型：**必填**，取自 /aircraft/models 的 modelCode，须与查架次时用的机型一致 */
+  airplaneType: string
+  /** 架次标识：取自 /aircraft/sorties 的 sortieKey，与 query-timeseries 同源 */
+  sortieId: string
+  /** 机号：仅作补充，带上无副作用 */
+  aircraftNumber?: string
+  /** 取数时间范围，留空由后端按架次自身起止推算（与 query-timeseries 一致） */
+  startTime?: string
+  endTime?: string
+  /** 输入列 / 标签列（属性名，来自时序查询的属性候选） */
+  data_cols: string[]
+  label_cols: string[]
+  /** 承载训练的算法实例（来自所选会话） */
+  instance_id: string
+  batch_size?: number
+  /** 仅训练有 */
+  epoch?: number
+  /** 仅训练有 */
+  learning_rate?: number
+  device?: 'cpu' | 'cuda'
+  detach?: boolean
+}
+
 /** 前端任务实体（camelCase） */
 export interface Task {
   id: number
@@ -408,100 +523,4 @@ export interface ProcessConnection {
   pid: number
   name: string
   conns: ConnectionInfo[]
-}
-
-// ---- 统一聚合查询（06-统一数据聚合查询）----
-
-/** 数据来源枚举：本地 / 航新服务 / 633服务 */
-export type UnifiedSource = 'local' | 'hangxin' | 'sansan'
-
-/** 单个数据源的查询元数据（响应外层 hangxin/sansan/local 各自一个） */
-export interface SourceInfo {
-  /** 该数据源返回的记录数 */
-  total: number
-  /** 查询结果说明；失败时描述原因（如 "本机未找到该单机"） */
-  message?: string
-}
-
-/** 统一聚合查询的统一响应体：code=200 成功，data 为三源合并行 */
-export interface UnifiedApiResult<T = unknown> {
-  code: number
-  message?: string
-  data: T[]
-  hangxin: SourceInfo
-  sansan: SourceInfo
-  local: SourceInfo
-}
-
-/** 统一单机（GET /unified/aircraft/query 的 data 行） */
-export interface UnifiedAircraftRow {
-  source: UnifiedSource
-  aircraftId?: string | null
-  aircraftCode?: string | null
-  /** 机号（本地 aircraftNumber） */
-  aircraftNumber: string
-  /** 机型（本地 modelCode） */
-  modelCode?: string | null
-  /** 所属单位（本地 airline） */
-  organization?: string | null
-  configVersion?: string | null
-  status?: string | null
-  inputType?: number | null
-  createdTime?: string | null
-}
-
-/** 统一机型（GET /unified/model/query 的 data 行） */
-export interface UnifiedModelRow {
-  source: UnifiedSource
-  modelId?: string | null
-  /** 型号编码（本地 modelCode） */
-  modelCode: string
-  manufacturer?: string | null
-  description?: string | null
-  createdTime?: string | null
-}
-
-/** 统一架次（POST /unified/sortie/query 的 data 行） */
-export interface UnifiedSortieRow {
-  source: UnifiedSource
-  /** 架次唯一标识（航新/633 为远端 id；本地为 sortieId 的字符串） */
-  flightId: string
-  aircraftType?: string | null
-  /** 机号（本地 aircraftNumber） */
-  aircraftNo?: string | null
-  /** 架次号（本地 sortieNumber） */
-  flightNum?: string | null
-  flightDate?: string | null
-  startTime?: string | null
-  endTime?: string | null
-  parameterList?: string[] | null
-}
-
-/** 统一架次查询请求（POST /unified/sortie/query body，全部可选） */
-export interface UnifiedSortieQuery {
-  airplaneType?: string
-  airplaneNum?: string
-  startTime?: string
-  endTime?: string
-  fileName?: string
-  fileType?: string
-  sortieId?: number
-  flightNum?: string
-  paraList?: string[]
-}
-
-/** 统一构型节点（GET /unified/config/query 的 data 行，父子用 nodeId/parentNodeId 成树） */
-export interface UnifiedConfigRow {
-  source: UnifiedSource
-  nodeId: string
-  parentNodeId?: string | null
-  nodeName: string
-  nodeType?: string | null
-  /** 本地体系为 GJB 章节号；远端一般无 */
-  chapterCode?: string | null
-  /** 远端构型挂在具体机号下 */
-  aircraftNo?: string | null
-  equipmentNo?: string | null
-  installPosition?: string | null
-  partNumber?: string | null
 }

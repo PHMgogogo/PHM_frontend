@@ -57,8 +57,19 @@ export function extractApiErrorMessage(data: unknown, status?: number): string {
     if (typeof record.message === 'string' && record.message.trim()) {
       return record.message.trim().slice(0, 2_000)
     }
+    // 数据后端（/csv、/aircraft 等）的业务错误只给 { "error": "…" }，没有 message，
+    // 不认它的话界面上只会看到「请求失败（400）」，用户不知道到底哪一步不对。
+    // Spring 自带的错误体也带 error，但那是 HTTP 原因短语（"Bad Request"），按 status+path 排除。
+    if (typeof record.error === 'string' && record.error.trim() && !isHttpReasonPhraseBody(record)) {
+      return record.error.trim().slice(0, 2_000)
+    }
   }
   return status === undefined ? '网络错误' : `请求失败（${status}）`
+}
+
+/** Spring 默认错误体（{timestamp,status,error,path}）：error 是原因短语，不是业务提示 */
+function isHttpReasonPhraseBody(record: Record<string, unknown>): boolean {
+  return typeof record.status === 'number' && 'path' in record
 }
 
 // ---- 工厂函数 ----

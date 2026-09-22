@@ -7,9 +7,11 @@ import {
   PLATFORM_TYPES,
   PLATFORM_TYPE_LABELS,
   platformNameToType,
+  parsePlatformConfig,
+  getConfigValue,
   type PlatformType,
 } from '@/api/externalPlatform'
-import type { ApiResponse, ExternalPlatform } from '@/types/entities'
+import type { ExternalPlatform } from '@/types/entities'
 
 // ============================================================
 // 外来平台配置管理
@@ -56,16 +58,78 @@ const ipRules = [
   },
 ]
 const portRules = [
-  { required: true, message: '请输入端口号', trigger: 'blur' },
   {
     validator: (_r: unknown, v: number | undefined, cb: (e?: Error) => void) => {
-      if (v == null) cb(new Error('请输入端口号'))
+      if (v == null) cb()
       else if (v < 1 || v > 65535) cb(new Error('端口号需在 1-65535 之间'))
       else cb()
     },
     trigger: 'blur',
   },
 ]
+
+/** 航新平台需要两个端口：port1 / port2 */
+function isHangxin(platform: PlatformType | ''): boolean {
+  return platform === 'HANGXIN'
+}
+
+const port1Rules = [
+  {
+    validator: (_r: unknown, v: number | undefined, cb: (e?: Error) => void) => {
+      if (form.platform !== 'HANGXIN') cb()
+      else if (v == null) cb(new Error('请输入端口1'))
+      else if (v < 1 || v > 65535) cb(new Error('端口1需在 1-65535 之间'))
+      else cb()
+    },
+    trigger: 'blur',
+  },
+]
+const port2Rules = [
+  {
+    validator: (_r: unknown, v: number | undefined, cb: (e?: Error) => void) => {
+      if (form.platform !== 'HANGXIN') cb()
+      else if (v == null) cb(new Error('请输入端口2'))
+      else if (v < 1 || v > 65535) cb(new Error('端口2需在 1-65535 之间'))
+      else cb()
+    },
+    trigger: 'blur',
+  },
+]
+
+/** 表单字段 → 平台配置 JSON 字符串（航新含 ip/port1/port2，其余平台含 ip + 可选 port） */
+function buildConfig(
+  platform: PlatformType | '',
+  ip: string,
+  port: number | undefined,
+  port1: number | undefined,
+  port2: number | undefined,
+  extra: Record<string, unknown> = {},
+) {
+  const entries: Record<string, unknown> = {
+    ...extra,
+    ip: ip.trim(),
+    ...(port == null ? {} : { port }),
+  }
+  if (isHangxin(platform)) {
+    entries.port1 = port1
+    entries.port2 = port2
+  }
+  return JSON.stringify(entries)
+}
+
+/** 展示用：优先显示 ip:port，其它 key 以 k=v 追加 */
+function formatConfig(raw?: string): string {
+  const cfg = parsePlatformConfig(raw)
+  const entries = Object.entries(cfg)
+  if (entries.length === 0) return '-'
+  const ip = cfg.ip ?? ''
+  const port = cfg.port
+  const head = port !== undefined && port !== '' ? `${String(ip)}:${String(port)}` : String(ip)
+  const rest = entries
+    .filter(([k]) => k !== 'ip' && k !== 'port')
+    .map(([k, v]) => `${k}=${String(v)}`)
+  return [head, ...rest].filter(Boolean).join('  ')
+}
 
 // ============================================================
 // 新增 / 编辑弹窗
@@ -82,7 +146,12 @@ const form = reactive({
   platform: '' as PlatformType | '',
   ip: '',
   port: undefined as number | undefined,
+  // 航新平台专有：port1 / port2
+  port1: undefined as number | undefined,
+  port2: undefined as number | undefined,
 })
+/** 配置中表单已知 key 之外的未知 key，编辑时暂存并在提交时原样写回，避免丢失 */
+const extraKeys = ref<Record<string, unknown>>({})
 
 /** 平台下拉选项：新增时只给未占用的类型；编辑时仅当前类型（后端要求沿用原枚举） */
 const platformOptions = computed(() => {
@@ -100,12 +169,26 @@ const dialogRules: FormRules = {
   platform: [{ required: true, message: '请选择平台类型', trigger: 'change' }],
   ip: ipRules,
   port: portRules,
+  port1: port1Rules,
+  port2: port2Rules,
 }
 
 function resetForm() {
   form.platform = ''
   form.ip = ''
   form.port = undefined
+  form.port1 = undefined
+  form.port2 = undefined
+  extraKeys.value = {}
+  formRef.value?.clearValidate()
+}
+
+/** 平台类型变化：切换后按新平台重置字段与校验状态 */
+function handlePlatformChange() {
+  form.port = undefined
+  form.port1 = undefined
+  form.port2 = undefined
+  extraKeys.value = {}
   formRef.value?.clearValidate()
 }
 
@@ -123,9 +206,15 @@ function openCreate() {
 function openEdit(row: ExternalPlatform) {
   dialogMode.value = 'edit'
   editingId.value = row.id
+  const cfg = parsePlatformConfig(row.platformConfig)
+  const { ip, port, port1, port2, ...rest } = cfg
+  extraKeys.value = rest
   form.platform = platformNameToType(row.platformName) ?? ''
-  form.ip = row.platformIp
-  form.port = row.port
+  form.ip = getConfigValue(row.platformConfig, 'ip')
+  form.port = port === undefined || port === '' ? undefined : Number(port)
+  const toPort = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v))
+  form.port1 = toPort(port1)
+  form.port2 = toPort(port2)
   formRef.value?.clearValidate()
   dialogVisible.value = true
 }
@@ -133,9 +222,19 @@ function openEdit(row: ExternalPlatform) {
 async function submitForm() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid || !form.platform || form.port == null) return
+  if (!valid || !form.platform) return
 
-  const payload = { platform: form.platform, ip: form.ip.trim(), port: form.port }
+  const payload = {
+    platform: form.platform,
+    config: buildConfig(
+      form.platform,
+      form.ip,
+      form.port,
+      form.port1,
+      form.port2,
+      extraKeys.value,
+    ),
+  }
   submitting.value = true
   try {
     const res =
@@ -155,13 +254,14 @@ async function submitForm() {
   }
 }
 
-/** 弹窗内「测试连通性」：用当前表单的 ip+port 探测，不保存 */
+/** 弹窗内「测试连通性」：用当前表单配置探测，不保存 */
 async function testCurrentForm() {
   if (!form.ip.trim()) return ElMessage.warning('请先填写 IP 地址')
-  if (form.port == null) return ElMessage.warning('请先填写端口号')
   formTestLoading.value = true
   try {
-    const res = await externalPlatformApi.testByAddress({ ip: form.ip.trim(), port: form.port })
+    const res = await externalPlatformApi.testByAddress({
+      config: buildConfig(form.platform, form.ip, form.port, form.port1, form.port2),
+    })
     if (res.success === false) throw new Error(res.error || res.message || '连接失败')
     ElMessage.success(res.message || '连接成功')
   } catch (e) {
@@ -192,7 +292,7 @@ async function runRowTest(row: ExternalPlatform) {
 async function handleDelete(row: ExternalPlatform) {
   try {
     await ElMessageBox.confirm(
-      `确定删除平台配置「${row.platformName}」（${row.platformIp}:${row.port}）吗？删除后该平台将无法接入。`,
+      `确定删除平台配置「${row.platformName}」（${formatConfig(row.platformConfig)}）吗？删除后该平台将无法接入。`,
       '删除确认',
       { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
     )
@@ -210,7 +310,7 @@ async function handleDelete(row: ExternalPlatform) {
 }
 
 // ============================================================
-// 顶部「连通性测试」小弹窗：纯 ip+port 探测，不保存
+// 顶部「连通性测试」小弹窗：纯 ip+port 探测，不保存（不绑定平台类型）
 // ============================================================
 const probeVisible = ref(false)
 const probeTesting = ref(false)
@@ -231,12 +331,11 @@ function openProbe() {
 async function runProbe() {
   if (!probeFormRef.value) return
   const valid = await probeFormRef.value.validate().catch(() => false)
-  if (!valid || probeForm.port == null) return
+  if (!valid) return
   probeTesting.value = true
   try {
     const res = await externalPlatformApi.testByAddress({
-      ip: probeForm.ip.trim(),
-      port: probeForm.port,
+      config: buildConfig('', probeForm.ip, probeForm.port, undefined, undefined),
     })
     if (res.success === false) throw new Error(res.error || res.message || '连接失败')
     ElMessage.success(res.message || '连接成功')
@@ -265,8 +364,11 @@ async function runProbe() {
       <el-table :data="list" v-loading="loading" class="ext-table" empty-text="暂无平台配置">
         <el-table-column prop="id" label="ID" width="90" align="center" />
         <el-table-column prop="platformName" label="平台名称" min-width="160" />
-        <el-table-column prop="platformIp" label="IP 地址" min-width="160" />
-        <el-table-column prop="port" label="端口" width="120" align="center" />
+        <el-table-column label="平台配置" min-width="260">
+          <template #default="{ row }">
+            {{ formatConfig(row.platformConfig) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="220" align="center">
           <template #default="{ row }">
             <el-button type="primary" text size="small" @click="openEdit(row)">
@@ -302,6 +404,7 @@ async function runProbe() {
             placeholder="请选择平台类型"
             style="width: 100%"
             :disabled="dialogMode === 'edit'"
+            @change="handlePlatformChange"
           >
             <el-option
               v-for="t in platformOptions"
@@ -316,7 +419,35 @@ async function runProbe() {
           <el-input v-model="form.ip" placeholder="请输入平台服务 IP 地址" class="ip-center" />
         </el-form-item>
 
-        <el-form-item label="端口" prop="port">
+        <!-- 航新平台：配置为 ip + port1 + port2 -->
+        <template v-if="isHangxin(form.platform)">
+          <el-form-item label="端口1" prop="port1">
+            <el-input-number
+              v-model="form.port1"
+              :min="1"
+              :max="65535"
+              :precision="0"
+              :controls="false"
+              style="width: 100%"
+              placeholder="请输入端口1"
+            />
+          </el-form-item>
+
+          <el-form-item label="端口2" prop="port2">
+            <el-input-number
+              v-model="form.port2"
+              :min="1"
+              :max="65535"
+              :precision="0"
+              :controls="false"
+              style="width: 100%"
+              placeholder="请输入端口2"
+            />
+          </el-form-item>
+        </template>
+
+        <!-- 其它平台：配置为 ip + 可选 port -->
+        <el-form-item v-else label="端口" prop="port">
           <el-input-number
             v-model="form.port"
             :min="1"
