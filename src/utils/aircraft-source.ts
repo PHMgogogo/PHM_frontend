@@ -82,19 +82,23 @@ export function aircraftSourceText(aircraft: AircraftSourceFields): string {
 
 /** 判定所需的架次字段子集 */
 export interface SortieSourceFields {
+  /** 本地架次主键；三方行下发 null */
+  sortieId?: number | null
   flightDate?: string | null
   startTime?: string | null
   endTime?: string | null
 }
 
 /**
- * 是否为三方（航新/633）架次：GET /aircraft/sorties 对三方行的三个时间字段下发占位符 '-'，
- * 本地行为真实值。与 isExternalAircraft 同样偏向判为三方——误判本地为三方会让用户手敲
- * 参数名（少些便利），反过来则会给三方架次取本地 CSV 表的列名。
+ * 是否为三方（航新/633）架次。
  *
- * 注意该聚合接口不返回架次自身的来源字段，这是唯一的判据。
+ * 本地架次允许日期和起止时间留空，因此不能把空时间直接当作三方。带本地 sortieId
+ * 的架次恒为本地；只有没有本地主键、且时间字段缺失或为占位符时才按三方处理。
  */
 export function isExternalSortie(sortie: SortieSourceFields): boolean {
+  if (hasLocalSortieId(sortie)) {
+    return false
+  }
   return (
     isPlaceholder(sortie.flightDate) ||
     isPlaceholder(sortie.startTime) ||

@@ -1,9 +1,19 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { Delete } from '@element-plus/icons-vue'
+import { aircraftSourceText, isLocalSource } from '@/utils/aircraft-source'
 import type { AircraftModel } from '@/types/entities'
 
-defineProps<{
+const props = defineProps<{
   model: AircraftModel
 }>()
+
+const emit = defineEmits<{
+  (e: 'delete', model: AircraftModel): void
+}>()
+
+const isLocal = computed(() => isLocalSource(props.model.source))
+const sourceText = computed(() => aircraftSourceText(props.model))
 
 function formatTime(dateStr?: string | null) {
   if (!dateStr) return ''
@@ -29,6 +39,7 @@ function text(v?: string | null) {
   <div class="model-card">
     <div class="card-header">
       <span class="model-name">{{ model.modelCode }}</span>
+      <span class="source-badge" :class="{ local: isLocal }">{{ sourceText }}</span>
     </div>
     <div class="card-body">
       <div class="info-row">
@@ -44,6 +55,18 @@ function text(v?: string | null) {
         <span class="info-value">{{ text(formatTime(model.createdAt)) }}</span>
       </div>
     </div>
+    <div v-if="isLocal" class="card-footer">
+      <el-button
+        class="delete-btn"
+        type="danger"
+        text
+        size="small"
+        :icon="Delete"
+        @click="emit('delete', model)"
+      >
+        删除
+      </el-button>
+    </div>
   </div>
 </template>
 
@@ -58,6 +81,7 @@ function text(v?: string | null) {
   gap: 12px;
   border: 1px solid #e8edf5;
   transition: box-shadow 0.2s, transform 0.2s;
+  height: 100%;
 }
 
 .model-card:hover {
@@ -77,6 +101,20 @@ function text(v?: string | null) {
   font-weight: 700;
   color: #0d1f3c;
   word-break: break-all;
+}
+
+.source-badge {
+  flex-shrink: 0;
+  border-radius: 20px;
+  padding: 2px 9px;
+  font-size: 12px;
+  color: #64748b;
+  background: #eef2f7;
+}
+
+.source-badge.local {
+  color: #1a6cf0;
+  background: #e8f1ff;
 }
 
 .card-body {
@@ -108,5 +146,17 @@ function text(v?: string | null) {
   font-weight: 400;
   color: #5a6a7c;
   line-height: 1.5;
+}
+
+.card-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid #f0f3f8;
+  margin-top: auto;
+}
+
+.delete-btn {
+  padding-right: 0;
 }
 </style>

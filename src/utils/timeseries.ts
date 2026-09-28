@@ -13,7 +13,7 @@ import type {
   TimeSeriesQuery,
   TimeseriesJobRequest,
 } from '@/types/entities'
-import { hasLocalSortieId, isExternalSortie } from './aircraft-source'
+import { hasLocalSortieId } from './aircraft-source'
 
 /** 归一化比较用的键：后端列名大小写混用（columnTypes 的键大写、返回的参数名小写），比较一律折叠大小写与空白 */
 function normalizeKey(v: string): string {
@@ -137,13 +137,9 @@ export function composeSortieTime(
  *
  * 以**单机级**来源为准：`GET /aircraft/plane` 会把三方单机的 `airline`/`status`/`createdAt`
  * 下发为占位符（实测 B-001/B-002 是三方、B-1234 是本地），这条在工作台里已经算好了。
- * 再叠加架次行的占位符判断：三方平台取不到数据时 `/aircraft/sorties` 的时间字段是 `-`，
- * 这种行无论如何都按三方处理——宁可让用户手填参数名，也不能拿本地表编号去查三方。
- *
- * 注意三方架次有数据时列表里是**真实时间**，只靠占位符判不出来；这也是必须传
- * 单机级来源的原因（已废弃的统一查询曾用 source 字段兜住这点）。
- * 第三条判据是**本地主键**：三方行的 sortieId 为 null，而本地 CSV 链路（mappings →
- * csv_<表名>）正是以它为锚点，没有主键就无从绑定，必须按三方处理。
+ * 本地架次允许日期 / 起止时间留空，因此**不能用时间为空判断来源**。
+ * 三方行的 sortieId 为 null，而本地 CSV 链路（mappings → csv_<表名>）正是以它为锚点，
+ * 所以本地主键是能否进入本地分支的决定性依据。
  */
 export interface ResolvedSortie {
   external: boolean
@@ -164,8 +160,7 @@ export function resolveSortie(
 ): ResolvedSortie {
   // 没有本地主键 ⇒ 不可能有本地 config_data_mapping，绝不能进本地分支
   // （否则会发 ?sortieId=null 查映射，再拿别人的表名去 /csv/overview 取列名）。
-  const external =
-    aircraftExternal || !hasLocalSortieId(sortie) || isExternalSortie(sortie)
+  const external = aircraftExternal || !hasLocalSortieId(sortie)
   return {
     external,
     // 本地行只有 HH:mm:ss 没有日期，拼不出完整时间；不传后端也按该架次起止查（实测一致）
