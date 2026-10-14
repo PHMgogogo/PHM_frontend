@@ -15,7 +15,7 @@ import type {
 } from '@/types/entities'
 import { hasLocalSortieId } from './aircraft-source'
 
-/** 归一化比较用的键：后端列名大小写混用（columnTypes 的键大写、返回的参数名小写），比较一律折叠大小写与空白 */
+/** 归一化比较用的键：后端列名大小写混用（overview 下发数据库实际列名、时序查询返回的参数名一律小写），比较一律折叠大小写与空白 */
 function normalizeKey(v: string): string {
   return v.trim().toLowerCase()
 }
@@ -58,8 +58,8 @@ export function pickDeviceName(
 /**
  * 本地分支可选的属性名 = /csv/overview 的 columnTypes 键去掉时间轴列。
  *
- * 用 columnTypes 而非 dataColumns：columnTypes 的键与实际能查到的列名一致
- * （实测 `ALTITUDE`/`SPEED`/`N1`/`N2` 可查到数据），dataColumns 是小写另一套。
+ * 用 columnTypes 而非 dataColumns：两者现为同一套数据库实际列名（后端已把元数据
+ * 列名统一映射回实际列名），但 columnTypes 只含有类型元数据的列，天然滤掉无元数据的杂列。
  */
 export function propertyCandidates(
   overview: Pick<CsvOverview, 'columnTypes' | 'timestampColumn'> | null | undefined,

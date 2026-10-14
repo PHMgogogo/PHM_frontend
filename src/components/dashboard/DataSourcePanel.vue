@@ -377,7 +377,14 @@ watch(selectedMappingId, async (id) => {
   columnsLoading.value = true
   resetAxisSelection()
   try {
-    const overview = await getCsvOverview(id)
+    // /csv/overview 机型必填（后端按机型路由校验），由当前单机号反查机型
+    const modelCode = modelCodeFor(localAircraftNumber.value)
+    if (!modelCode) {
+      ElMessage.warning('未找到该机号对应的机型，无法获取数据列')
+      columns.value = []
+      return
+    }
+    const overview = await getCsvOverview({ modelCode, mappingId: id })
     columns.value = overview?.dataColumns ?? []
   } catch (e) {
     ElMessage.error('获取数据列失败: ' + (e instanceof Error ? e.message : String(e)))

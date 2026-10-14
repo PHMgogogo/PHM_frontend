@@ -182,7 +182,7 @@ export interface TimeSeriesData {
 export interface CsvOverview {
   dataColumns: string[]
   textColumns: string[]
-  /** 列名 → SQL 类型；注意键为大写（如 ALTITUDE），与 dataColumns 的小写不同 */
+  /** 列名 → SQL 类型；键与 dataColumns 同为数据库实际列名（同一套大小写） */
   columnTypes: Record<string, string>
   /** 时间轴列名（如 timestamps），不应当作 paralist 提交 */
   timestampColumn: string

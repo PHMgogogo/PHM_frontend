@@ -71,22 +71,23 @@ export function getCsvTables(modelCode?: string) {
 /**
  * GET /csv/overview —— 查询某张 CSV 表的列信息。
  *
- * 两种定位方式（后端二选一，不传则报错）：
- * - `mappingId`：构型数据映射ID（数据管理 / 训练 / 推理三条既有路径用这个）；
+ * ⚠️ 机型 **必填**（后端按机型路由到唯一平台并做数据归属校验，缺省会 400），
+ * 两种定位方式（后端二选一，不传则报错）都必须带上：
+ * - `modelCode` + `mappingId`：构型数据映射ID（数据展示 / 训练 / 推理三条既有路径用这个），
+ *   后端自动解析机号 + 表名；
  * - `modelCode` + `aircraftNumber` + `deviceName`：机型 + 机号 + 表名，其中 deviceName 为映射的
  *   csvTableName（可带可不带 `csv_` 前缀）。时序查询拿到的是架次，只有这种形态可用。
  *
- * ⚠️ 机型 **必填**（后端按机型路由到唯一平台并做数据归属校验，缺省会 400）。
- * 用 `mappingId` 时无需再传机型 / 机号。
- *
- * 注意返回**不带信封**，且列名以两种形态出现：dataColumns 小写、columnTypes 的键大写。
+ * 注意返回**不带信封**；dataColumns 与 columnTypes 的键同为数据库实际列名（同一套大小写）。
  */
 export function getCsvOverview(
-  target: number | { modelCode: string; aircraftNumber: string; deviceName: string },
+  target:
+    | { modelCode: string; mappingId: number }
+    | { modelCode: string; aircraftNumber: string; deviceName: string },
 ) {
   const params: Record<string, string> =
-    typeof target === 'number'
-      ? { mappingId: String(target) }
+    'mappingId' in target
+      ? { modelCode: target.modelCode, mappingId: String(target.mappingId) }
       : {
           modelCode: target.modelCode,
           aircraftNumber: target.aircraftNumber,

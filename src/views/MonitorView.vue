@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Lock, Unlock, MagicStick, DArrowLeft, DArrowRight, Upload, Download } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '@/api/client'
@@ -14,7 +14,7 @@ import { buildDisplayOption, buildTitle } from '@/components/dashboard/DisplayOp
 import { useFieldAliasStore } from '@/stores/fieldAlias'
 
 // 字段中文别名（内存态）：仅替换图表展示层（series.name/tooltip/默认标题），
-// 发给后端的 columns 恒为英文原名。别名变更不回溯已渲染图表，仅影响后续新建/更新的图表。
+// 发给后端的 columns 恒为英文原名。别名变更会实时重标本会话查询生成的已渲染图表（见下方 aliasMap watch）。
 const aliasStore = useFieldAliasStore()
 
 // @ts-ignore
@@ -100,7 +100,8 @@ async function resolveDisplay(payload: {
   const option = buildDisplayOption(payload.type, response, payload.size, payload.style, aliasStore.aliasMap)
   // 用户自定义标题优先；留空则按参数名自动命名（优先中文别名；buildTitle 兜底返回“数据展示”）
   const title = payload.title?.trim() || buildTitle(response.parameter, aliasStore.aliasMap)
-  return { option, title }
+  // response 随图表缓存进 item.config，供别名变更时免查询重建展示层
+  return { option, title, response }
 }
 
 /**
@@ -109,14 +110,16 @@ async function resolveDisplay(payload: {
 async function handleAddChart(payload: any) {
   const resolved = await resolveDisplay(payload)
   if (!resolved) return
-  const added = dashboardRef.value?.addItemWithOption?.(resolved.option, resolved.title, payload.size, payload)
+  // config 携带原始 response：别名变更时免查询重建展示层（见下方 aliasMap watch）
+  const config = { ...payload, response: resolved.response }
+  const added = dashboardRef.value?.addItemWithOption?.(resolved.option, resolved.title, payload.size, config)
   if (!added) {
     ElMessage.error('图表添加失败')
     return
   }
   // 自动选中新建图表，便于立即微调
   selectedId.value = added.i
-  editTarget.value = { id: added.i, config: payload, currentSize: { w: added.w, h: added.h } }
+  editTarget.value = { id: added.i, config, currentSize: { w: added.w, h: added.h } }
 }
 
 /**
@@ -128,7 +131,8 @@ async function handleUpdateChart(payload: any) {
   if (!resolved) return
   // keepSize 时传 null：DashboardContainer.updateItemOption 守卫 `if (sizeValue && !props.readonly)` 见 null 即跳过 w/h 重置
   const sizeArg = payload.keepSize ? null : payload.size
-  const updated = dashboardRef.value?.updateItemOption?.(id, resolved.option, resolved.title, sizeArg, payload)
+  const config = { ...payload, response: resolved.response }
+  const updated = dashboardRef.value?.updateItemOption?.(id, resolved.option, resolved.title, sizeArg, config)
   if (!updated) {
     // 异步查询期间图表可能已被删除
     ElMessage.warning('目标图表已不存在，请重新选择')
@@ -138,8 +142,24 @@ async function handleUpdateChart(payload: any) {
   }
   // 刷新 editTarget.config（id 不变 → 不触发面板回填，仅更新内部快照）
   selectedId.value = id
-  editTarget.value = { id, config: payload, currentSize: { w: updated.w, h: updated.h } }
+  editTarget.value = { id, config, currentSize: { w: updated.w, h: updated.h } }
 }
+
+// 别名变更 → 已渲染图表免查询重标：config.response 随图表缓存原始查询结果，
+// 复用同一套构建器重建展示层，标题条/图例/tooltip 一致更新。
+// setAliases 批量提交是同步循环，Vue 合并为一次触发；快照加载的图表无 response，自动跳过。
+watch(() => aliasStore.aliasMap, () => {
+  const items = dashboardRef.value?.getLayout?.() ?? []
+  for (const item of items) {
+    const cfg = item.config
+    if (!cfg?.response) continue
+    const option = buildDisplayOption(cfg.type, cfg.response, cfg.size, cfg.style, aliasStore.aliasMap)
+    // 与 resolveDisplay 同语义：自定义标题优先，仅默认标题跟随别名
+    const title = cfg.title?.trim() || buildTitle(cfg.response.parameter, aliasStore.aliasMap)
+    // 只换 option/title：不传 size（不缩放）、不传 config（不覆盖含 response 的快照）
+    dashboardRef.value?.updateItemOption?.(item.i, option, title)
+  }
+})
 
 /** 画布图表点击：item 为 null 表示点击空白处取消选中。 */
 function handleChartClicked(item: any) {
@@ -192,10 +212,17 @@ async function handleSaveCanvas() {
     ElMessage.warning('画布为空，无需保存')
     return
   }
+  // 快照剔除 config.response：option 已含数据，response 属冗余（别名是会话态，持久化无消费方）
+  const slimLayout = layout.map((it: any) => {
+    if (!it.config?.response) return it
+    const slim = { ...it, config: { ...it.config } }
+    delete slim.config.response
+    return slim
+  })
   const canvas: DisplayCanvas = {
     version: 1,
     config: dashboardConfig,
-    layout,
+    layout: slimLayout,
   }
   saving.value = true
   try {

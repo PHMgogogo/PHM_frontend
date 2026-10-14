@@ -10,6 +10,8 @@ const props = defineProps<{
   modelValue: boolean
   mapping: ConfigDataMapping | null
   aircraftNumber: string
+  /** 机型：/csv/overview 必填（后端按机型路由校验），由打开对话框的页面传入 */
+  modelCode: string
 }>()
 
 const emit = defineEmits<{
@@ -74,7 +76,7 @@ watch(
     try {
       const [taskRes, overview] = await Promise.all([
         taskApi.listByAircraft(props.aircraftNumber),
-        getCsvOverview(props.mapping.mappingId),
+        getCsvOverview({ modelCode: props.modelCode, mappingId: props.mapping.mappingId }),
       ])
       tasks.value = taskRes.tasks
       noTasksAvailable.value = taskRes.tasks.length === 0
