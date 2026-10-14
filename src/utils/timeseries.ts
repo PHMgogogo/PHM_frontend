@@ -40,10 +40,10 @@ export function tableToDeviceName(csvTableName: string): string {
  * 与实测观察到的后端行为一致（后端取 csv_0805 即较新的那条映射，返回 10 行；
  * 若按 0804 的列名去查则会查不到）。不依赖接口返回顺序，故显式排序。
  */
-export function pickDeviceName(
+export function pickDeviceMapping(
   mappings: ConfigDataMapping[],
   sortie: { sortieId: number; aircraftNumber: string },
-): string | null {
+): ConfigDataMapping | null {
   const own = mappings
     .filter(
       (m) =>
@@ -52,7 +52,16 @@ export function pickDeviceName(
         !!m.csvTableName,
     )
     .sort((a, b) => b.mappingId - a.mappingId)
-  return own.length ? tableToDeviceName(own[0].csvTableName) : null
+  return own.length ? own[0] : null
+}
+
+/** 该架次当前生效的 CSV 表名（deviceName，不带 `csv_` 前缀）；没有绑定时为 null */
+export function pickDeviceName(
+  mappings: ConfigDataMapping[],
+  sortie: { sortieId: number; aircraftNumber: string },
+): string | null {
+  const mapping = pickDeviceMapping(mappings, sortie)
+  return mapping && mapping.csvTableName ? tableToDeviceName(mapping.csvTableName) : null
 }
 
 /**
@@ -87,6 +96,25 @@ export function normalizeProperties(candidates?: string[] | null): string[] {
     names.push(name)
   }
   return names
+}
+
+/** 默认选中：候选的第一条。留空会走「后端按平台原始列名返回」，进页面即有可用属性 */
+export function defaultPropertySelection(candidates?: string[] | null): string[] {
+  const first = normalizeProperties(candidates)[0]
+  return first ? [first] : []
+}
+
+/**
+ * 候选属性刷新后处理已选属性（仅本地分支用）。
+ *
+ * 本地候选就是数据表的真实列名，重新上传 / 重新绑定后列会变：用户选的列若已不在新表里，
+ * 留着只会在查询时报「列不存在」，故只保留仍然存在的；一个都不剩时回落到默认（新表第一条）。
+ * 三方参数组的候选只是列名标签、允许手填，不能这样裁剪，故该方法只在本地分支调用。
+ */
+export function reconcileSelection(selected: string[], candidates?: string[] | null): string[] {
+  const available = new Set(normalizeProperties(candidates))
+  const kept = normalizeProperties(selected).filter((name) => available.has(name))
+  return kept.length ? kept : defaultPropertySelection(candidates)
 }
 
 /**

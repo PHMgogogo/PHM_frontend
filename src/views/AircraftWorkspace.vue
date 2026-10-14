@@ -164,12 +164,16 @@ function onSelectSortie(sortie: Sortie) {
 }
 
 /**
- * 直接进「时序数据查询」时没点过架次：默认取该单机的第一条架次，让页面直接出数据。
- * 先让用户看一条真实的（多半也是最新的）架次，比让他先去列表里挑一次少一步；
+ * 进「时序数据查询」时确认当前选中的架次：以服务端列表为准，让页面直接出数据。
+ *
+ * 选中的架次可能是「已经删掉的那条」——删架次在架次查询页做，时序页不销毁、只是被切走，
+ * 期间 selectedSortie 不会被清理；架次被删后又新建同号架次时，旧对象还能解析出旧的数据表，
+ * 页面就会用上一个架次（上一个文件）的属性。故这里每次进入都回查一次：
+ * 仍在列表里就用列表里的最新记录（起止时间等可能被改过），已不在就退回最新一条。
  * 只有该单机确实没有架次时才落到引导态。
  */
 async function ensureSortieForTimeseries() {
-  if (selectedSortie.value || sortieResolving.value) return
+  if (sortieResolving.value) return
   sortieResolving.value = true
   try {
     // 架次查询机型必填：用当前飞行器所属机型（三方合成码须截断为冒号前的基础编码）
@@ -180,7 +184,9 @@ async function ensureSortieForTimeseries() {
       return
     }
     const list = await getSorties(baseModelCode(code), aircraftNumber.value)
-    selectedSortie.value = list[0] ?? null
+    const current = selectedSortie.value?.sortieKey
+    const matched = current ? list.find((s) => s.sortieKey === current) : undefined
+    selectedSortie.value = matched ?? list[0] ?? null
     if (!selectedSortie.value) ElMessage.info('该单机暂无架次')
   } catch (e) {
     ElMessage.error('获取架次失败: ' + (e as Error).message)
@@ -189,10 +195,13 @@ async function ensureSortieForTimeseries() {
   }
 }
 
-/** 菜单切换：进时序页时补齐默认架次 */
-function onMenuChange(key: string) {
+/**
+ * 菜单切换：进时序页前先把选中架次对齐到服务端列表，再切页面。
+ * 反过来的话会先拿「已经被删的那条架次」渲染一次时序页（闪一条「没有关联数据表」的提示）。
+ */
+async function onMenuChange(key: string) {
+  if (key === 'timeseries') await ensureSortieForTimeseries()
   activeMenu.value = key
-  if (key === 'timeseries') void ensureSortieForTimeseries()
 }
 </script>
 
