@@ -1,6 +1,6 @@
 <!-- 时序数据查询（与「架次查询」同级的工作台页面，由点架次跳入）：POST /csv/query-timeseries -->
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ArrowLeft, Search, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getMappings, getSortieParameters } from '@/api/aircraft'
@@ -10,12 +10,15 @@ import {
   buildTimeseriesTable,
   cellText,
   DEFAULT_PAGE_SIZE,
+  defaultPropertySelection,
   normalizeProperties,
   PAGE_SIZE_OPTIONS,
   paginate,
-  pickDeviceName,
+  pickDeviceMapping,
   propertyCandidates,
+  reconcileSelection,
   resolveSortie,
+  tableToDeviceName,
   type TimeseriesRow,
   type TimeseriesTable,
 } from '@/utils/timeseries'
@@ -67,6 +70,14 @@ const paralist = ref<string[]>([])
 const preparing = ref(false)
 /** 本地分支定位到的 CSV 表名（deviceName），仅用于界面提示 */
 const deviceName = ref('')
+/**
+ * 候选属性的来源（架次 + 映射ID + 表名）。属性列表是从某一张具体的数据表上取的，
+ * 表被重新上传 / 重新绑定后列会变，而表名常常不变（默认表名就是架次号），
+ * 故连映射ID一起留档：对不上就说明页面上的列表已经过期（见 syncCandidates）。
+ */
+const candidateSource = ref<{ sortieKey: string; mappingId: number | null; deviceName: string } | null>(
+  null,
+)
 
 /**
  * 默认选中：候选的第一条。
@@ -77,18 +88,21 @@ const deviceName = ref('')
  * 进页面即有一条真实列名，用户才有继续查询 / 去训练的抓手。
  */
 function defaultSelection(): string[] {
-  const first = normalizeProperties(candidates.value)[0]
-  return first ? [first] : []
+  return defaultPropertySelection(candidates.value)
 }
 
 /** 本地分支取属性候选。两步辅助请求不可避免：表名只有 /aircraft/mappings 给得出 */
 async function loadLocalCandidates() {
   const mappings = await getMappings({ sortieId: props.sortie.sortieId })
-  const name = pickDeviceName(mappings, props.sortie)
-  if (!name) {
+  const mapping = pickDeviceMapping(mappings, props.sortie)
+  if (!mapping || !mapping.csvTableName) {
     ElMessage.warning('该架次没有关联的本地数据表，无法获取属性列表')
+    candidates.value = []
+    candidateSource.value = null
+    deviceName.value = ''
     return
   }
+  const name = tableToDeviceName(mapping.csvTableName)
   deviceName.value = name
 
   const overview = await getCsvOverview({
@@ -97,16 +111,89 @@ async function loadLocalCandidates() {
     deviceName: name,
   })
   candidates.value = propertyCandidates(overview)
+  candidateSource.value = {
+    sortieKey: props.sortie.sortieKey,
+    mappingId: mapping.mappingId ?? null,
+    deviceName: name,
+  }
 }
 
 /** 三方分支取属性候选：按架次行的参数组ID查该架次的列名 */
 async function loadExternalCandidates() {
+  candidateSource.value = null
   const groupId = props.sortie.parameterGroupId
   if (!groupId) {
     // 老架次 / 该源没有该字段：退回手动输入，不报错
     return
   }
   candidates.value = await getSortieParameters(groupId)
+}
+
+/** 候选快照：任一项变化都说明页面上的属性列表已不代表当前数据表 */
+function candidateSignature(): string {
+  return [
+    candidateSource.value?.sortieKey ?? '',
+    candidateSource.value?.mappingId ?? '',
+    candidateSource.value?.deviceName ?? '',
+    normalizeProperties(candidates.value).join(','),
+  ].join('|')
+}
+
+/**
+ * 本地分支：候选是否还对应「该架次当前绑定的表」。
+ *
+ * 只查映射（轻量）：overview 会给每根数值列做统计，宽表并不便宜，不能每次查询都重拉。
+ * 判据带上映射ID：删架次 → 重建同号架次 → 重新上传时表名一模一样（默认就是架次号），
+ * 只看表名会漏掉这种「同一个名字、换了一张表」的情况。
+ */
+async function candidatesOutdated(): Promise<boolean> {
+  const current = candidateSource.value
+  try {
+    const mappings = await getMappings({ sortieId: props.sortie.sortieId })
+    const mapping = pickDeviceMapping(mappings, props.sortie)
+    if (!mapping || !mapping.csvTableName) return current !== null
+    if (!current || current.sortieKey !== props.sortie.sortieKey) return true
+    return (
+      current.mappingId !== (mapping.mappingId ?? null) ||
+      current.deviceName !== tableToDeviceName(mapping.csvTableName)
+    )
+  } catch {
+    // 校验失败不阻断查询：真取不到数据，查询那一步还会报错
+    return false
+  }
+}
+
+/**
+ * 重取属性候选，并把已选属性收敛到新表上（本地候选=真实列名，见 reconcileSelection）。
+ * @returns 候选是否发生了变化
+ */
+async function refreshCandidates(): Promise<boolean> {
+  const before = candidateSignature()
+  if (external.value) await loadExternalCandidates()
+  else await loadLocalCandidates()
+  if (candidateSignature() === before) return false
+  if (!external.value) paralist.value = reconcileSelection(paralist.value, candidates.value)
+  return true
+}
+
+/**
+ * 候选过期就地重取：查询前与打开属性抽屉前各调一次。
+ * 页面上那份属性列表可能是「数据表被换掉之前」取的，直接拿它去查会拿到上一个文件的列名。
+ * @param force 忽略「映射是否变化」的判据直接重取（抽屉里的刷新按钮用）
+ * @returns 候选是否发生了变化（调用方据此决定要不要重跑查询，避免属性与结果对不上）
+ */
+async function syncCandidates(force = false): Promise<boolean> {
+  if (external.value && !force) return false
+  if (!force && !(await candidatesOutdated())) return false
+  preparing.value = true
+  try {
+    return await refreshCandidates()
+  } catch (e) {
+    ElMessage.error('获取属性列表失败: ' + (e as Error).message)
+    return false
+  } finally {
+    preparing.value = false
+  }
 }
 
 async function prepare() {
@@ -142,6 +229,8 @@ const pageRows = computed(() => paged.value.pageRows)
 async function runQuery() {
   loading.value = true
   try {
+    // 属性候选是「该架次当前数据表」的列名，查询前确认一次：表被换过就地重取，避免拿旧列去查
+    await syncCandidates()
     const data = await queryTimeseries(
       buildTimeseriesQuery({
         sortie: props.sortie,
@@ -176,10 +265,36 @@ function resetFilters() {
   runQuery()
 }
 
-onMounted(async () => {
-  await prepare()
-  await runQuery()
-})
+/** 打开属性抽屉：属性列表就是用户此刻要看的东西，先确认它还对应当前数据表 */
+async function onPickerOpen() {
+  if (await syncCandidates()) await runQuery()
+}
+
+/** 手动刷新属性列表（抽屉里的刷新按钮）：数据表内容被换、映射却没变时也能重取 */
+async function onPickerRefresh() {
+  if (await syncCandidates(true)) await runQuery()
+}
+
+/**
+ * 属性候选按「架次 → 数据表」解析，换架次（或换机型、本地↔三方）必须整页重来。
+ * 工作台切架次时未必销毁本组件，故用 watch(immediate) 统一覆盖首次进入与后续切换，
+ * 并用 token 丢弃过期结果（连点两个架次时后发的响应可能先到）。
+ */
+let prepareToken = 0
+watch(
+  () => `${props.sortie?.sortieKey ?? ''}|${props.modelCode}|${resolved.value.external ? 'external' : 'local'}`,
+  async () => {
+    const token = ++prepareToken
+    startTime.value = resolved.value.startTime ?? ''
+    endTime.value = resolved.value.endTime ?? ''
+    candidateSource.value = null
+    candidates.value = []
+    await prepare()
+    if (token !== prepareToken) return
+    await runQuery()
+  },
+  { immediate: true },
+)
 
 /**
  * 行 key 必须用**全量数据里的绝对下标**：分页后每页的 idx 都从 0 重来，
@@ -247,7 +362,10 @@ function timeText(v?: string | null) {
           v-model="paralist"
           :options="candidates"
           :loading="preparing"
+          :refreshing="preparing"
           :disabled="loading"
+          @open="onPickerOpen"
+          @refresh="onPickerRefresh"
         />
 
         <!-- 起止时间：默认取架次记录的值（三方），可手改；留空由后端按架次起止查 -->

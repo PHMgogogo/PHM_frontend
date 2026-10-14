@@ -12,7 +12,7 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { RefreshRight, Search } from '@element-plus/icons-vue'
 import { filterProperties, normalizeProperties, parsePropertyInput } from '@/utils/timeseries'
 
 const props = defineProps<{
@@ -22,11 +22,17 @@ const props = defineProps<{
   options?: string[] | null
   /** 候选加载中 */
   loading?: boolean
+  /** 正在重新拉取候选（刷新按钮的 loading 态） */
+  refreshing?: boolean
   disabled?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', val: string[]): void
+  /** 抽屉打开：外层趁机校验候选是否还对应当前数据表 */
+  (e: 'open'): void
+  /** 请求重新拉取候选属性 */
+  (e: 'refresh'): void
 }>()
 
 const visible = ref(false)
@@ -79,6 +85,7 @@ watch(keyword, () => {
 
 watch(visible, (open) => {
   if (!open) return
+  emit('open')
   keyword.value = ''
   pasteOpen.value = false
   pasteText.value = ''
@@ -161,10 +168,23 @@ function addPasted() {
         </el-input>
 
         <div class="prop-count">
-          <template v-if="keyword.trim()">
-            命中 {{ matched.length }} 个 / 共 {{ all.length }} 个
-          </template>
-          <template v-else>共 {{ all.length }} 个属性</template>
+          <span>
+            <template v-if="keyword.trim()">
+              命中 {{ matched.length }} 个 / 共 {{ all.length }} 个
+            </template>
+            <template v-else>共 {{ all.length }} 个属性</template>
+          </span>
+          <el-tooltip content="重新获取该架次数据表的属性列表" placement="top">
+            <el-button
+              class="prop-refresh"
+              link
+              size="small"
+              :loading="refreshing"
+              @click="emit('refresh')"
+            >
+              <el-icon><RefreshRight /></el-icon>
+            </el-button>
+          </el-tooltip>
         </div>
 
         <div ref="listEl" class="prop-list" :style="{ height: `${listHeight}px` }" @scroll="onScroll">
@@ -259,9 +279,18 @@ function addPasted() {
 }
 
 .prop-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   color: #909399;
   margin-top: -4px;
+}
+
+.prop-refresh {
+  padding: 0;
+  height: auto;
 }
 
 /* 列表本体是滚动容器，行用 transform 定位；占位层撑出总高度 */
