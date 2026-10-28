@@ -93,11 +93,153 @@ function highlightCode(code: string, langRaw: string): string {
 }
 
 const md = new MarkdownIt({
-  html: false,
+  // 模型会直接返回 <br>、<table> 等展示型 HTML；统一在 renderMarkdown 末尾净化。
+  html: true,
   breaks: true,
   linkify: true,
   highlight: highlightCode,
 })
+
+const TABLE_DELIMITER_CELL = /^:?-+:?$/
+
+function splitTableRow(line: string): string[] {
+  let value = line.trim()
+  if (value.startsWith('|')) value = value.slice(1)
+  if (value.endsWith('|') && !value.endsWith('\\|')) value = value.slice(0, -1)
+
+  const cells: string[] = []
+  let current = ''
+  let escaped = false
+
+  for (const char of value) {
+    if (escaped) {
+      current += char
+      escaped = false
+    } else if (char === '\\') {
+      current += char
+      escaped = true
+    } else if (char === '|') {
+      cells.push(current.trim())
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  cells.push(current.trim())
+  return cells
+}
+
+function trimTrailingEmptyCells(cells: string[]): string[] {
+  const result = [...cells]
+  while (result.length > 0 && result[result.length - 1] === '') result.pop()
+  return result
+}
+
+function isTableDelimiterRow(line: string): boolean {
+  const cells = splitTableRow(line).filter(Boolean)
+  return cells.length > 0 && cells.every((cell) => TABLE_DELIMITER_CELL.test(cell))
+}
+
+function formatTableRow(cells: string[]): string {
+  return `| ${cells.join(' | ')} |`
+}
+
+/**
+ * 未闭合的 <table> 会让浏览器把后续 Markdown 全部塞进最后一个单元格。
+ * 这类表格已无法可靠恢复行列关系，降级成文本流比展示一张吞掉正文的表格更安全。
+ */
+function demoteUnclosedHtmlTable(text: string): string {
+  const openingIndex = text.search(/<table\b/i)
+  if (openingIndex === -1) return text
+
+  const openingCount = text.match(/<table\b/gi)?.length ?? 0
+  const closingCount = text.match(/<\/table\s*>/gi)?.length ?? 0
+  if (openingCount <= closingCount) return text
+
+  const beforeTable = text.slice(0, openingIndex)
+  const tableAndFollowingContent = text
+    .slice(openingIndex)
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*hr\s*\/?\s*>/gi, '\n\n---\n\n')
+    .replace(/<\s*\/?\s*(?:tr|p|div|h[1-6])\b[^>]*>/gi, '\n')
+    .replace(/<\s*\/?\s*(?:td|th)\b[^>]*>/gi, ' | ')
+    .replace(/<\/?[a-z][^>]*>/gi, '')
+
+  return beforeTable + tableAndFollowingContent
+}
+
+/**
+ * mermaid 围栏未闭合时，后续标题和正文都会被当成代码。Mermaid 语法本身不使用
+ * Markdown 标题，因此在空行后的首个标题前补一个结束围栏，尽量保住后续内容。
+ */
+function closeUnclosedMermaidFence(text: string): string {
+  const lines = text.split('\n')
+  let fence: { char: string; length: number; start: number; lang: string } | null = null
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(/^\s*(`{3,}|~{3,})\s*([^\s`]*)/)
+
+    if (!fence) {
+      if (match) {
+        fence = {
+          char: match[1][0],
+          length: match[1].length,
+          start: i,
+          lang: (match[2] || '').toLowerCase(),
+        }
+      }
+      continue
+    }
+
+    if (match && match[1][0] === fence.char && match[1].length >= fence.length) {
+      fence = null
+      continue
+    }
+
+    if (fence.lang === 'mermaid' && /^\s*#{1,6}\s/.test(lines[i]) && lines[i - 1]?.trim() === '') {
+      lines.splice(i, 0, fence.char.repeat(fence.length))
+      fence = null
+    }
+  }
+
+  if (fence) lines.push(fence.char.repeat(fence.length))
+  return lines.join('\n')
+}
+
+/**
+ * 模型生成的 Markdown 表格经常在行尾多出一个 `|`，导致 markdown-it 把整张表
+ * 当作普通段落输出。这里只修复已经有合法分隔行的表格，普通文本不受影响。
+ */
+function repairMarkdownTables(text: string): string {
+  const lines = text.split('\n')
+
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!lines[i].includes('|') || !isTableDelimiterRow(lines[i + 1])) continue
+
+    const headerCells = trimTrailingEmptyCells(splitTableRow(lines[i]))
+    if (headerCells.length < 2) continue
+
+    const delimiterCells = trimTrailingEmptyCells(splitTableRow(lines[i + 1]))
+    const repairedDelimiterCells = headerCells.map((_, index) => {
+      const cell = delimiterCells[index] ?? ''
+      return TABLE_DELIMITER_CELL.test(cell) ? cell : '---'
+    })
+
+    lines[i] = formatTableRow(headerCells)
+    lines[i + 1] = formatTableRow(repairedDelimiterCells)
+
+    let rowIndex = i + 2
+    while (rowIndex < lines.length && lines[rowIndex].includes('|')) {
+      const rowCells = trimTrailingEmptyCells(splitTableRow(lines[rowIndex]))
+      while (rowCells.length < headerCells.length) rowCells.push('')
+      lines[rowIndex] = formatTableRow(rowCells)
+      rowIndex++
+    }
+    i = rowIndex - 1
+  }
+
+  return lines.join('\n')
+}
 
 // ---- 渲染结果 LRU 缓存（历史消息 / 切换会话 / 滚动重渲染命中，避免重复解析）----
 const RENDER_CACHE_MAX = 64
@@ -173,9 +315,11 @@ export function renderMarkdown(text: string): string {
   if (cached !== undefined) return cached
 
   const mathBlocks = new Map<string, { math: string; display: boolean }>()
+  let processed = closeUnclosedMermaidFence(demoteUnclosedHtmlTable(text))
+  processed = repairMarkdownTables(processed)
 
   // 1. 保护 $$...$$ 块级公式
-  let processed = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
+  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
     const id = `PHM_KATEX_${mathBlocks.size}`
     mathBlocks.set(id, { math: math.trim(), display: true })
     return `PHMKATEXTOKEN${id}END`

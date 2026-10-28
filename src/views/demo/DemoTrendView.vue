@@ -85,61 +85,10 @@
       </el-tab-pane>
 
       <!-- Tab 2: 整机/系统趋势分析 -->
-      <el-tab-pane label="整机/系统趋势分析" name="sys">
-        <el-row :gutter="16">
-          <el-col :span="8">
-            <el-card style="height: calc(100vh - 290px); overflow-y: auto">
-              <template #header>
-                <div class="section-header">
-                  <span class="section-title"><el-icon><DataLine /></el-icon> 趋势项列表</span>
-                </div>
-              </template>
-              <div style="margin-bottom: 12px">
-                <PlaneSelector />
-              </div>
-              <el-empty v-if="currentTrends.length === 0" description="暂无趋势分析数据" :image-size="60" />
-              <div
-                v-for="tr in currentTrends"
-                :key="tr.id"
-                class="trend-item"
-                :class="{ active: selectedTrend?.id === tr.id }"
-                @click="selectedTrend = tr"
-              >
-                <div class="trend-name">{{ tr.name }}</div>
-                <div class="trend-meta">
-                  <span>对象：{{ tr.target }}</span>
-                  <span>统计量：{{ tr.statFunc }}</span>
-                </div>
-                <div class="trend-meta">
-                  <span>参数：{{ tr.param }}</span>
-                  <span v-if="tr.limit" style="color: #faad14">限值：{{ tr.limit }}</span>
-                </div>
-              </div>
-            </el-card>
-          </el-col>
-
-          <el-col :span="16">
-            <el-card style="height: calc(100vh - 290px); overflow-y: auto">
-              <template #header>
-                <span class="section-title"><el-icon><TrendCharts /></el-icon> 趋势折线图</span>
-              </template>
-              <el-empty v-if="!selectedTrend" description="请从左侧选择趋势项" :image-size="70" />
-              <template v-else>
-                <el-descriptions :column="3" border size="small" style="margin-bottom: 16px">
-                  <el-descriptions-item label="趋势名称">{{ selectedTrend.name }}</el-descriptions-item>
-                  <el-descriptions-item label="趋势对象">{{ selectedTrend.target }}</el-descriptions-item>
-                  <el-descriptions-item label="统计函数">{{ selectedTrend.statFunc }}</el-descriptions-item>
-                </el-descriptions>
-                <TimeSeriesChart
-                  :series-data="{ [selectedTrend.param]: selectedTrend.trendData }"
-                  :limits="selectedTrend.limit ? { [selectedTrend.param]: selectedTrend.limit } : {}"
-                  x-label="飞行架次"
-                  height="300px"
-                />
-              </template>
-            </el-card>
-          </el-col>
-        </el-row>
+      <el-tab-pane label="整机/系统趋势分析" name="sys" lazy>
+        <el-card class="inference-card">
+          <InstanceInferencePanel :instance-id="currentInstanceId" />
+        </el-card>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -148,22 +97,26 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useDemoAppStore } from '@/stores/demoAppStore'
+import { useTaskStore } from '@/stores/task'
 import PlaneSelector from '@/components/demo/PlaneSelector.vue'
 import TimeSeriesChart from '@/components/demo/TimeSeriesChart.vue'
-import { preventiveMaintenanceData, systemTrendData } from '@/mock/demo/trend'
+import InstanceInferencePanel from '@/components/inference/InstanceInferencePanel.vue'
+import { preventiveMaintenanceData } from '@/mock/demo/trend'
 
 const store = useDemoAppStore()
+const taskStore = useTaskStore()
 const activeTab = ref('pm')
 const pmSpecialty = ref('')
 const selectedPM = ref<any>(null)
-const selectedTrend = ref<any>(null)
 
 const allPM = computed(() => (preventiveMaintenanceData as any)[store.selectedPlaneId] || [])
 const filteredPM = computed(() => {
   if (!pmSpecialty.value) return allPM.value
   return allPM.value.filter((p: any) => p.specialty === pmSpecialty.value)
 })
-const currentTrends = computed(() => (systemTrendData as any)[store.selectedPlaneId] || [])
+const currentInstanceId = computed(
+  () => taskStore.currentTask?.instanceId || taskStore.tasks.find((task) => task.instanceId)?.instanceId || '',
+)
 
 function pmStatusType(s: string) {
   return s === 'normal' ? 'success' : s === 'warning' ? 'warning' : 'danger'
@@ -177,7 +130,6 @@ function pmProgressColor(s: string) {
 
 watch(() => store.selectedPlaneId, () => {
   selectedPM.value = null
-  selectedTrend.value = null
 })
 </script>
 
@@ -244,5 +196,10 @@ watch(() => store.selectedPlaneId, () => {
   color: #8c9ab0;
   text-align: right;
   margin-top: 2px;
+}
+
+.inference-card {
+  max-height: calc(100vh - 290px);
+  overflow-y: auto;
 }
 </style>

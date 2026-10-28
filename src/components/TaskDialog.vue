@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   ALGO_FAMILY_OPTIONS,
   ALGO_TASK_KIND_OPTIONS,
+  ALL_ALGO_LABEL,
   BASE_ALGO_LABEL,
   DEFAULT_HIGHLEVEL_ALGO,
   buildAlgoId,
+  listSelectableAlgos,
 } from '@/api/instance'
-import type { HighLevelAlgo, AlgoFamily, AlgoTaskKind } from '@/api/instance'
+import type { AlgoFamily, AlgoTaskKind } from '@/api/instance'
 
 const props = defineProps<{
   visible: boolean
@@ -19,7 +22,7 @@ const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void
   (
     e: 'confirm',
-    data: { name: string; description: string; algo: HighLevelAlgo },
+    data: { name: string; description: string; algo: string },
   ): void
 }>()
 
@@ -30,24 +33,47 @@ function buildDefaultName(): string {
   return `会话 ${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
 }
 
+/** 基础算法选择模式：基础模型 / 分析算法（类型×任务）/ 全部模型（平铺列表） */
+type AlgoMode = 'base' | 'analysis' | 'all'
+
 const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
   description: '',
-  /** 是否使用基础模型；true 时无需选择算法类型/任务类型 */
-  isBaseModel: true,
+  mode: 'base' as AlgoMode,
   family: 'dl' as AlgoFamily,
   taskKind: 'afd' as AlgoTaskKind,
+  /** 「全部模型」模式下选中的算法 id */
+  algoId: '',
 })
 
 const familyOptions = ALGO_FAMILY_OPTIONS
 const taskKindOptions = ALGO_TASK_KIND_OPTIONS
 const baseAlgoLabel = BASE_ALGO_LABEL
+const allAlgoLabel = ALL_ALGO_LABEL
 
-/** 根据当前选择推导算法 ID */
-const algo = computed<HighLevelAlgo>(() =>
-  form.isBaseModel ? DEFAULT_HIGHLEVEL_ALGO : buildAlgoId(form.family, form.taskKind),
-)
+/** 「全部模型」下拉数据（base_on=framework 的算法 id），懒加载 */
+const allAlgoOptions = ref<string[]>([])
+const allAlgoLoading = ref(false)
+
+async function loadAllAlgos() {
+  if (allAlgoOptions.value.length) return
+  allAlgoLoading.value = true
+  try {
+    allAlgoOptions.value = await listSelectableAlgos()
+  } catch {
+    ElMessage.error('获取算法列表失败')
+  } finally {
+    allAlgoLoading.value = false
+  }
+}
+
+/** 根据当前模式推导算法 ID */
+const algo = computed<string>(() => {
+  if (form.mode === 'base') return DEFAULT_HIGHLEVEL_ALGO
+  if (form.mode === 'analysis') return buildAlgoId(form.family, form.taskKind)
+  return form.algoId
+})
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入会话名称', trigger: 'blur' }],
@@ -61,13 +87,16 @@ watch(
   },
 )
 
-// 选择「基础模型」后重新切回分析类时，确保遗留的 family/taskKind 仍有效
+// 切换模式时：分析类确保 family/taskKind 有效；全部模型下拉时懒加载算法列表
 watch(
-  () => form.isBaseModel,
-  (isBase) => {
-    if (isBase) return
-    if (!familyOptions.some((o) => o.value === form.family)) form.family = 'dl'
-    if (!taskKindOptions.some((o) => o.value === form.taskKind)) form.taskKind = 'afd'
+  () => form.mode,
+  (m) => {
+    if (m === 'analysis') {
+      if (!familyOptions.some((o) => o.value === form.family)) form.family = 'dl'
+      if (!taskKindOptions.some((o) => o.value === form.taskKind)) form.taskKind = 'afd'
+    } else if (m === 'all') {
+      loadAllAlgos()
+    }
   },
 )
 
@@ -75,9 +104,10 @@ function handleClose() {
   emit('update:visible', false)
   form.name = ''
   form.description = ''
-  form.isBaseModel = true
+  form.mode = 'base'
   form.family = 'dl'
   form.taskKind = 'afd'
+  form.algoId = ''
   formRef.value?.clearValidate()
 }
 
@@ -85,6 +115,10 @@ async function handleSubmit() {
   try {
     await formRef.value?.validate()
   } catch {
+    return
+  }
+  if (form.mode === 'all' && !form.algoId) {
+    ElMessage.warning('请选择算法')
     return
   }
   emit('confirm', {
@@ -121,12 +155,13 @@ async function handleSubmit() {
 
       <el-form-item label="基础算法">
         <div class="algo-selector">
-          <el-select v-model="form.isBaseModel" style="width: 100%">
-            <el-option :label="baseAlgoLabel" :value="true" />
-            <el-option label="分析算法" :value="false" />
+          <el-select v-model="form.mode" style="width: 100%">
+            <el-option :label="baseAlgoLabel" value="base" />
+            <el-option label="分析算法" value="analysis" />
+            <el-option :label="allAlgoLabel" value="all" />
           </el-select>
 
-          <template v-if="!form.isBaseModel">
+          <template v-if="form.mode === 'analysis'">
             <el-select v-model="form.family" placeholder="请选择算法类型" style="width: 100%">
               <el-option
                 v-for="opt in familyOptions"
@@ -144,6 +179,17 @@ async function handleSubmit() {
               />
             </el-select>
           </template>
+
+          <el-select
+            v-else-if="form.mode === 'all'"
+            v-model="form.algoId"
+            placeholder="请选择算法"
+            style="width: 100%"
+            filterable
+            :loading="allAlgoLoading"
+          >
+            <el-option v-for="id in allAlgoOptions" :key="id" :label="id" :value="id" />
+          </el-select>
         </div>
       </el-form-item>
     </el-form>

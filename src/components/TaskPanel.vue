@@ -7,7 +7,6 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
 import { useChatStore } from '@/stores/chat'
 import { instanceApi } from '@/api/instance'
-import type { HighLevelAlgo } from '@/api/instance'
 import { workerApi } from '@/api/instance-worker'
 import TaskDialog from '@/components/TaskDialog.vue'
 import CsvPreview from '@/components/CsvPreview.vue'
@@ -471,7 +470,7 @@ function handleCreateTaskClick() {
 async function onTaskConfirm(data: {
   name: string
   description: string
-  algo: HighLevelAlgo
+  algo: string
 }) {
   const result = await taskStore.createTask({
     name: data.name,

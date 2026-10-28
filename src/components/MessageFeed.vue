@@ -455,6 +455,8 @@ function formatJson(obj: unknown) {
 .bubble-text {
   margin: 0;
   word-break: break-word;
+  max-width: 100%;
+  overflow-x: auto;
 }
 /* markdown 渲染输出块级元素间距 */
 .bubble-text :deep(p) {
@@ -475,10 +477,17 @@ function formatJson(obj: unknown) {
   border: 1px solid currentColor;
   padding: 6px 12px;
   text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
 }
 .bubble-text :deep(th) {
   font-weight: 600;
   background: rgba(128, 128, 128, 0.15);
+}
+.bubble-text :deep(hr) {
+  border: 0;
+  border-top: 1px solid #d4e3fb;
+  margin: 12px 0;
 }
 
 .markdown-body :deep(ol),

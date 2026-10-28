@@ -3,6 +3,7 @@
 // ============================================================
 
 import { createClient } from './client'
+import { algorithmApi } from './algorithm'
 import { API_PREFIX } from '@/config/endpoints'
 import type { InstanceResponse } from '@/types/entities'
 
@@ -23,11 +24,36 @@ export type HighLevelAlgo =
   | 'analysis_stat_fp'
   | 'analysis_stat_he'
   | 'analysis_stat_ta'
+  | 'analysis_dl_zyq01'
+  | 'analysis_dl_zyq02'
 
 export const DEFAULT_HIGHLEVEL_ALGO: HighLevelAlgo = 'framework'
 
 /** 基础模型（非分析类）的展示名 */
 export const BASE_ALGO_LABEL = '基础模型'
+
+/** 「全部模型」模式的展示名 */
+export const ALL_ALGO_LABEL = '全部模型'
+
+/**
+ * 「全部模型」模式的下拉数据源：列出所有可作为会话实例的算法
+ * （base_on === 'framework'），排除 framework 自身与各类系统算法。
+ * 结果按 id 排序，并做模块级缓存避免重复请求。
+ */
+let allAlgoIdsCache: string[] | null = null
+
+export async function listSelectableAlgos(): Promise<string[]> {
+  if (allAlgoIdsCache) return allAlgoIdsCache
+  const ids = await algorithmApi.listAlgorithms()
+  const details = await Promise.all(
+    ids.map((id) => algorithmApi.getAlgorithm(id).catch(() => null)),
+  )
+  allAlgoIdsCache = details
+    .filter((d) => d && d.base_on === 'framework')
+    .map((d) => d!.id)
+    .sort()
+  return allAlgoIdsCache
+}
 
 /**
  * 分析类算法的两个维度：
@@ -71,7 +97,7 @@ export function buildAlgoId(family: AlgoFamily, task: AlgoTaskKind): HighLevelAl
 
 export const instanceApi = {
   /** 启动一个算法实例（GET /highlevel），可指定基础算法 algo */
-  start(algo: HighLevelAlgo = DEFAULT_HIGHLEVEL_ALGO) {
+  start(algo: string = DEFAULT_HIGHLEVEL_ALGO) {
     return client.get<InstanceResponse>('/highlevel', { algo })
   },
 

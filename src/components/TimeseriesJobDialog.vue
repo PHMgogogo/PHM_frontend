@@ -11,7 +11,8 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/task'
 import { useTaskStore } from '@/stores/task'
-import { buildTimeseriesJobRequest } from '@/utils/timeseries'
+import { buildTimeseriesJobRequest, normalizeProperties } from '@/utils/timeseries'
+import PropertyPicker from '@/components/PropertyPicker.vue'
 import type { Sortie, TaskResponse } from '@/types/entities'
 
 const props = defineProps<{
@@ -21,8 +22,10 @@ const props = defineProps<{
   sortie: Sortie
   /** 当前飞行器机型（基础编码），作为请求体的 airplaneType（必填，须与查架次时一致） */
   modelCode: string
-  /** 时序页当前的属性候选，作为数据列 / 标签列的选项 */
-  properties: string[]
+  /** 列候选（时序页的属性候选，三方可达上万条）：数据列 / 标签列都在弹窗里直接挑 */
+  options: string[]
+  /** 打开时预填的列（时序页当前已选的属性），可为空 */
+  preset?: string[]
   startTime?: string
   endTime?: string
 }>()
@@ -59,10 +62,19 @@ const deviceOptions = [
   { label: 'GPU (CUDA)', value: 'GPU (CUDA)' },
 ]
 
-/** 属性候选去重去空，下拉顺序与用户查询时看到的一致 */
-const columns = computed(() => [...new Set(props.properties.map((s) => s.trim()).filter(Boolean))])
+/** 列候选去重去空，顺序与用户在时序页看到的一致 */
+const columns = computed(() => normalizeProperties(props.options))
 
 const selectedTask = computed(() => tasks.value.find((t) => t.task_id === selectedTaskId.value))
+
+/** 已选列的标签删除（点标签上的 ×） */
+function removeDataCol(name: string) {
+  selectedDataCols.value = selectedDataCols.value.filter((n) => n !== name)
+}
+
+function removeLabelCol(name: string) {
+  selectedLabelCols.value = selectedLabelCols.value.filter((n) => n !== name)
+}
 
 const submitting = ref(false)
 
@@ -81,11 +93,11 @@ watch(
     detach.value = true
     submitting.value = false
 
-    // 默认列：最后一列做标签、其余做输入（时序属性都是数值列，不存在 CSV 那种文本列限制）。
-    // 只有一个属性时不做「自己既是输入又是标签」的猜测，只预填输入列，标签留空由用户挑。
-    const all = columns.value
-    selectedLabelCols.value = all.length > 1 ? [all[all.length - 1]] : []
-    selectedDataCols.value = all.length > 1 ? all.slice(0, -1) : [...all]
+    // 预填：沿用时序页当前已选的属性（最后一列做标签、其余做输入）；页面没选就留空，
+    // 由用户在弹窗里直接挑列 —— 不再要求先去页面上把属性选好。
+    const preset = normalizeProperties(props.preset)
+    selectedLabelCols.value = preset.length > 1 ? [preset[preset.length - 1]] : []
+    selectedDataCols.value = preset.length > 1 ? preset.slice(0, -1) : [...preset]
 
     tasksLoading.value = true
     try {
@@ -205,35 +217,42 @@ async function handleConfirm() {
         </div>
       </el-form-item>
 
-      <!-- 列选项来自时序查询的属性，与是否已选会话无关，故不跟着会话选择做步骤门控 -->
+      <!-- 列候选可上万条，故用「按钮 + 虚拟列表抽屉」而不是下拉；已选列在按钮下平铺，
+           免得「到底选了哪些」只能进抽屉才看得到。 -->
       <el-form-item label="数据列" required>
-        <el-select
-          v-model="selectedDataCols"
-          multiple
-          filterable
-          collapse-tags
-          collapse-tags-tooltip
-          :max-collapse-tags="3"
-          placeholder="选择数据列"
-          style="width: 100%"
-        >
-          <el-option v-for="col in columns" :key="col" :label="col" :value="col" />
-        </el-select>
+        <div class="col-picker">
+          <PropertyPicker v-model="selectedDataCols" :options="columns" label="选择数据列" />
+          <div v-if="selectedDataCols.length" class="col-tags">
+            <el-tag
+              v-for="name in selectedDataCols"
+              :key="name"
+              size="small"
+              closable
+              @close="removeDataCol(name)"
+            >
+              {{ name }}
+            </el-tag>
+          </div>
+          <div v-else class="col-empty">未选择数据列</div>
+        </div>
       </el-form-item>
 
       <el-form-item label="标签列" required>
-        <el-select
-          v-model="selectedLabelCols"
-          multiple
-          filterable
-          collapse-tags
-          collapse-tags-tooltip
-          :max-collapse-tags="3"
-          placeholder="选择标签列"
-          style="width: 100%"
-        >
-          <el-option v-for="col in columns" :key="col" :label="col" :value="col" />
-        </el-select>
+        <div class="col-picker">
+          <PropertyPicker v-model="selectedLabelCols" :options="columns" label="选择标签列" />
+          <div v-if="selectedLabelCols.length" class="col-tags">
+            <el-tag
+              v-for="name in selectedLabelCols"
+              :key="name"
+              size="small"
+              closable
+              @close="removeLabelCol(name)"
+            >
+              {{ name }}
+            </el-tag>
+          </div>
+          <div v-else class="col-empty">未选择标签列</div>
+        </div>
       </el-form-item>
 
       <template v-if="isTrain">
@@ -291,6 +310,26 @@ async function handleConfirm() {
 
 .source-item {
   color: #6a7a90;
+}
+
+.col-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.col-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 72px;
+  overflow-y: auto;
+}
+
+.col-empty {
+  font-size: 12px;
+  color: #a7b0bd;
 }
 
 .el-form :deep(.el-form-item__label) {

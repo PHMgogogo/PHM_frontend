@@ -65,17 +65,19 @@ export function pickDeviceName(
 }
 
 /**
- * 本地分支可选的属性名 = /csv/overview 的 columnTypes 键去掉时间轴列。
+ * 本地分支可选的属性名 = /csv/overview 的 columnTypes 键。
  *
  * 用 columnTypes 而非 dataColumns：两者现为同一套数据库实际列名（后端已把元数据
  * 列名统一映射回实际列名），但 columnTypes 只含有类型元数据的列，天然滤掉无元数据的杂列。
+ *
+ * **不剔除时间轴列**（overview 的 timestampColumn，如 `field.time_since_cmd_s`）：
+ * 后端会把它当该表的时间轴、查询预览的 parameters 里也不返回它（并入 timestamps），
+ * 但「去训练 / 去推理」仍需要它作为数据列，故属性列表要一并列出供勾选。
  */
 export function propertyCandidates(
-  overview: Pick<CsvOverview, 'columnTypes' | 'timestampColumn'> | null | undefined,
+  overview: Pick<CsvOverview, 'columnTypes'> | null | undefined,
 ): string[] {
-  const types = overview?.columnTypes ?? {}
-  const ts = normalizeKey(overview?.timestampColumn ?? '')
-  return Object.keys(types).filter((k) => normalizeKey(k) !== ts)
+  return Object.keys(overview?.columnTypes ?? {})
 }
 
 /**

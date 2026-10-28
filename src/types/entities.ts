@@ -184,7 +184,7 @@ export interface CsvOverview {
   textColumns: string[]
   /** 列名 → SQL 类型；键与 dataColumns 同为数据库实际列名（同一套大小写） */
   columnTypes: Record<string, string>
-  /** 时间轴列名（如 timestamps），不应当作 paralist 提交 */
+  /** 时间轴列名（如 `field.time_since_cmd_s`）；查询预览里后端不当参数返回，但训练/推理仍可用作数据列 */
   timestampColumn: string
 }
 
@@ -269,6 +269,8 @@ export interface ModelResult {
   loss: number
   outputs: number[][]
   ids: number[]
+  description?: string
+  columns?: string[]
 }
 
 export interface ProgressCounter {

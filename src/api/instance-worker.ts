@@ -35,6 +35,38 @@ export function clearWorkerClient(instanceId: string) {
   clientCache.delete(instanceId)
 }
 
+/**
+ * 读取实例状态与最近一次训练/推理结果。
+ * - 生产网关直接按实例根路径路由：/{instanceId}/state/{n}
+ * - Vite 开发代理使用 /instance/{instanceId}/state/{n} 并去掉 /instance 前缀
+ * 优先尝试网关路径，失败后回退到开发代理路径。
+ */
+export async function getInstanceState(instanceId: string, n: number = 1) {
+  const encodedId = encodeURIComponent(instanceId)
+  const candidates = [`/${encodedId}`, `/instance/${encodedId}`]
+  let lastError: unknown
+
+  for (const baseURL of candidates) {
+    try {
+      const result = await createClient({ baseURL, timeout: 60000 }).get<StateResponse>(
+        `/state/${n}`,
+      )
+      if (
+        result &&
+        typeof result === 'object' &&
+        typeof result.state === 'string' &&
+        (Array.isArray(result.result) || result.epoch_progress !== undefined)
+      ) {
+        return result
+      }
+    } catch (e) {
+      lastError = e
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('读取实例状态失败')
+}
+
 // ---- API 函数 ----
 
 export const workerApi = {

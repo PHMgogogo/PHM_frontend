@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/task'
 import { instanceApi, DEFAULT_HIGHLEVEL_ALGO } from '@/api/instance'
-import type { HighLevelAlgo } from '@/api/instance'
 import { clearWorkerClient } from '@/api/instance-worker'
 import { opencodeApi } from '@/api/opencode'
 import { useChatStore, DEFAULT_MODEL_REF } from '@/stores/chat'
@@ -101,7 +100,7 @@ export const useTaskStore = defineStore('task', () => {
   // ---- 创建任务（多步编排） ----
 
   async function createTask(
-    data: { name: string; description: string; algo?: HighLevelAlgo },
+    data: { name: string; description: string; algo?: string },
   ): Promise<Task | null> {
     creating.value = true
     let instanceId = ''

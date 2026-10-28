@@ -25,6 +25,8 @@ const props = defineProps<{
   /** 正在重新拉取候选（刷新按钮的 loading 态） */
   refreshing?: boolean
   disabled?: boolean
+  /** 按钮与抽屉标题文案，默认「选择属性」 */
+  label?: string
 }>()
 
 const emit = defineEmits<{
@@ -142,13 +144,13 @@ function addPasted() {
   <div class="prop-picker">
     <el-button class="picker-btn" :disabled="disabled" @click="visible = true">
       <el-icon style="margin-right: 4px"><Search /></el-icon>
-      选择属性
+      {{ label || '选择属性' }}
       <span class="picker-count">{{ selected.length ? `已选 ${selected.length}` : '未选' }}</span>
     </el-button>
 
     <el-drawer
       v-model="visible"
-      title="选择属性"
+      :title="label || '选择属性'"
       direction="rtl"
       :size="520"
       append-to-body

@@ -305,18 +305,15 @@ function rowKey(row: TimeseriesRow, idx: number) {
   return `${row.time}-${(paged.value.page - 1) * pageSize.value + idx}`
 }
 
-// ---- 训练 / 推理（仅三方单机） ----
-// 本地与三方的入口、弹窗、请求体完全一致：本页查询用的 sortieKey + 属性 + 起止时间就是取数条件，
+// ---- 训练 / 推理（本地与三方同一套） ----
+// 定位信息（sortieKey + 起止时间）沿用本页，**用哪些列在弹窗里直接选**（候选即本页的属性候选）；
 // 后端按 sortieKey 自己定向到本地 CSV 表或三方平台（见 buildTimeseriesJobRequest）。
 // 「数据管理」里的按 CSV 表训练那条链路已下线，避免同一件事有两个入口、两套请求体。
 const jobDialogVisible = ref(false)
 const jobMode = ref<'train' | 'infer'>('train')
 
 function openJob(mode: 'train' | 'infer') {
-  if (!paralist.value.length) {
-    ElMessage.warning('请先选择至少一个属性，训练 / 推理按所选属性取数')
-    return
-  }
+  // 取数用的列改到弹窗里直接选，页面上的属性选择只当预填，故这里不再拦「一个属性都没选」
   jobMode.value = mode
   jobDialogVisible.value = true
 }
@@ -398,18 +395,18 @@ function timeText(v?: string | null) {
         </el-button>
         <el-divider direction="vertical" />
         <!-- 本地 / 三方同一套入口：取数条件就是本页的查询条件 -->
-        <el-tooltip content="以当前查询的架次 / 属性 / 时间范围作为训练数据" placement="top">
+        <el-tooltip content="以当前架次与时间范围取数，列在弹窗里直接选" placement="top">
           <el-button
             type="primary"
             plain
-            :disabled="loading || !paralist.length"
+            :disabled="loading"
             @click="openJob('train')"
           >
             去训练
           </el-button>
         </el-tooltip>
-        <el-tooltip content="以当前查询的架次 / 属性 / 时间范围作为推理输入" placement="top">
-          <el-button plain :disabled="loading || !paralist.length" @click="openJob('infer')">
+        <el-tooltip content="以当前架次与时间范围取数，列在弹窗里直接选" placement="top">
+          <el-button plain :disabled="loading" @click="openJob('infer')">
             去推理
           </el-button>
         </el-tooltip>
@@ -471,7 +468,8 @@ function timeText(v?: string | null) {
       :mode="jobMode"
       :sortie="sortie"
       :model-code="modelCode"
-      :properties="paralist"
+      :options="candidates"
+      :preset="paralist"
       :start-time="startTime"
       :end-time="endTime"
       @navigate-to-tasks="emit('navigate-to-tasks')"
