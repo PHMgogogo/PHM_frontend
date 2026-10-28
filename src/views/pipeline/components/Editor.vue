@@ -15,7 +15,13 @@
             <div class="help-content help-empty" v-else>{{ _('Click to load help') }}</div>
         </el-popover>
     </div>
-    <el-form v-if="formData && nodeSchema" :model="formData" :label-width="formData && nodeSchema ? 'auto' : '120px'"
+    <LocalTimeseriesNodeEditor
+        v-if="formData?.node_type === 'LocalTimeseriesInputNode'"
+        :node="formData"
+        :aircraft-number="props.aircraftNumber ?? ''"
+        :model-code="props.modelCode ?? ''"
+    />
+    <el-form v-else-if="formData && nodeSchema" :model="formData" :label-width="formData && nodeSchema ? 'auto' : '120px'"
         label-position="left">
         <el-form-item :label="_(nodeSchema?.properties.title.title)">
             <el-input v-model="formData.title" :placeholder="_('No Title')" />
@@ -73,8 +79,19 @@
                 <el-select :model-value="formData.in_parameters[key]?.constant"
                     @change="(val: string) => setValueRefConstant(key, val)"
                     :placeholder="String(nodeSchema.$defs.InParameters.properties[key].default?.constant ?? '')">
-                    <el-option v-for="instance in instances" :key="instance.id" :label="instance.id"
-                        :value="instance.id" />
+                    <el-option
+                        v-for="instance in instances"
+                        :key="instance.id"
+                        :label="instanceOptionLabel(instance)"
+                        :value="instance.id"
+                    >
+                        <div class="instance-option">
+                            <span class="instance-option-name">{{ instance.taskName || '未关联会话' }}</span>
+                            <span class="instance-option-meta">
+                                {{ instanceStatusText(instance.status) }} · {{ instance.id }}
+                            </span>
+                        </div>
+                    </el-option>
                 </el-select>
             </el-form-item>
             <el-form-item v-else-if="key == 'jinja_prompt'"
@@ -247,10 +264,12 @@ import { taskApi } from '@/api/task';
 import { ElInput } from 'element-plus';
 import { _ } from '../i18n'
 import { QuestionFilled, Loading, EditPen } from '@element-plus/icons-vue'
+import LocalTimeseriesNodeEditor from './LocalTimeseriesNodeEditor.vue'
 const props = defineProps<{
     data?: NodeData
     graphConfigData?: LogicFlow.GraphConfigData
     aircraftNumber?: string
+    modelCode?: string
 }>()
 
 const selectNodeHelp = inject<(nodeType: string) => void>('selectNodeHelp', () => {})
@@ -502,14 +521,33 @@ function setOutParamList(key: string, val: string[]) {
     }
 }
 const instances = ref<any[]>()
+function instanceStatusText(status?: string) {
+    return {
+        RUNNING: '运行中',
+        STOP: '已停止',
+        EXITED: '已退出',
+        NOT_READY: '未就绪',
+    }[status ?? ''] ?? (status || '状态未知')
+}
+function instanceOptionLabel(instance: any) {
+    const taskName = instance.taskName || '未关联会话'
+    const shortId = String(instance.id || '').slice(0, 8)
+    return `${taskName} · ${instanceStatusText(instance.status)} · ${shortId}`
+}
 // 只加载属于当前 aircraft_id 的实例：先取该飞机的 instance_id 列表（tasks 表），再过滤全量实例
 async function loadInstancesForAircraft(): Promise<any[]> {
     const all = await getInstances()
     if (!props.aircraftNumber) return all ?? []
     try {
         const { tasks } = await taskApi.listByAircraft(props.aircraftNumber)
-        const allowed = new Set((tasks ?? []).map(t => t.instance_id).filter(Boolean))
-        return (all ?? []).filter(inst => allowed.has(inst.id))
+        const taskNameByInstance = new Map(
+            (tasks ?? [])
+                .filter(t => t.instance_id)
+                .map(t => [t.instance_id, t.name]),
+        )
+        return (all ?? [])
+            .filter(inst => taskNameByInstance.has(inst.id))
+            .map(inst => ({ ...inst, taskName: taskNameByInstance.get(inst.id) }))
     } catch {
         // 查询失败时回退为全量实例，避免阻塞编辑
         return all ?? []
@@ -741,5 +779,23 @@ defineExpose({ updateNode, formData })
     display: block;
     padding: 10px;
     overflow-x: auto;
+}
+
+.instance-option {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.35;
+}
+
+.instance-option-name {
+    color: #0d1f3c;
+    font-weight: 600;
+}
+
+.instance-option-meta {
+    color: #8a96a8;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
 }
 </style>

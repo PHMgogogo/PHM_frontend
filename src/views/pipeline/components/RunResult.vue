@@ -6,6 +6,7 @@ import texmath from 'markdown-it-texmath'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { _ } from '../i18n'
+import PipelinePredictionResult from './PipelinePredictionResult.vue'
 
 const md = MarkdownIt().use(texmath, {
   engine: katex,
@@ -18,6 +19,21 @@ export interface RunResultData {
   data: Record<string, any[]>
   state: Record<string, any>
   alarm?: { cols: string[]; range: [number, number]; message: string; level: number; threshold: number }[]
+  meta?: {
+    mode?: string
+    aircraft_number?: string
+    sortie_number?: string
+    data_cols?: string[]
+    label_cols?: string[]
+    prediction_cols?: string[]
+    timestamps?: number[]
+    warnings?: string[]
+    inference?: {
+      instance_id?: string
+      loss?: number
+      row_count?: number
+    }
+  }
 }
 
 export interface RunErrorData {
@@ -73,6 +89,7 @@ onUnmounted(() => {
 
 const dataPage = ref(1)
 const dataPageSize = 20
+const isTimeseriesInference = computed(() => props.runResult?.meta?.mode === 'timeseries_inference')
 
 const dataTableKeys = computed(() => {
   if (!props.runResult?.data) return []
@@ -152,7 +169,11 @@ const markdownHTML = computed(() => {
     <div v-if="runResult" class="result-pane">
       <!-- Data -->
       <template v-if="activeTab === 'data'">
-        <template v-if="dataTableKeys.length">
+        <PipelinePredictionResult
+          v-if="isTimeseriesInference && runResult"
+          :result="runResult"
+        />
+        <template v-else-if="dataTableKeys.length">
           <el-table :data="pagedDataRows" size="small" border stripe style="width: 100%">
             <el-table-column
               v-for="col in dataTableColumns"

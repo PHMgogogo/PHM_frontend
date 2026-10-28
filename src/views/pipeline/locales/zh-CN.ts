@@ -68,6 +68,7 @@ export const zhCN: Record<string, string> = {
 
   // NodeType
   'TextCsvInputNode': '表格输入',
+  'LocalTimeseriesInputNode': '本机时序数据',
   'OutputNode': '输出',
   'AddNode': '相加',
   'MeanNode': '行均值',
@@ -84,7 +85,7 @@ export const zhCN: Record<string, string> = {
   'OLSRegressionNode': '线性回归',
   'DemingRegressionNode': '戴明回归',
   'ShewharNode': '休哈特控制图',
-  'InferenceNode': '推理',
+  'InferenceNode': '模型推理',
   'TrainNode': '训练',
   'LLMNode': '大模型调用',
   'RoundNode': '舍入',
@@ -106,6 +107,7 @@ export const zhCN: Record<string, string> = {
   'STATE': '状态',
   'REGRESSION': '回归',
   'REMOTE': '远程调用',
+  'MODEL': '模型推理',
   'ALARM': '告警',
 
   // Parameter
@@ -135,7 +137,7 @@ export const zhCN: Record<string, string> = {
   'Sigma': '标准差',
   'Values': '状态值列表',
   'Code': '代码',
-  'Instance': '实例',
+  'Instance': '算法实例',
   'Raw Data': '报警数据',
   'Epoch': '训练轮数',
   'Learning Rate': '学习率',

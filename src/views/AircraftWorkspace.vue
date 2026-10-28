@@ -237,6 +237,7 @@ async function onMenuChange(key: string) {
         <PipelineWorkspace
           v-else-if="activeMenu === 'pipeline'"
           :aircraft-number="aircraftNumber"
+          :model-code="currentModelCode"
         />
         <TaskPanel
           v-else-if="activeMenu === 'task'"

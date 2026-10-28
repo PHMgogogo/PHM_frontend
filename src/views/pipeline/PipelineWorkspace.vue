@@ -32,6 +32,7 @@ import {
 
 const props = defineProps<{
   aircraftNumber: string
+  modelCode: string
 }>()
 
 // ---- 绑定业务：pipeline 在 open_pipeline 后端的存储 id 为 {aircraft_id}_{pipelines_id} ----
@@ -304,6 +305,8 @@ function onEdgeAdded(data: LogicFlow.EdgeData) {
   updateOrder()
   canvasRef.value?.updateNodeProperties(data.sourceNodeId, sourceNode.properties || {})
   canvasRef.value?.updateNodeProperties(data.targetNodeId, targetNode.properties || {})
+  const chain = inspectTimeseriesInferenceChain()
+  if (chain && !chain.error) syncTimeseriesInferenceNodes(chain)
 }
 
 function onEdgeDeleted(data: LogicFlow.EdgeData) {
@@ -364,8 +367,81 @@ async function onNodeDeleted(data: LogicFlow.NodeData) {
   }
 }
 
+interface TimeseriesInferenceChain {
+  source: { id?: string; properties?: any }
+  inference: { id?: string; properties?: any }
+  output: { id?: string; properties?: any }
+  error?: string
+}
+
+function inspectTimeseriesInferenceChain(): TimeseriesInferenceChain | null {
+  const nodes = graphConfigData.value.nodes || []
+  const sources = nodes.filter(n => n.properties?.data?.node_type === 'LocalTimeseriesInputNode')
+  if (sources.length === 0) return null
+
+  const inferences = nodes.filter(n => n.properties?.data?.node_type === 'InferenceNode')
+  const outputs = nodes.filter(n => n.properties?.data?.node_type === 'OutputNode')
+  if (sources.length !== 1 || inferences.length !== 1 || outputs.length !== 1) {
+    return {
+      source: sources[0],
+      inference: inferences[0],
+      output: outputs[0],
+      error: '推理流水线必须且只能包含一个本机时序数据节点、一个模型推理节点和一个输出节点',
+    }
+  }
+  if (nodes.length !== 3) {
+    return {
+      source: sources[0],
+      inference: inferences[0],
+      output: outputs[0],
+      error: '推理流水线只能包含本机时序数据、模型推理和输出三个节点',
+    }
+  }
+
+  const source = sources[0]
+  const inference = inferences[0]
+  const output = outputs[0]
+  const sourceData = source.properties?.data
+  const inferenceData = inference.properties?.data
+  if (!sourceData?.next?.includes(inference.id) || !inferenceData?.prev?.includes(source.id)) {
+    return {
+      source,
+      inference,
+      output,
+      error: '推理流水线连接必须为：本机时序数据 → 模型推理 → 输出',
+    }
+  }
+  if (!inferenceData?.next?.includes(output.id) || !output.properties?.data?.prev?.includes(inference.id)) {
+    return {
+      source,
+      inference,
+      output,
+      error: '推理流水线连接必须为：本机时序数据 → 模型推理 → 输出',
+    }
+  }
+  return { source, inference, output }
+}
+
+function syncTimeseriesInferenceNodes(chain: TimeseriesInferenceChain): string | null {
+  const sourceData = chain.source.properties?.data
+  const inferenceData = chain.inference.properties?.data
+  const dataCols = sourceData?.in_parameters?.data_cols ?? []
+  const labelCols = sourceData?.in_parameters?.label_cols ?? []
+  const columns = [...new Set([...dataCols, ...labelCols].filter(Boolean))]
+  if (!columns.length) return '本机时序数据节点未选择数据列或标签列'
+  if (!labelCols.length) return '本机时序数据节点未选择标签列'
+  if (!inferenceData?.in_parameters?.instance?.constant) return '模型推理节点尚未选择算法实例'
+
+  sourceData.write_data = columns
+  inferenceData.read_data = columns
+  inferenceData.write_data = labelCols.map((name: string) => `预测_${name}`)
+  return null
+}
+
 function onNodeSaved(data: { id: string; properties: Record<string, any> }) {
   canvasRef.value?.updateNodeProperties(data.id, data.properties)
+  const chain = inspectTimeseriesInferenceChain()
+  if (chain && !chain.error) syncTimeseriesInferenceNodes(chain)
 }
 
 const runResult = ref<{ output: string[]; performance: any[]; data: Record<string, any[]>; state: Record<string, any> } | null>(null)
@@ -377,6 +453,19 @@ const activeTab = ref('data')
 const outputViewMode = ref<'plain' | 'markdown'>('plain')
 
 async function onRun() {
+  const inferenceChain = inspectTimeseriesInferenceChain()
+  if (inferenceChain) {
+    if (inferenceChain.error) {
+      ElMessage.error(inferenceChain.error)
+      return
+    }
+    const syncError = syncTimeseriesInferenceNodes(inferenceChain)
+    if (syncError) {
+      ElMessage.error(syncError)
+      return
+    }
+  }
+
   running.value = true
   runResult.value = null
   runError.value = null
@@ -632,7 +721,8 @@ onMounted(async () => {
                 </div>
               </template>
               <Editor ref="editorRef" :data="selectedNode?.properties?.data" :graph-config-data="graphConfigData"
-                :aircraft-number="props.aircraftNumber" @save="onNodeSaved"></Editor>
+                :aircraft-number="props.aircraftNumber" :model-code="props.modelCode"
+                @save="onNodeSaved"></Editor>
             </el-card>
           </template>
           <template v-else>
