@@ -2,7 +2,7 @@
 
 基于 Vue 3 的 PHM（故障预测与健康管理）开放式架构平台前端。围绕 **机型 → 单机 → 架次 → 构型项目 → CSV 数据 → 算法实例 → 会话任务** 的领域模型，提供构型管理、飞行数据管理、算法训练 / 推理、LLM 流式对话、可配置数据看板与知识库管理等能力，并内置一套完整的军用飞机 PHM 业务演示。
 
-> 平台前端通过 Vite 开发代理对接 **五个后端服务**（业务主后端、算法实例 Worker、任务/展示服务、OpenCode 对话服务、文档检索服务），所有业务数据均来自真实后端；仅工作区内的 6 个演示页签使用本地 Mock 数据。
+> 平台前端通过 Vite 开发代理对接 **五个后端服务**（业务主后端、算法实例 Worker、任务/展示服务、OpenCode 对话服务、文档检索服务），业务页面数据均来自真实后端；仅工作区内剩余 5 个演示页签使用本地 Mock 数据。
 
 ---
 
@@ -55,7 +55,7 @@ npm run test:e2e
 npm run preview
 ```
 
-> ⚠️ 开发模式下，前端依赖五个后端服务（见 [后端服务与代理](#后端服务与代理)）。若对应服务未启动，相关页面会出现请求失败；工作区内的 6 个演示页签为纯前端 Mock，无需任何后端即可浏览。
+> ⚠️ 开发模式下，前端依赖五个后端服务（见 [后端服务与代理](#后端服务与代理)）。若对应服务未启动，相关页面会出现请求失败；工作区内的 5 个演示页签为纯前端 Mock，无需任何后端即可浏览。
 
 ---
 
@@ -112,7 +112,7 @@ src/
 │   ├── MonitorView.vue        # 数据展示（可配置看板）
 │   ├── DocumentView.vue       # 知识中心（文档 / 检索 / Agent）
 │   ├── ApiDocsView.vue        # 算法实例接口文档（Scalar）
-│   └── demo/                  # 6 个 PHM 演示页（纯 Mock）
+│   └── demo/                  # 5 个 PHM 演示页（纯 Mock）
 ├── components/
 │   ├── SideNav.vue, WorkspaceSidebar.vue, AircraftCard.vue, AddAircraftDialog.vue
 │   ├── ChatPanel.vue, MessageFeed.vue     # 对话
@@ -121,6 +121,8 @@ src/
 │   ├── SortieDialog.vue                   # 架次新增（架次查询页）
 │   ├── SortieTimeSeriesPanel.vue, TimeseriesJobDialog.vue, PropertyPicker.vue
 │   │                                      # 时序查询 / 去训练去推理 / 属性选择抽屉
+│   ├── TrainedModelPanel.vue              # 模型管理
+│   ├── DiagnosisWorkspace.vue             # 增强诊断三栏工作台
 │   ├── TrainingDialog.vue, InferingDialog.vue   # （已下线）按 CSV 表训练 / 推理，暂无引用
 │   ├── ConfigForceGraph.vue               # 构型力导向图（D3）
 │   ├── knowledge/                         # 知识中心文档、检索、Agent、来源与会话组件
@@ -223,8 +225,9 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 | 🗂️ 会话管理 | [TaskPanel](src/components/TaskPanel.vue) | 真实后端 | 会话 / 实例 / 训练推理状态 |
 | 📦 数据管理 | [DataPanel](src/components/DataPanel.vue) | 真实后端 | CSV 表上传（**仅本地单机**） |
 | 💬 当前对话 | [ChatPanel](src/components/ChatPanel.vue) | OpenCode | LLM 流式对话 |
+| 🧠 模型管理 | [TrainedModelPanel](src/components/TrainedModelPanel.vue) | 真实后端 | 训练持久化模型的架次 / 算法 / 备注管理 |
 | 📡 实时监控 | DemoRealtimeView | Mock | 关键参数看板 + 告警 |
-| 🩺 增强诊断 | DemoDiagnosisView | Mock | 飞参判读 + 地面综合诊断 |
+| 🩺 增强诊断 | [DiagnosisWorkspace](src/components/DiagnosisWorkspace.vue) | 真实后端 | 架次 → 已保存模型 → 实例诊断结果 |
 | ❤️ 健康评估 | DemoHealthView | Mock | 健康树 + 隐身评估 + 放飞支持 |
 | 📈 趋势分析 | DemoTrendView | Mock | 到检信息 + 整机 / 系统趋势 |
 | 🔮 故障预测 | DemoPredictionView | Mock | 寿命监控 + 故障风险预测 |
@@ -235,7 +238,12 @@ SYSTEM ──► SUBSYSTEM ──► EQUIPMENT / LRU
 > CSV 表绑定。训练 / 推理不在「数据管理」而在「时序数据查询」页，本地与三方同一套（见 § 2.4）。
 > 本地单机的架次列表里若混有三方架次（同机号多源），那些行同样不出本地 CSV 写入口。
 
-> 前 3 项为真实业务，后 6 项为**纯前端 Mock 演示**（围绕 J-20 有人机 P001–P004、无人机-A P005–P006 的完整 PHM 业务闭环），不调用任何后端。
+模型管理是工作台独立菜单：训练时必须填写模型名称，训练成功后后端调用实例 `/save`
+把权重归档到 `data/analysis_models/<instance_id>/<model_id>/`，同时登记所属架次、
+机号、机型、算法/实例、训练数据表与时间范围、列集合、备注、版本和保存时间。
+模型支持下载、重命名、修改备注与删除。
+
+> 会话、数据、时序查询、模型管理与增强诊断使用真实后端；其余 5 项为**纯前端 Mock 演示**（围绕 J-20 有人机 P001–P004、无人机-A P005–P006 的 PHM 业务闭环），不调用任何后端。
 
 #### 2.1 会话管理（[TaskPanel](src/components/TaskPanel.vue)）
 

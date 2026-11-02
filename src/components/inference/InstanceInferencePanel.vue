@@ -3,7 +3,7 @@
     <div class="panel-head">
       <div class="panel-title">
         <el-icon><TrendCharts /></el-icon>
-        <span>实例推理结果</span>
+        <span>{{ title || '实例推理结果' }}</span>
         <span v-if="instanceId" class="instance-id">{{ instanceId }}</span>
       </div>
       <div class="panel-actions">
@@ -33,6 +33,7 @@
         :key="`${instanceId}-${index}-${result.loss}`"
         :result="result"
         :index="index"
+        :initial-view-mode="initialViewMode"
       />
     </div>
   </div>
@@ -47,6 +48,8 @@ import InferenceResultItem from './InferenceResultItem.vue'
 
 const props = defineProps<{
   instanceId: string
+  title?: string
+  initialViewMode?: 'table' | 'chart'
 }>()
 
 const state = ref<StateResponse | null>(null)

@@ -377,6 +377,12 @@ export interface TimeseriesJobRequest {
   sortieId: string
   /** 机号：仅作补充，带上无副作用 */
   aircraftNumber?: string
+  /** 架次号，训练持久化模型时用于模型管理展示 */
+  sortieNumber?: string
+  /** 飞行日期，训练持久化模型时用于模型管理展示 */
+  flightDate?: string
+  /** 数据来源类型，训练持久化模型时用于模型管理展示 */
+  sourceType?: 'local' | 'external'
   /** 取数时间范围，留空由后端按架次自身起止推算（与 query-timeseries 一致） */
   startTime?: string
   endTime?: string
@@ -392,6 +398,45 @@ export interface TimeseriesJobRequest {
   learning_rate?: number
   device?: 'cpu' | 'cuda'
   detach?: boolean
+  /** 发起训练/推理的会话 */
+  task_id?: number
+  task_name?: string
+  /** 训练成功后持久化为模型时填写 */
+  model_name?: string
+  model_description?: string
+}
+
+/** 训练后持久化的业务模型（GET /api/analysis/models） */
+export interface TrainedModel {
+  model_id: number
+  name: string
+  aircraft_number: string
+  model_code: string
+  sortie_key: string
+  sortie_number: string
+  flight_date: string
+  source_type: string
+  data_table_name: string
+  data_range_start: string
+  data_range_end: string
+  data_columns: string[]
+  label_columns: string[]
+  instance_id: string
+  task_id: number | null
+  task_name: string
+  algorithm_id: string
+  algorithm_name: string
+  path: string
+  description: string
+  version: string
+  file_size: number
+  time: string
+}
+
+/** POST /api/tasks/train-timeseries 成功后的持久化响应 */
+export interface TimeseriesTrainResponse {
+  result: ModelResult[]
+  model: TrainedModel
 }
 
 /** 前端任务实体（camelCase） */

@@ -12,10 +12,14 @@ import type {
   TrainTaskRequest,
   InferTaskRequest,
   TimeseriesJobRequest,
+  TimeseriesTrainResponse,
+  ModelResult,
   ApiResponse,
 } from '@/types/entities'
 
 const client = createClient({ baseURL: API_PREFIX.TASK })
+/** 同步训练需要等待完整训练 + 模型保存，不能沿用普通接口的 15 秒超时。 */
+const jobClient = createClient({ baseURL: API_PREFIX.TASK, timeout: 30 * 60 * 1000 })
 
 export const taskApi = {
   /** 获取全部任务 */
@@ -77,12 +81,11 @@ export const taskApi = {
    * 数据定位字段与 /csv/query-timeseries 完全同源（见 TimeseriesJobRequest）。
    */
   trainWithTimeseries(data: TimeseriesJobRequest) {
-    return client.post<ApiResponse>('/tasks/train-timeseries', data)
+    return jobClient.post<TimeseriesTrainResponse>('/tasks/train-timeseries', data)
   },
 
   /** 以「时序数据查询」为数据源的推理，入口与入参同 trainWithTimeseries（少 epoch / learning_rate） */
   inferWithTimeseries(data: TimeseriesJobRequest) {
-    return client.post<ApiResponse>('/tasks/infer-timeseries', data)
+    return jobClient.post<ModelResult[]>('/tasks/infer-timeseries', data)
   }
 }
-

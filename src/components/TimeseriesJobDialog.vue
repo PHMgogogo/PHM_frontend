@@ -11,7 +11,11 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/task'
 import { useTaskStore } from '@/stores/task'
-import { buildTimeseriesJobRequest, normalizeProperties } from '@/utils/timeseries'
+import {
+  buildTimeseriesJobRequest,
+  extractPersistedModel,
+  normalizeProperties,
+} from '@/utils/timeseries'
 import PropertyPicker from '@/components/PropertyPicker.vue'
 import type { Sortie, TaskResponse } from '@/types/entities'
 
@@ -28,6 +32,8 @@ const props = defineProps<{
   preset?: string[]
   startTime?: string
   endTime?: string
+  /** 当前架次是否来自第三方平台 */
+  external?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -39,8 +45,10 @@ const emit = defineEmits<{
 const taskStore = useTaskStore()
 
 const isTrain = computed(() => props.mode === 'train')
-const title = computed(() => (isTrain.value ? '基于时序数据的训练配置' : '基于时序数据的推理配置'))
-const submitText = computed(() => (isTrain.value ? '开始训练' : '开始推理'))
+const title = computed(() =>
+  isTrain.value ? '训练并保存模型' : '基于时序数据的推理配置',
+)
+const submitText = computed(() => (isTrain.value ? '开始训练并保存' : '开始推理'))
 
 // ---- 会话（算法实例的载体） ----
 const tasks = ref<TaskResponse[]>([])
@@ -55,7 +63,8 @@ const epoch = ref(10)
 const batchSize = ref(32)
 const learningRate = ref(0.001)
 const device = ref<'CPU' | 'GPU (CUDA)'>('CPU')
-const detach = ref(true)
+const modelName = ref('')
+const modelDescription = ref('')
 
 const deviceOptions = [
   { label: 'CPU', value: 'CPU' },
@@ -90,7 +99,8 @@ watch(
     batchSize.value = 32
     learningRate.value = 0.001
     device.value = 'CPU'
-    detach.value = true
+    modelName.value = ''
+    modelDescription.value = ''
     submitting.value = false
 
     // 预填：沿用时序页当前已选的属性（最后一列做标签、其余做输入）；页面没选就留空，
@@ -143,6 +153,10 @@ async function handleConfirm() {
     ElMessage.warning('请至少选择一列标签列')
     return
   }
+  if (isTrain.value && !modelName.value.trim()) {
+    ElMessage.warning('请填写模型名称，训练成功后将按此名称保存')
+    return
+  }
 
   const request = buildTimeseriesJobRequest({
     sortie: props.sortie,
@@ -157,16 +171,29 @@ async function handleConfirm() {
     epoch: epoch.value,
     learningRate: learningRate.value,
     device: device.value === 'GPU (CUDA)' ? 'cuda' : 'cpu',
-    detach: detach.value,
+    detach: !isTrain.value,
+    taskId: task.task_id,
+    taskName: task.name,
+    modelName: isTrain.value ? modelName.value : undefined,
+    modelDescription: isTrain.value ? modelDescription.value : undefined,
+    sourceType: props.external ? 'external' : 'local',
   })
 
   submitting.value = true
   try {
-    if (isTrain.value) await taskApi.trainWithTimeseries(request)
-    else await taskApi.inferWithTimeseries(request)
-    ElMessage.success(
-      isTrain.value ? '训练已启动，请前往"会话管理"查看进度' : '推理已启动，请前往"会话管理"查看结果',
-    )
+    if (isTrain.value) {
+      const response = await taskApi.trainWithTimeseries(request)
+      const savedModel = extractPersistedModel(response)
+      if (!savedModel) {
+        throw new Error(
+          '后端未返回模型登记信息，请确认 entity 服务已更新并重启后重试',
+        )
+      }
+      ElMessage.success(`训练完成，模型“${savedModel.name}”已保存到模型管理`)
+    } else {
+      await taskApi.inferWithTimeseries(request)
+      ElMessage.success('推理已启动，请前往"会话管理"查看结果')
+    }
     emit('success')
     emit('update:modelValue', false)
   } catch (e) {
@@ -216,6 +243,27 @@ async function handleConfirm() {
           <a class="hint-link" @click="handleNavigateToTasks">前往会话管理</a>可新建会话
         </div>
       </el-form-item>
+
+      <template v-if="isTrain">
+        <el-form-item label="模型名称" required>
+          <el-input
+            v-model="modelName"
+            placeholder="例如：20011 架次A12 涡扇 RUL 模型"
+            maxlength="255"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="模型备注">
+          <el-input
+            v-model="modelDescription"
+            type="textarea"
+            :rows="2"
+            placeholder="可记录训练目的、参数或适用场景"
+            maxlength="2000"
+            show-word-limit
+          />
+        </el-form-item>
+      </template>
 
       <!-- 列候选可上万条，故用「按钮 + 虚拟列表抽屉」而不是下拉；已选列在按钮下平铺，
            免得「到底选了哪些」只能进抽屉才看得到。 -->
@@ -275,7 +323,9 @@ async function handleConfirm() {
       </el-form-item>
 
       <div class="tip-line">
-        取数属性 = 数据列 ∪ 标签列；时间留空时由后端按该架次的起止时间取数
+        {{ isTrain
+          ? '训练完成后会自动保存模型权重，并登记到工作台左侧的“模型管理”'
+          : '推理只使用当前实例已加载的模型，不会新增模型；如需保存新模型请使用“去训练”' }}
       </div>
     </el-form>
 

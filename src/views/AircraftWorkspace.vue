@@ -14,9 +14,10 @@ import TaskPanel from '@/components/TaskPanel.vue'
 import DataPanel from '@/components/DataPanel.vue'
 import SortieQueryPanel from '@/components/SortieQueryPanel.vue'
 import SortieTimeSeriesPanel from '@/components/SortieTimeSeriesPanel.vue'
+import TrainedModelPanel from '@/components/TrainedModelPanel.vue'
+import DiagnosisWorkspace from '@/components/DiagnosisWorkspace.vue'
 import type { Sortie } from '@/types/entities'
 import DemoRealtimeView from '@/views/demo/DemoRealtimeView.vue'
-import DemoDiagnosisView from '@/views/demo/DemoDiagnosisView.vue'
 import DemoHealthView from '@/views/demo/DemoHealthView.vue'
 import DemoTrendView from '@/views/demo/DemoTrendView.vue'
 import DemoPredictionView from '@/views/demo/DemoPredictionView.vue'
@@ -33,6 +34,7 @@ import trendIcon from '@/assets/trend.svg'
 import predictionIcon from '@/assets/predict.svg'
 import maintenanceIcon from '@/assets/maintenance.svg'
 import pipelineIcon from '@/assets/pipeline.svg'
+import modelIcon from '@/assets/model.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -73,6 +75,7 @@ const allWorkspaceMenus = [
   // 时序数据查询与架次查询同级：从架次查询点某行跳入，也可从菜单直接进（需先选架次）
   { key: 'timeseries', svg: sortieIcon, title: '时序数据查询' },
   { key: 'pipeline', svg: pipelineIcon, title: '逻辑编排' },
+  { key: 'models', svg: modelIcon, title: '模型管理' },
   { key: 'monitor-old', svg: monitorIcon, title: '实时监控' },
   { key: 'diagnosis', svg: diagnosisIcon, title: '增强诊断' },
   { key: 'health', svg: healthIcon, title: '健康评估' },
@@ -161,6 +164,10 @@ const sortieResolving = ref(false)
 function onSelectSortie(sortie: Sortie) {
   selectedSortie.value = sortie
   activeMenu.value = 'timeseries'
+}
+
+function onDiagnosisOpenTimeseries(sortie: Sortie) {
+  onSelectSortie(sortie)
 }
 
 /**
@@ -265,6 +272,11 @@ async function onMenuChange(key: string) {
           @back="activeMenu = 'sortie'"
           @navigate-to-tasks="onNavigateToTasks"
         />
+        <TrainedModelPanel
+          v-else-if="activeMenu === 'models'"
+          :aircraft-number="aircraftNumber"
+          :model-code="currentModelCode"
+        />
         <!-- 该单机没有任何架次（或架次拉取失败）时的兜底引导 -->
         <div v-else-if="activeMenu === 'timeseries'" class="empty-hint">
           <template v-if="sortieResolving">
@@ -278,8 +290,12 @@ async function onMenuChange(key: string) {
         <DemoRealtimeView
           v-else-if="activeMenu === 'monitor-old'"
         />
-        <DemoDiagnosisView
+        <DiagnosisWorkspace
           v-else-if="activeMenu === 'diagnosis'"
+          :aircraft-number="aircraftNumber"
+          :model-code="currentModelCode"
+          @open-timeseries="onDiagnosisOpenTimeseries"
+          @open-model-management="activeMenu = 'models'"
         />
         <DemoHealthView
           v-else-if="activeMenu === 'health'"

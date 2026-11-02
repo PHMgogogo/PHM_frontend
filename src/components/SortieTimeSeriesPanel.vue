@@ -472,6 +472,7 @@ function timeText(v?: string | null) {
       :preset="paralist"
       :start-time="startTime"
       :end-time="endTime"
+      :external="external"
       @navigate-to-tasks="emit('navigate-to-tasks')"
     />
   </div>

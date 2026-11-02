@@ -68,12 +68,13 @@ use([LineChart, GridComponent, TooltipComponent, LegendComponent, DataZoomCompon
 const props = defineProps<{
   result: ModelResult
   index: number
+  initialViewMode?: 'table' | 'chart'
 }>()
 
 const COLORS = ['#3b7cff', '#36c4a0', '#f5a623', '#f56c6c', '#b37feb', '#36cfc9']
 const MAX_CHART_POINTS = 1000
 
-const viewMode = ref<'table' | 'chart'>('table')
+const viewMode = ref<'table' | 'chart'>(props.initialViewMode || 'table')
 const currentPage = ref(1)
 const pageSize = ref(50)
 
@@ -171,7 +172,7 @@ watch(
   () => props.result,
   () => {
     currentPage.value = 1
-    viewMode.value = 'table'
+    viewMode.value = props.initialViewMode || 'table'
   },
 )
 </script>

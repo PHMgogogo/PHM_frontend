@@ -12,6 +12,7 @@ import type {
   TimeSeriesData,
   TimeSeriesQuery,
   TimeseriesJobRequest,
+  TrainedModel,
 } from '@/types/entities'
 import { hasLocalSortieId } from './aircraft-source'
 
@@ -270,6 +271,13 @@ export interface TimeseriesJobInput {
   learningRate?: number
   device?: 'cpu' | 'cuda'
   detach?: boolean
+  /** 发起作业的会话 */
+  taskId?: number
+  taskName?: string
+  /** 训练后持久化模型的名称与备注 */
+  modelName?: string
+  modelDescription?: string
+  sourceType?: 'local' | 'external'
   /** 训练才带 epoch / learning_rate；推理不带，否则后端可能按未知字段拒绝 */
   mode: 'train' | 'infer'
 }
@@ -294,6 +302,9 @@ export function buildTimeseriesJobRequest(input: TimeseriesJobInput): Timeseries
     instance_id: input.instanceId,
   }
   if (input.sortie.aircraftNumber) request.aircraftNumber = input.sortie.aircraftNumber
+  if (input.sortie.sortieNumber) request.sortieNumber = input.sortie.sortieNumber
+  if (input.sortie.flightDate) request.flightDate = input.sortie.flightDate
+  if (input.sourceType) request.sourceType = input.sourceType
 
   const start = input.startTime?.trim()
   if (start) request.startTime = start
@@ -303,12 +314,37 @@ export function buildTimeseriesJobRequest(input: TimeseriesJobInput): Timeseries
   if (input.batchSize !== undefined) request.batch_size = input.batchSize
   if (input.device) request.device = input.device
   if (input.detach !== undefined) request.detach = input.detach
+  if (input.taskId !== undefined) request.task_id = input.taskId
+  if (input.taskName?.trim()) request.task_name = input.taskName.trim()
   if (input.mode === 'train') {
     if (input.epoch !== undefined) request.epoch = input.epoch
     if (input.learningRate !== undefined) request.learning_rate = input.learningRate
+    if (input.modelName?.trim()) request.model_name = input.modelName.trim()
+    if (input.modelDescription?.trim()) {
+      request.model_description = input.modelDescription.trim()
+    }
   }
 
   return request
+}
+
+/**
+ * 训练接口必须返回实际登记后的 model。
+ * 兼容旧后端返回裸训练结果时返回 null，调用方据此报错，不能按 HTTP 200 直接宣称已保存。
+ */
+export function extractPersistedModel(response: unknown): TrainedModel | null {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return null
+  const model = (response as { model?: unknown }).model
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return null
+  const record = model as Record<string, unknown>
+  if (
+    typeof record.model_id !== 'number' ||
+    typeof record.name !== 'string' ||
+    typeof record.instance_id !== 'string'
+  ) {
+    return null
+  }
+  return model as TrainedModel
 }
 
 export interface TimeseriesTable {
