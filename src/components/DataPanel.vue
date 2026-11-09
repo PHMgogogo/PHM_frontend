@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { useDataMappingStore } from '@/stores/dataMapping'
 import { getMappings, getSorties } from '@/api/aircraft'
 import { hasLocalSortieId } from '@/utils/aircraft-source'
-import { defaultCsvTableName } from '@/utils/csvUpload'
+import { defaultCsvTableName, normalizeCsvTableName } from '@/utils/csvUpload'
 import type { Sortie } from '@/types/entities'
 
 const props = defineProps<{
@@ -172,13 +172,18 @@ async function handleCsvUpload() {
     ElMessage.warning('请选择 CSV 文件并填写表名')
     return
   }
+  const tableName = normalizeCsvTableName(csvTableName.value)
+  if (!tableName) {
+    ElMessage.warning('请输入有效的数据表名')
+    return
+  }
   // readonly（三方单机兜底）下同样不允许发上传请求
   if (props.readonly) {
     ElMessage.warning('该飞行器为只读，不支持上传本地 CSV 表')
     return
   }
   try {
-    await dataMappingStore.uploadCsv(csvFile.value, csvTableName.value.trim(), csvSortieId.value)
+    await dataMappingStore.uploadCsv(csvFile.value, tableName, csvSortieId.value)
     ElMessage.success(dataMappingStore.uploadResult?.message || '上传成功')
     // 重置：保留架次选择，便于同架次连传多张表
     csvFile.value = null

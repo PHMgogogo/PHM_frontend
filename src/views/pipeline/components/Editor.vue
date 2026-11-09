@@ -26,19 +26,8 @@
         <el-form-item :label="_(nodeSchema?.properties.title.title)">
             <el-input v-model="formData.title" :placeholder="_('No Title')" />
         </el-form-item>
-        <el-form-item :label="_(nodeSchema?.properties.id.title)">
-            <el-input v-model="formData.id" :disabled="true" />
-        </el-form-item>
-        <el-form-item :label="_(nodeSchema?.properties.node_type.title)">
-            <el-select v-model="formData.node_type" @change="onNodeTypeChange">
-                <el-option-group v-for="group in groupedNodeTypes" :key="group.category" :label="_(group.category)">
-                    <el-option v-for="item in group.items" :key="item.node_type" :label="_(item.node_type)"
-                        :value="item.node_type"></el-option>
-                </el-option-group>
-            </el-select>
-        </el-form-item>
         <el-form-item :label="_(nodeSchema?.properties.read_data.title)"
-            v-if="nodeSchema?.properties?.read_data?.maxItems !== 0">
+            v-if="!usesManagedDataColumns && nodeSchema?.properties?.read_data?.maxItems !== 0">
             <el-dropdown @command="(cmd: string) => addTagTo(cmd, formData?.read_data)" style="width: 100%"
                 :disabled="possibleReadData.length <= 0">
                 <el-input-tag v-model="formData.read_data" draggable></el-input-tag>
@@ -51,7 +40,7 @@
             </el-dropdown>
         </el-form-item>
         <el-form-item :label="_(nodeSchema?.properties.write_data.title)"
-            v-if="nodeSchema?.properties?.write_data?.maxItems !== 0">
+            v-if="!usesManagedDataColumns && nodeSchema?.properties?.write_data?.maxItems !== 0">
             <el-dropdown @command="(cmd: string) => addTagTo(cmd, formData?.write_data)" style="width: 100%"
                 :disabled="possibleWriteData.length <= 0">
                 <el-input-tag v-model="formData.write_data" draggable></el-input-tag>
@@ -62,16 +51,6 @@
                     </el-dropdown-menu>
                 </template>
             </el-dropdown>
-        </el-form-item>
-        <el-form-item :label="_(nodeSchema?.properties.prev.title)">
-            <el-select v-model="formData.prev" multiple style="width:100%" :disabled="true" placeholder="">
-                <el-option v-for="item in possibleNodeIds" :key="item" :label="item" :value="item"></el-option>
-            </el-select>
-        </el-form-item>
-        <el-form-item :label="_(nodeSchema?.properties.next.title)">
-            <el-select v-model="formData.next" multiple style="width:100%" :disabled="true" placeholder="">
-                <el-option v-for="item in possibleNodeIds" :key="item" :label="item" :value="item"></el-option>
-            </el-select>
         </el-form-item>
         <template v-if="nodeSchema" v-for="key in Object.keys(nodeSchema.$defs.InParameters.properties)" :key="key">
             <el-form-item v-if="['InferenceNode', 'TrainNode', 'SendAlarmNode'].includes(formData.node_type) && key == 'instance'"
@@ -254,17 +233,18 @@
     </el-dialog>
 </template>
 <script lang="ts" setup>
-import { computed, onMounted, ref, watch, nextTick, inject } from 'vue'
+import { computed, ref, watch, nextTick, inject } from 'vue'
 import CodeMirror from 'vue-codemirror6'
 import { python } from '@codemirror/lang-python'
 import { NodeData } from '../NodeData';
 import LogicFlow from '@logicflow/core'
-import { getInstances, getNodeTypes, getNodeSchema } from '@/api/pipelines';
+import { getInstances, getNodeSchema } from '@/api/pipelines';
 import { taskApi } from '@/api/task';
 import { ElInput } from 'element-plus';
 import { _ } from '../i18n'
 import { QuestionFilled, Loading, EditPen } from '@element-plus/icons-vue'
 import LocalTimeseriesNodeEditor from './LocalTimeseriesNodeEditor.vue'
+import { isPipelineNodeType } from '../nodeTypes'
 const props = defineProps<{
     data?: NodeData
     graphConfigData?: LogicFlow.GraphConfigData
@@ -285,21 +265,10 @@ const emit = defineEmits<{
 }>()
 
 const formData = ref<NodeData>()
-class NodeType {
-    node_type: string = ""
-    category: string = ""
-}
 let bindingNodeId: string
-const nodeTypes = ref<NodeType[]>()
 const nodeSchema = ref<any>()
-const groupedNodeTypes = computed(() => {
-    const groups: Record<string, NodeType[]> = {}
-    for (const item of nodeTypes.value ?? []) {
-        const cat = item.category || _('Other')
-        if (!groups[cat]) groups[cat] = []
-        groups[cat].push(item)
-    }
-    return Object.entries(groups).map(([category, items]) => ({ category, items }))
+const usesManagedDataColumns = computed(() => {
+    return !!formData.value && isPipelineNodeType(formData.value.node_type)
 })
 const possibleReadData = computed(() => {
     if (!props.graphConfigData?.nodes) return []
@@ -315,16 +284,6 @@ const possibleReadData = computed(() => {
         }
     }
     return [...columns]
-})
-const possibleNodeIds = computed(() => {
-    if (!props.graphConfigData?.nodes) return []
-    const nodeIds = new Set<string>()
-    for (const node of props.graphConfigData.nodes) {
-        if (node.id) {
-            nodeIds.add(node.id)
-        }
-    }
-    return [...nodeIds]
 })
 const possibleInState = computed(() => {
     if (!props.graphConfigData?.nodes) return []
@@ -391,9 +350,6 @@ const possibleOutState = computed(() => {
 const hasOutParameters = computed(() => {
     const props = nodeSchema.value?.$defs?.OutParameters?.properties
     return !!props && Object.keys(props).length > 0
-})
-onMounted(async () => {
-    nodeTypes.value = await getNodeTypes()
 })
 async function getSchema(node_type: string) {
     nodeSchema.value = await getNodeSchema(node_type)
@@ -584,12 +540,6 @@ function normalizeInParameters(data: NodeData) {
                 }
             }
         }
-    }
-}
-async function onNodeTypeChange(node_type: string) {
-    await getSchema(node_type)
-    if (formData.value) {
-        normalizeInParameters(formData.value)
     }
 }
 async function updateNode(data: NodeData | null) {

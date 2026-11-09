@@ -1,3 +1,64 @@
+:root:root {
+  color: #1d2b2a;
+  background: #f2f4f4;
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  --phm-primary-50: #e9f5f2;
+  --phm-primary-100: #d3ebe5;
+  --phm-primary-200: #addbd0;
+  --phm-primary-500: #23806f;
+  --phm-primary: #17685a;
+  --phm-primary-600: #17685a;
+  --phm-primary-700: #0f5549;
+  --phm-primary-800: #0b473e;
+  --phm-accent: #d97706;
+  --phm-accent-soft: #fff3df;
+  --phm-bg: #f2f4f4;
+  --phm-surface: #ffffff;
+  --phm-surface-muted: #f8faf9;
+  --phm-text: #1d2b2a;
+  --phm-text-secondary: #657472;
+  --phm-text-muted: #8a9795;
+  --phm-border: #e2e8e6;
+  --phm-border-strong: #d2dcda;
+  --phm-radius-card: 8px;
+  --phm-radius-control: 6px;
+  --phm-shadow-card: 0 1px 2px rgba(24, 48, 43, 0.04), 0 4px 14px rgba(24, 48, 43, 0.05);
+  --phm-shadow-hover: 0 3px 8px rgba(24, 48, 43, 0.07), 0 10px 24px rgba(24, 48, 43, 0.08);
+  --phm-transition: 160ms ease;
+
+  --el-color-primary: var(--phm-primary);
+  --el-color-primary-light-3: #4d8f82;
+  --el-color-primary-light-5: #83b2a8;
+  --el-color-primary-light-7: #b9d5cf;
+  --el-color-primary-light-8: #d1e5e1;
+  --el-color-primary-light-9: #e9f5f2;
+  --el-color-primary-dark-2: var(--phm-primary-700);
+  --el-color-success: #23806f;
+  --el-color-success-light-9: #e9f5f2;
+  --el-color-warning: var(--phm-accent);
+  --el-color-warning-light-9: #fff3df;
+  --el-bg-color-page: var(--phm-bg);
+  --el-bg-color: var(--phm-surface);
+  --el-fill-color-light: #f6f8f7;
+  --el-fill-color-lighter: #f9fbfa;
+  --el-fill-color-blank: var(--phm-surface);
+  --el-text-color-primary: var(--phm-text);
+  --el-text-color-regular: #40504e;
+  --el-text-color-secondary: var(--phm-text-secondary);
+  --el-text-color-placeholder: #9aa6a4;
+  --el-border-color: var(--phm-border);
+  --el-border-color-light: #e8edeb;
+  --el-border-color-lighter: #edf1f0;
+  --el-border-color-extra-light: #f2f5f4;
+  --el-border-radius-base: var(--phm-radius-control);
+  --el-border-radius-small: 4px;
+  --el-font-size-base: 13px;
+  --el-box-shadow-light: var(--phm-shadow-card);
+}
+
 *,
 *::before,
 *::after {
@@ -9,6 +70,273 @@
 html,
 body,
 #app {
+  width: 100%;
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+body {
+  min-width: 320px;
+  overflow: hidden;
+  background: var(--phm-bg);
+  color: var(--phm-text);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: var(--phm-primary-100);
+  color: var(--phm-primary-800);
+}
+
+#app {
+  background: var(--phm-bg);
+}
+
+/* Element Plus controls share one compact, neutral visual language. */
+#app .el-button {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: var(--phm-radius-control);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+#app .el-button--primary {
+  --el-button-bg-color: var(--phm-primary);
+  --el-button-border-color: var(--phm-primary);
+  --el-button-hover-bg-color: var(--phm-primary-500);
+  --el-button-hover-border-color: var(--phm-primary-500);
+  --el-button-active-bg-color: var(--phm-primary-700);
+  --el-button-active-border-color: var(--phm-primary-700);
+}
+
+#app .el-button--warning {
+  --el-button-bg-color: var(--phm-accent);
+  --el-button-border-color: var(--phm-accent);
+  --el-button-hover-bg-color: #e98a18;
+  --el-button-hover-border-color: #e98a18;
+}
+
+#app .el-button.is-text {
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+#app .el-input__wrapper,
+#app .el-select__wrapper,
+#app .el-textarea__inner,
+#app .el-input-number .el-input__wrapper {
+  min-height: 32px;
+  border-radius: var(--phm-radius-control);
+  background: var(--phm-surface);
+  box-shadow: 0 0 0 1px var(--phm-border-strong) inset;
+  transition: box-shadow var(--phm-transition);
+}
+
+#app .el-input__wrapper,
+#app .el-select__wrapper {
+  padding: 1px 10px;
+}
+
+#app .el-input__wrapper:hover,
+#app .el-select__wrapper:hover,
+#app .el-input-number .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px #a9bbb7 inset;
+}
+
+#app .el-input__wrapper.is-focus,
+#app .el-select__wrapper.is-focused,
+#app .el-input-number .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--phm-primary) inset;
+}
+
+#app .el-form-item {
+  margin-bottom: 16px;
+}
+
+#app .el-form-item__label {
+  color: var(--phm-text-secondary);
+  font-size: 13px;
+}
+
+#app .el-table {
+  --el-table-header-bg-color: #f6f8f7;
+  --el-table-header-text-color: #3d4d4a;
+  --el-table-row-hover-bg-color: #f1f8f6;
+  --el-table-current-row-bg-color: var(--phm-primary-50);
+  --el-table-border-color: var(--phm-border);
+  --el-table-text-color: #354542;
+  color: #354542;
+  font-size: 13px;
+}
+
+#app .el-table th.el-table__cell {
+  height: 36px;
+  padding: 7px 0;
+  border-bottom-color: var(--phm-border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#app .el-table td.el-table__cell {
+  padding: 8px 0;
+  border-bottom-color: var(--el-table-border-color);
+}
+
+#app .el-table .cell {
+  line-height: 1.4;
+}
+
+#app .el-table--small th.el-table__cell,
+#app .el-table--small td.el-table__cell {
+  padding: 6px 0;
+}
+
+#app .el-tag {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+#app .el-tag--success {
+  --el-tag-bg-color: #e9f5f2;
+  --el-tag-border-color: #c7e5dd;
+  --el-tag-text-color: var(--phm-primary-700);
+}
+
+#app .el-tag--warning {
+  --el-tag-bg-color: var(--phm-accent-soft);
+  --el-tag-border-color: #f3d5a8;
+  --el-tag-text-color: #a85d05;
+}
+
+#app .el-tag--danger {
+  --el-tag-bg-color: #fff0ef;
+  --el-tag-border-color: #f5cbc7;
+  --el-tag-text-color: #b94138;
+}
+
+#app .el-card {
+  border-color: var(--phm-border);
+  border-radius: var(--phm-radius-card);
+  box-shadow: var(--phm-shadow-card);
+}
+
+#app .el-pagination {
+  --el-pagination-button-width: 28px;
+  --el-pagination-button-height: 28px;
+  font-size: 12px;
+}
+
+#app .el-pagination .btn-prev,
+#app .el-pagination .btn-next,
+#app .el-pagination .el-pager li {
+  border-radius: 4px;
+}
+
+#app .el-descriptions {
+  --el-descriptions-table-border: 1px solid var(--phm-border);
+  font-size: 13px;
+}
+
+#app .el-descriptions__label {
+  color: var(--phm-text-secondary);
+  background: var(--phm-surface-muted);
+  font-weight: 500;
+}
+
+#app .el-drawer {
+  --el-drawer-padding-primary: 16px;
+}
+
+body .el-dialog,
+body .el-message-box {
+  border-radius: var(--phm-radius-card);
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(17, 42, 36, 0.16);
+}
+
+body .el-dialog__header,
+body .el-message-box__header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--phm-border);
+}
+
+body .el-dialog__title,
+body .el-message-box__title {
+  color: var(--phm-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+body .el-dialog__body {
+  padding: 18px 20px;
+}
+
+body .el-dialog__footer {
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--phm-border);
+}
+
+/* Existing business panels inherit the same surface and spacing system. */
+#app .page-title,
+#app .knowledge-header h2 {
+  color: var(--phm-text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#app .page-header {
+  padding: 20px 22px 0;
+}
+
+#app .page-header .page-title {
+  margin-bottom: 12px;
+}
+
+#app .toolbar,
+#app .aircraft-selector {
+  padding: 0 22px 12px;
+}
+
+#app .card-grid {
+  gap: 14px;
+  padding: 0 22px 20px;
+}
+
+#app :is(
+  .aircraft-card,
+  .model-card,
+  .document-card,
+  .header-trust,
+  .match-panel,
+  .editor-panel,
+  .table-card,
+  .tree-container
+) {
+  border-color: var(--phm-border);
+  border-radius: var(--phm-radius-card);
+  box-shadow: var(--phm-shadow-card);
+}
+
+#app .knowledge-tabs {
+  border-radius: var(--phm-radius-card);
+}
+
+#app .knowledge-tabs button {
+  border-radius: var(--phm-radius-control);
+}
+
+#app .knowledge-tabs button.active {
+  color: var(--phm-primary-700);
+  border-color: #cfe5df;
 }

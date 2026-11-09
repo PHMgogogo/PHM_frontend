@@ -1148,10 +1148,10 @@ onBeforeUnmount(() => {
 }
 
 .page-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #0d1f3c;
-  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--phm-text);
+  margin: 0 0 12px;
 }
 
 .algo-tabs {
@@ -1191,28 +1191,29 @@ onBeforeUnmount(() => {
   width: 260px;
   flex-shrink: 0;
   background: #fff;
-  border: 1px solid #e0e8f5;
-  border-radius: 10px;
+  border: 1px solid var(--phm-border);
+  border-radius: var(--phm-radius-card);
   padding: 12px;
   overflow-y: auto;
 }
 
 .algo-item {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--phm-radius-control);
   cursor: pointer;
   font-size: 14px;
-  color: #0d1f3c;
+  color: var(--phm-text);
   transition: background 0.2s;
 }
 
 .algo-item:hover {
-  background: #f0f4fb;
+  background: var(--phm-primary-50);
 }
 
 .algo-item.active {
-  background: #1a6cf0;
-  color: #fff;
+  background: var(--phm-primary-50);
+  border: 1px solid #cfe5df;
+  color: var(--phm-primary-700);
   font-weight: 600;
 }
 
@@ -1225,8 +1226,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   background: #fff;
-  border: 1px solid #e0e8f5;
-  border-radius: 10px;
+  border: 1px solid var(--phm-border);
+  border-radius: var(--phm-radius-card);
   padding: 16px;
   overflow: hidden;
 }
@@ -1248,12 +1249,12 @@ onBeforeUnmount(() => {
 .algo-meta-id {
   font-size: 16px;
   font-weight: 700;
-  color: #0d1f3c;
+  color: var(--phm-text);
 }
 
 .algo-desc {
   font-size: 13px;
-  color: #6a7a90;
+  color: var(--phm-text-secondary);
   margin: 0 0 12px;
 }
 
@@ -1263,8 +1264,8 @@ onBeforeUnmount(() => {
   gap: 8px;
   margin-bottom: 12px;
   padding: 10px 12px;
-  background: #f7f9fc;
-  border-radius: 8px;
+  background: var(--phm-surface-muted);
+  border-radius: var(--phm-radius-control);
 }
 
 /* 去掉信息展示区标签的淡入淡出动画 */
@@ -1282,8 +1283,8 @@ onBeforeUnmount(() => {
 .rule-section {
   margin-top: 12px;
   padding: 10px 12px;
-  background: #f7f9fc;
-  border-radius: 8px;
+  background: var(--phm-surface-muted);
+  border-radius: var(--phm-radius-control);
 }
 
 .rule-section-head {
@@ -1296,7 +1297,7 @@ onBeforeUnmount(() => {
 .rule-section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #0d1f3c;
+  color: var(--phm-text);
 }
 
 .rule-section-actions {
@@ -1308,7 +1309,7 @@ onBeforeUnmount(() => {
 
 .algo-info-label {
   font-size: 13px;
-  color: #6a7a90;
+  color: var(--phm-text-secondary);
   flex-shrink: 0;
   line-height: 22px;
   width: 90px;
@@ -1317,7 +1318,7 @@ onBeforeUnmount(() => {
 
 .algo-info-value {
   font-size: 13px;
-  color: #0d1f3c;
+  color: var(--phm-text);
   line-height: 22px;
   word-break: break-all;
 }
@@ -1325,7 +1326,7 @@ onBeforeUnmount(() => {
 /* 算法/模板/实例 id 超链接 */
 .algo-link {
   font-size: 13px;
-  color: #1a6cf0;
+  color: var(--phm-primary);
   line-height: 22px;
   text-decoration: none;
   word-break: break-all;
@@ -1337,14 +1338,14 @@ onBeforeUnmount(() => {
 
 .algo-info-empty {
   font-size: 13px;
-  color: #bcc5d0;
+  color: var(--phm-text-muted);
   line-height: 22px;
 }
 
 .algo-detail-actions {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid #eef2f8;
+  border-top: 1px solid var(--phm-border);
 }
 
 .algo-ignores {
@@ -1383,14 +1384,14 @@ onBeforeUnmount(() => {
 }
 
 .tag-empty {
-  color: #bcc5d0;
+  color: var(--phm-text-muted);
   font-size: 13px;
 }
 
 .entry-code {
   font-family: 'JetBrains Mono', Consolas, monospace;
   font-size: 12px;
-  background: #f0f3f8;
+  background: #f1f4f3;
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -1403,7 +1404,7 @@ onBeforeUnmount(() => {
 .conn-section h4 {
   margin: 0 0 8px;
   font-size: 14px;
-  color: #0d1f3c;
+  color: var(--phm-text);
 }
 
 /* ---- 实例日志 ---- */
@@ -1411,9 +1412,9 @@ onBeforeUnmount(() => {
   min-height: 200px;
   max-height: 60vh;
   overflow: auto;
-  background: #f7f9fc;
-  border: 1px solid #e0e8f5;
-  border-radius: 8px;
+  background: var(--phm-surface-muted);
+  border: 1px solid var(--phm-border);
+  border-radius: var(--phm-radius-card);
   padding: 12px;
 }
 
@@ -1422,13 +1423,13 @@ onBeforeUnmount(() => {
   font-family: 'JetBrains Mono', Consolas, monospace;
   font-size: 12px;
   line-height: 1.6;
-  color: #0d1f3c;
+  color: var(--phm-text);
   white-space: pre-wrap;
   word-break: break-all;
 }
 
 .inner-empty {
-  color: #bcc5d0;
+  color: var(--phm-text-muted);
   font-size: 14px;
   text-align: center;
   padding: 40px 0;

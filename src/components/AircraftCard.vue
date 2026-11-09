@@ -70,20 +70,21 @@ async function handleDelete(e: Event) {
 <style scoped>
 .aircraft-card {
   background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(26, 108, 240, 0.08);
-  padding: 20px;
+  border-radius: var(--phm-radius-card);
+  box-shadow: var(--phm-shadow-card);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.2s;
-  border: 1px solid #e8edf5;
+  transition: border-color var(--phm-transition), box-shadow var(--phm-transition), transform var(--phm-transition);
+  border: 1px solid var(--phm-border);
   height: 100%;
 }
 
 .aircraft-card:hover {
-  box-shadow: 0 6px 24px rgba(26, 108, 240, 0.18);
+  border-color: #c6ddd7;
+  box-shadow: var(--phm-shadow-hover);
   transform: translateY(-2px);
 }
 
@@ -96,16 +97,17 @@ async function handleDelete(e: Event) {
 
 .aircraft-name {
   font-size: 16px;
-  font-weight: 700;
-  color: #0d1f3c;
+  font-weight: 650;
+  color: var(--phm-text);
 }
 
 .model-badge {
   font-size: 12px;
-  color: #fff;
-  background: #1a6cf0;
-  border-radius: 20px;
-  padding: 2px 10px;
+  color: var(--phm-primary-700);
+  background: var(--phm-primary-50);
+  border: 1px solid #cfe5df;
+  border-radius: 4px;
+  padding: 2px 8px;
   font-weight: 500;
   flex-shrink: 0;
 }
@@ -124,12 +126,12 @@ async function handleDelete(e: Event) {
 }
 
 .info-label {
-  color: #8c9ab0;
+  color: var(--phm-text-muted);
   min-width: 56px;
 }
 
 .info-value {
-  color: #3a4a5c;
+  color: #40504e;
   font-weight: 500;
 }
 
@@ -138,7 +140,7 @@ async function handleDelete(e: Event) {
   align-items: center;
   gap: 6px;
   padding-top: 8px;
-  border-top: 1px solid #f0f3f8;
+  border-top: 1px solid var(--phm-border);
   margin-top: auto;
 }
 

@@ -918,7 +918,7 @@ function handleSubmit() {
   height: 100%;
   position: relative;
   background: #ffffff;
-  border-left: 1px solid #e4e8f1;
+  border-left: 1px solid var(--phm-border);
   overflow: hidden;
 }
 
@@ -934,16 +934,16 @@ function handleSubmit() {
   margin: 0 0 16px;
   font-size: 15px;
   font-weight: 600;
-  color: #0d1f3c;
+  color: var(--phm-text);
 }
 
 .edit-banner {
   margin: 0 0 16px;
   padding: 8px 12px;
-  border: 1px solid #3b7cff;
-  background: rgba(59, 124, 255, 0.06);
-  border-radius: 6px;
-  color: #3b7cff;
+  border: 1px solid #b9d8d0;
+  background: var(--phm-primary-50);
+  border-radius: var(--phm-radius-control);
+  color: var(--phm-primary-700);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -955,7 +955,7 @@ function handleSubmit() {
 .form-group > label {
   display: block;
   font-size: 12px;
-  color: #8c9ab0;
+  color: var(--phm-text-muted);
   font-weight: 500;
   margin-bottom: 6px;
 }
@@ -963,7 +963,7 @@ function handleSubmit() {
 .hint {
   margin: 6px 0 0;
   font-size: 11px;
-  color: #8c9ab0;
+  color: var(--phm-text-muted);
   line-height: 1.4;
 }
 
@@ -992,7 +992,7 @@ function handleSubmit() {
 :deep(.el-collapse-item__header) {
   font-size: 13px;
   font-weight: 600;
-  color: #0d1f3c;
+  color: var(--phm-text);
 }
 
 :deep(.el-collapse-item__content) {
@@ -1017,7 +1017,7 @@ function handleSubmit() {
 
 .alias-origin {
   font-size: 11px;
-  color: #8c9ab0;
+  color: var(--phm-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1025,12 +1025,12 @@ function handleSubmit() {
 
 .alias-edit-icon {
   flex-shrink: 0;
-  color: #8c9ab0;
+  color: var(--phm-text-muted);
   cursor: pointer;
 }
 
 .alias-edit-icon:hover,
 .alias-edit-icon.configured {
-  color: #3b7cff;
+  color: var(--phm-primary);
 }
 </style>

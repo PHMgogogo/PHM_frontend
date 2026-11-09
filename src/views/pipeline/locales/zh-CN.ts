@@ -10,7 +10,7 @@ export const zhCN: Record<string, string> = {
   'Pipelines': '流水线',
 
   // NodeList
-  'Node List (Drag to Add)': '节点列表（拖动以放置）',
+  'Node List': '节点列表',
   'Other': '其他',
 
   // Editor

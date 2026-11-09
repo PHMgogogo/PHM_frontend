@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Expand, Fold, HomeFilled } from '@element-plus/icons-vue'
 import { getSorties } from '@/api/aircraft'
 import { useAircraftStore } from '@/stores/aircraft'
 import { isExternalAircraft, baseModelCode } from '@/utils/aircraft-source'
@@ -16,11 +17,11 @@ import SortieQueryPanel from '@/components/SortieQueryPanel.vue'
 import SortieTimeSeriesPanel from '@/components/SortieTimeSeriesPanel.vue'
 import TrainedModelPanel from '@/components/TrainedModelPanel.vue'
 import DiagnosisWorkspace from '@/components/DiagnosisWorkspace.vue'
+import HealthWorkspace from '@/components/HealthWorkspace.vue'
+import TrendWorkspace from '@/components/TrendWorkspace.vue'
+import PredictionWorkspace from '@/components/PredictionWorkspace.vue'
 import type { Sortie } from '@/types/entities'
 import DemoRealtimeView from '@/views/demo/DemoRealtimeView.vue'
-import DemoHealthView from '@/views/demo/DemoHealthView.vue'
-import DemoTrendView from '@/views/demo/DemoTrendView.vue'
-import DemoPredictionView from '@/views/demo/DemoPredictionView.vue'
 import DemoMaintenanceView from '@/views/demo/DemoMaintenanceView.vue'
 import PipelineWorkspace from '@/views/pipeline/PipelineWorkspace.vue'
 import taskIcon from '@/assets/task.svg'
@@ -66,7 +67,9 @@ const currentModelCode = computed(() => aircraft.value?.modelCode ?? '')
 // 注意：isExternal 依赖异步拉取到的单机数据，挂载时才能确定，故在 onMounted 里校正
 const activeMenu = ref('task')
 const initializing = ref(true)
-const sidebarCollapsed = ref(false)
+const sidebarCollapsed = ref(
+  typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches,
+)
 const allWorkspaceMenus = [
   { key: 'chat', svg: chatIcon, title: '当前对话' },
   { key: 'task', svg: taskIcon, title: '会话管理' },
@@ -88,6 +91,10 @@ const allWorkspaceMenus = [
 // 来自三方平台、不存在本地映射，故三方单机不再提供该入口；三方训练 / 推理走「时序数据查询」。
 const workspaceMenus = computed(() =>
   isExternal.value ? allWorkspaceMenus.filter((m) => m.key !== 'data') : allWorkspaceMenus,
+)
+
+const activeMenuTitle = computed(
+  () => workspaceMenus.value.find((item) => item.key === activeMenu.value)?.title ?? '飞行器工作区',
 )
 
 // 菜单随单机来源变化时兜底：三方单机若仍停在被摘掉的「数据管理」，挪回会话管理
@@ -166,7 +173,7 @@ function onSelectSortie(sortie: Sortie) {
   activeMenu.value = 'timeseries'
 }
 
-function onDiagnosisOpenTimeseries(sortie: Sortie) {
+function onModelWorkspaceOpenTimeseries(sortie: Sortie) {
   onSelectSortie(sortie)
 }
 
@@ -232,84 +239,133 @@ async function onMenuChange(key: string) {
 
     <!-- 右侧内容 -->
     <main class="ws-content">
-      <div v-if="initializing" class="loading-state">
-        <p>正在加载工作区...</p>
-      </div>
-      <template v-else>
-        <ChatPanel
-          v-if="activeMenu === 'chat'"
-          :aircraft-number="aircraftNumber"
-          @navigate-to-tasks="onNavigateToTasks"
-        />
-        <PipelineWorkspace
-          v-else-if="activeMenu === 'pipeline'"
-          :aircraft-number="aircraftNumber"
-          :model-code="currentModelCode"
-        />
-        <TaskPanel
-          v-else-if="activeMenu === 'task'"
-          :aircraft-number="aircraftNumber"
-          @enter-chat="onEnterChat"
-        />
-        <DataPanel
-          v-else-if="activeMenu === 'data'"
-          :aircraft-number="aircraftNumber"
-          :model-code="currentModelCode"
-          :readonly="isExternal"
-        />
-        <SortieQueryPanel
-          v-else-if="activeMenu === 'sortie'"
-          :aircraft-number="aircraftNumber"
-          :model-code="currentModelCode"
-          :external="isExternal"
-          @select-sortie="onSelectSortie"
-        />
-        <SortieTimeSeriesPanel
-          v-else-if="activeMenu === 'timeseries' && selectedSortie"
-          :sortie="selectedSortie"
-          :model-code="currentModelCode"
-          :external="isExternal"
-          @back="activeMenu = 'sortie'"
-          @navigate-to-tasks="onNavigateToTasks"
-        />
-        <TrainedModelPanel
-          v-else-if="activeMenu === 'models'"
-          :aircraft-number="aircraftNumber"
-          :model-code="currentModelCode"
-        />
-        <!-- 该单机没有任何架次（或架次拉取失败）时的兜底引导 -->
-        <div v-else-if="activeMenu === 'timeseries'" class="empty-hint">
-          <template v-if="sortieResolving">
-            <p>正在加载该单机的架次...</p>
-          </template>
-          <template v-else>
-            <p>该单机暂无架次，无法查看时序数据</p>
-            <el-button type="primary" @click="activeMenu = 'sortie'">去架次查询</el-button>
-          </template>
+      <header class="ws-topbar">
+        <div class="ws-topbar-left">
+          <button
+            type="button"
+            class="ws-nav-toggle"
+            :title="sidebarCollapsed ? '展开导航' : '收起导航'"
+            :aria-label="sidebarCollapsed ? '展开导航' : '收起导航'"
+            @click="sidebarCollapsed = !sidebarCollapsed"
+          >
+            <el-icon :size="18">
+              <Expand v-if="sidebarCollapsed" />
+              <Fold v-else />
+            </el-icon>
+          </button>
+          <nav class="ws-breadcrumb" aria-label="面包屑">
+            <button type="button" class="ws-breadcrumb-home" @click="router.push('/')">
+              <el-icon><HomeFilled /></el-icon>
+              工作台
+            </button>
+            <span class="ws-breadcrumb-separator">/</span>
+            <span class="ws-breadcrumb-parent">飞行器</span>
+            <span class="ws-breadcrumb-separator">/</span>
+            <strong>{{ aircraftNumber }}</strong>
+            <span class="ws-breadcrumb-current">{{ activeMenuTitle }}</span>
+          </nav>
         </div>
-        <DemoRealtimeView
-          v-else-if="activeMenu === 'monitor-old'"
-        />
-        <DiagnosisWorkspace
-          v-else-if="activeMenu === 'diagnosis'"
-          :aircraft-number="aircraftNumber"
-          :model-code="currentModelCode"
-          @open-timeseries="onDiagnosisOpenTimeseries"
-          @open-model-management="activeMenu = 'models'"
-        />
-        <DemoHealthView
-          v-else-if="activeMenu === 'health'"
-        />
-        <DemoTrendView
-          v-else-if="activeMenu === 'trend'"
-        />
-        <DemoPredictionView
-          v-else-if="activeMenu === 'prediction'"
-        />
-        <DemoMaintenanceView
-          v-else-if="activeMenu === 'maintenance'"
-        />
-      </template>
+        <div class="ws-topbar-right">
+          <span class="ws-system-status">
+            <i class="ws-status-dot" />
+            资产工作区
+          </span>
+          <span class="ws-identity-mark">P</span>
+        </div>
+      </header>
+
+      <div class="ws-body">
+        <div v-if="initializing" class="loading-state">
+          <p>正在加载工作区...</p>
+        </div>
+        <template v-else>
+          <ChatPanel
+            v-if="activeMenu === 'chat'"
+            :aircraft-number="aircraftNumber"
+            @navigate-to-tasks="onNavigateToTasks"
+          />
+          <PipelineWorkspace
+            v-else-if="activeMenu === 'pipeline'"
+            :aircraft-number="aircraftNumber"
+            :model-code="currentModelCode"
+          />
+          <TaskPanel
+            v-else-if="activeMenu === 'task'"
+            :aircraft-number="aircraftNumber"
+            @enter-chat="onEnterChat"
+          />
+          <DataPanel
+            v-else-if="activeMenu === 'data'"
+            :aircraft-number="aircraftNumber"
+            :model-code="currentModelCode"
+            :readonly="isExternal"
+          />
+          <SortieQueryPanel
+            v-else-if="activeMenu === 'sortie'"
+            :aircraft-number="aircraftNumber"
+            :model-code="currentModelCode"
+            :external="isExternal"
+            @select-sortie="onSelectSortie"
+          />
+          <SortieTimeSeriesPanel
+            v-else-if="activeMenu === 'timeseries' && selectedSortie"
+            :sortie="selectedSortie"
+            :model-code="currentModelCode"
+            :external="isExternal"
+            @back="activeMenu = 'sortie'"
+            @navigate-to-tasks="onNavigateToTasks"
+          />
+          <TrainedModelPanel
+            v-else-if="activeMenu === 'models'"
+            :aircraft-number="aircraftNumber"
+            :model-code="currentModelCode"
+          />
+          <!-- 该单机没有任何架次（或架次拉取失败）时的兜底引导 -->
+          <div v-else-if="activeMenu === 'timeseries'" class="empty-hint">
+            <template v-if="sortieResolving">
+              <p>正在加载该单机的架次...</p>
+            </template>
+            <template v-else>
+              <p>该单机暂无架次，无法查看时序数据</p>
+              <el-button type="primary" @click="activeMenu = 'sortie'">去架次查询</el-button>
+            </template>
+          </div>
+          <DemoRealtimeView
+            v-else-if="activeMenu === 'monitor-old'"
+          />
+          <DiagnosisWorkspace
+            v-else-if="activeMenu === 'diagnosis'"
+            :aircraft-number="aircraftNumber"
+            :model-code="currentModelCode"
+            @open-timeseries="onModelWorkspaceOpenTimeseries"
+            @open-model-management="activeMenu = 'models'"
+          />
+          <HealthWorkspace
+            v-else-if="activeMenu === 'health'"
+            :aircraft-number="aircraftNumber"
+            :model-code="currentModelCode"
+            @open-timeseries="onModelWorkspaceOpenTimeseries"
+            @open-model-management="activeMenu = 'models'"
+          />
+          <TrendWorkspace
+            v-else-if="activeMenu === 'trend'"
+            :aircraft-number="aircraftNumber"
+            :model-code="currentModelCode"
+            @open-timeseries="onModelWorkspaceOpenTimeseries"
+            @open-model-management="activeMenu = 'models'"
+          />
+          <PredictionWorkspace
+            v-else-if="activeMenu === 'prediction'"
+            :aircraft-number="aircraftNumber"
+            :model-code="currentModelCode"
+            @open-timeseries="onModelWorkspaceOpenTimeseries"
+            @open-model-management="activeMenu = 'models'"
+          />
+          <DemoMaintenanceView
+            v-else-if="activeMenu === 'maintenance'"
+          />
+        </template>
+      </div>
     </main>
   </div>
 </template>
@@ -327,19 +383,169 @@ async function onMenuChange(key: string) {
 
 .workspace-layout {
   display: flex;
-  height: 100vh;
-  width: 100vw;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--phm-bg);
+  color: var(--phm-text);
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
 }
 
 .ws-content {
   flex: 1;
-  background: #f4f6fb;
+  min-width: 0;
+  background: var(--phm-bg);
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.ws-topbar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  min-height: 56px;
+  padding: 0 18px 0 12px;
+  border-bottom: 1px solid var(--phm-border);
+  background: var(--phm-surface);
+}
+
+.ws-topbar-left,
+.ws-topbar-right,
+.ws-breadcrumb,
+.ws-system-status {
+  display: flex;
+  align-items: center;
+}
+
+.ws-topbar-left {
+  min-width: 0;
+  gap: 12px;
+}
+
+.ws-nav-toggle {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border: 1px solid transparent;
+  border-radius: var(--phm-radius-control);
+  background: transparent;
+  color: var(--phm-text-secondary);
+  cursor: pointer;
+  transition: color var(--phm-transition), background var(--phm-transition), border-color var(--phm-transition);
+}
+
+.ws-nav-toggle:hover {
+  border-color: #cfe5df;
+  background: var(--phm-primary-50);
+  color: var(--phm-primary-700);
+}
+
+.ws-breadcrumb {
+  min-width: 0;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.ws-breadcrumb-home {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--phm-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ws-breadcrumb-home:hover {
+  color: var(--phm-primary);
+}
+
+.ws-breadcrumb-home .el-icon {
+  font-size: 14px;
+}
+
+.ws-breadcrumb-separator {
+  color: var(--phm-border-strong);
+}
+
+.ws-breadcrumb-parent {
+  color: var(--phm-text-muted);
+  white-space: nowrap;
+}
+
+.ws-breadcrumb strong {
+  overflow: hidden;
+  color: var(--phm-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-breadcrumb-current {
+  padding-left: 8px;
+  border-left: 1px solid var(--phm-border);
+  color: var(--phm-primary-700);
+  white-space: nowrap;
+}
+
+.ws-topbar-right {
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.ws-system-status {
+  gap: 7px;
+  color: var(--phm-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ws-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2b9a72;
+  box-shadow: 0 0 0 4px rgba(43, 154, 114, 0.1);
+}
+
+.ws-identity-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #f1d5ad;
+  border-radius: 50%;
+  background: var(--phm-accent-soft);
+  color: var(--phm-accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ws-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 16px 20px 20px;
+  overflow: hidden;
+  border: 1px solid var(--phm-border);
+  border-radius: var(--phm-radius-card);
+  background: var(--phm-surface);
+  box-shadow: var(--phm-shadow-card);
+}
+
+.ws-body > :deep(*) {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
 }
 
 .loading-state {
@@ -364,5 +570,43 @@ async function onMenuChange(key: string) {
 
 .empty-hint p {
   margin: 0;
+}
+
+@media (max-width: 760px) {
+  .workspace-layout :deep(.ws-sidebar) {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: 232px;
+    min-width: 232px;
+    max-width: 232px;
+    height: 100%;
+    box-shadow: 16px 0 40px rgba(24, 48, 43, 0.14);
+  }
+
+  .workspace-layout :deep(.ws-sidebar.collapsed) {
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+
+  .ws-topbar {
+    padding-left: 10px;
+  }
+
+  .ws-body {
+    margin: 12px;
+  }
+
+  .ws-breadcrumb-home,
+  .ws-breadcrumb-parent,
+  .ws-breadcrumb-separator {
+    display: none;
+  }
+
+  .ws-system-status {
+    display: none;
+  }
 }
 </style>

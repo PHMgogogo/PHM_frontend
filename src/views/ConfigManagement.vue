@@ -401,10 +401,10 @@ function treeNodeName(data: ConfigItem): string {
 }
 
 .page-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #0d1f3c;
-  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--phm-text);
+  margin: 0 0 12px;
 }
 
 .aircraft-selector {
@@ -469,8 +469,8 @@ function treeNodeName(data: ConfigItem): string {
 /* 构型白卡（本机 / 三方共用） */
 .tree-container {
   background: #fff;
-  border-radius: 10px;
-  border: 1px solid #e0e8f5;
+  border-radius: var(--phm-radius-card);
+  border: 1px solid var(--phm-border);
   padding: 20px;
   margin-bottom: 16px;
 }
@@ -517,12 +517,12 @@ function treeNodeName(data: ConfigItem): string {
 
 .tree-node-label {
   font-weight: 600;
-  color: #1a6cf0;
+  color: var(--phm-primary);
   white-space: nowrap;
 }
 
 .tree-node-name {
-  color: #0d1f3c;
+  color: var(--phm-text);
   font-weight: 500;
 }
 
@@ -546,7 +546,7 @@ function treeNodeName(data: ConfigItem): string {
 .tree-pn {
   font-size: 12px;
   color: #8c9ab0;
-  background: #f0f3f8;
+  background: #f1f4f3;
   padding: 1px 6px;
   border-radius: 4px;
   white-space: nowrap;

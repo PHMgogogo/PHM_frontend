@@ -10,6 +10,21 @@
 import { tableToDeviceName } from './timeseries'
 
 /**
+ * 把用户输入或文件名归一为不带 `csv_` 前缀的表名。
+ * 后端同样会做这层归一，因此直接调用 API 时传 `xxx.csv` 也能正常上传。
+ */
+export function normalizeCsvTableName(value: string): string {
+  let name = value.trim()
+  if (/^csv_/i.test(name)) {
+    name = name.slice(4).trim()
+  }
+  if (/\.csv$/i.test(name)) {
+    name = name.slice(0, -4).trim()
+  }
+  return name
+}
+
+/**
  * 在 `existing` 中挑一个不与 `base` 冲突的表名：`base` 被占用时依次尝试 `base_2`、`base_3`…
  * 比较折叠大小写（MySQL 在多数配置下表名大小写不敏感，`CA1201` 与 `ca1201` 视为同名）。
  */

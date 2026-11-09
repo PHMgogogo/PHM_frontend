@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Fold, Expand } from '@element-plus/icons-vue'
+import { Fold } from '@element-plus/icons-vue'
 import airplaneIcon from '@/assets/airplane.svg'
 import modelIcon from '@/assets/model.svg'
 import knowledgeIcon from '@/assets/knowledgebase.svg'
@@ -43,6 +43,15 @@ const menus: MenuItem[] = [
       <!-- <span class="logo-icon">🛩️</span> -->
       <img src="@/assets/logo.svg" class="logo-icon" alt="PHM Logo" />
       <span v-show="!collapsed" class="logo-text">eOIPHM</span>
+      <button
+        v-show="!collapsed"
+        type="button"
+        class="mobile-nav-close"
+        aria-label="收起导航"
+        @click="emit('toggle')"
+      >
+        <el-icon><Fold /></el-icon>
+      </button>
     </div>
     <ul class="menu-list">
       <li
@@ -59,12 +68,6 @@ const menus: MenuItem[] = [
         <span v-show="!collapsed" class="menu-title">{{ menu.title }}</span>
       </li>
     </ul>
-    <div class="toggle-area" @click="emit('toggle')">
-      <el-icon :size="18">
-        <Expand v-if="collapsed" />
-        <Fold v-else />
-      </el-icon>
-    </div>
   </nav>
 </template>
 
@@ -72,66 +75,109 @@ const menus: MenuItem[] = [
 .side-nav {
   width: 100%;
   height: 100%;
-  background: #0d1f3c;
+  background: var(--phm-surface);
   display: flex;
   flex-direction: column;
-  color: #c8d8f0;
+  color: var(--phm-text-secondary);
   user-select: none;
+  border-right: 1px solid var(--phm-border);
 }
 
 .logo-area {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 28px 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 12px;
+  height: 56px;
+  flex: 0 0 56px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--phm-border);
 }
 
 .logo-icon {
-  font-size: 22px;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .logo-text {
-  font-size: 16px;
-  font-weight: 700;
-  color: #e8f0fc;
-  letter-spacing: 1px;
+  color: var(--phm-text);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.mobile-nav-close {
+  display: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  border: 1px solid var(--phm-border);
+  border-radius: var(--phm-radius-control);
+  background: var(--phm-surface);
+  color: var(--phm-text-secondary);
+  cursor: pointer;
+}
+
+.mobile-nav-close:hover {
+  border-color: #cfe5df;
+  background: var(--phm-primary-50);
+  color: var(--phm-primary-700);
 }
 
 .menu-list {
   list-style: none;
-  margin: 0;
-  padding: 0 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 .menu-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
+  height: 40px;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--phm-radius-control);
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-  font-size: 14px;
+  transition: background var(--phm-transition), color var(--phm-transition), border-color var(--phm-transition);
+  font-size: 13px;
 }
 
 .menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: var(--phm-primary-50);
+  color: var(--phm-primary-700);
 }
 
 .menu-item.active {
-  background: #1a6cf0;
-  color: #ffffff;
+  background: var(--phm-primary-50);
+  border-color: #cfe5df;
+  color: var(--phm-primary-700);
   font-weight: 600;
 }
 
+.menu-item.active::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--phm-primary);
+}
+
 .menu-icon {
-  font-size: 18px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-size: 17px;
   flex-shrink: 0;
 }
 
@@ -143,34 +189,34 @@ const menus: MenuItem[] = [
 
 .menu-title {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- collapsed overrides ---- */
 .side-nav.collapsed .logo-area {
   justify-content: center;
-  padding: 20px 8px 16px;
+  padding: 0 8px;
   gap: 0;
+}
+
+.side-nav.collapsed .menu-list {
+  padding: 8px 6px;
 }
 
 .side-nav.collapsed .menu-item {
   justify-content: center;
-  padding: 12px 8px;
+  padding: 0 8px;
   gap: 0;
 }
 
-/* ---- bottom toggle ---- */
-.toggle-area {
-  margin-top: auto;
-  padding: 16px 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: pointer;
-  color: #6888aa;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  transition: color 0.2s;
+.side-nav.collapsed .menu-item.active::before {
+  left: -1px;
 }
-.toggle-area:hover {
-  color: #ffffff;
+
+@media (max-width: 760px) {
+  .mobile-nav-close {
+    display: grid;
+  }
 }
 </style>

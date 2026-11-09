@@ -1,6 +1,6 @@
 <template>
     <div class="node-list">
-        <div class="node-list-header">{{ _('Node List (Drag to Add)') }}</div>
+        <div class="node-list-header">{{ _('Node List') }}</div>
         <el-scrollbar>
             <el-collapse v-model="activeCategories">
                 <el-collapse-item v-for="group in groupedNodeTypes" :key="group.category" :title="_(group.category)"
@@ -24,6 +24,7 @@ import { Rank } from '@element-plus/icons-vue'
 import { NODE_WIDTH } from './Node.vue'
 import { _ } from '../i18n'
 import { getNodeTypes } from '@/api/pipelines'
+import { isPipelineNodeType } from '../nodeTypes'
 
 class NodeType {
     node_type: string = ''
@@ -48,7 +49,8 @@ const groupedNodeTypes = computed(() => {
 })
 
 onMounted(async () => {
-    nodeTypes.value = await getNodeTypes()
+    const allNodeTypes: NodeType[] = await getNodeTypes()
+    nodeTypes.value = allNodeTypes.filter(item => isPipelineNodeType(item.node_type))
     activeCategories.value = groupedNodeTypes.value.map(g => g.category)
 })
 

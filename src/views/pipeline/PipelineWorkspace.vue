@@ -779,9 +779,9 @@ onMounted(async () => {
 }
 
 .page-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #0d1f3c;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--phm-text);
   margin: 0;
 }
 
@@ -792,7 +792,7 @@ onMounted(async () => {
   gap: clamp(8px, 1vw, 12px);
   padding: 0 clamp(12px, 1.5vw, 20px) clamp(12px, 1.5vw, 20px);
   overflow: hidden;
-  background: #f4f6fb;
+  background: var(--phm-bg);
 }
 
 /* 左列：流水线 + 定时任务 */
@@ -817,10 +817,10 @@ onMounted(async () => {
 
 /* 悬浮卡片块 */
 .block-card {
-  border-radius: 10px;
-  border: 1px solid #e4e8f1;
+  border-radius: var(--phm-radius-card);
+  border: 1px solid var(--phm-border);
   background: #fff;
-  box-shadow: 0 2px 12px rgba(13, 31, 60, 0.06);
+  box-shadow: var(--phm-shadow-card);
   overflow: hidden;
 }
 
@@ -866,7 +866,7 @@ onMounted(async () => {
 
 .editor-card :deep(.el-card__header) {
   padding: clamp(8px, 1.2vh, 12px) clamp(10px, 1.2vw, 16px);
-  border-bottom: 1px solid #e4e8f1;
+  border-bottom: 1px solid var(--phm-border);
 }
 
 .editor-card :deep(> .el-card__body) {
@@ -883,7 +883,7 @@ onMounted(async () => {
 
 .result-card :deep(.el-card__header) {
   padding: clamp(8px, 1.2vh, 12px) clamp(10px, 1.2vw, 16px);
-  border-bottom: 1px solid #e4e8f1;
+  border-bottom: 1px solid var(--phm-border);
   flex-shrink: 0;
 }
 
@@ -905,7 +905,7 @@ onMounted(async () => {
 .card-title {
   font-size: 14px;
   font-weight: 600;
-  color: #0d1f3c;
+  color: var(--phm-text);
   flex-shrink: 0;
 }
 

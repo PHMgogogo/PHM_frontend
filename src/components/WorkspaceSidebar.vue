@@ -56,16 +56,22 @@ const emit = defineEmits<{
 
 <style scoped>
 .ws-sidebar {
-  width: 15%;
-  min-width: 160px;
-  max-width: 240px;
-  background: #0d1f3c;
+  width: 232px;
+  min-width: 232px;
+  max-width: 232px;
+  background: var(--phm-surface);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  color: #c8d8f0;
+  color: var(--phm-text-secondary);
   user-select: none;
-  transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease;
+  border-right: 1px solid var(--phm-border);
+  transition:
+    width var(--phm-transition),
+    min-width var(--phm-transition),
+    max-width var(--phm-transition),
+    transform var(--phm-transition),
+    box-shadow var(--phm-transition);
   overflow: hidden;
 }
 
@@ -79,47 +85,48 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 18px 20px 14px;
+  height: 56px;
+  padding: 0 16px;
   font-size: 13px;
-  color: #8cafd4;
+  color: var(--phm-text-secondary);
   cursor: pointer;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  transition: color 0.2s;
+  border-bottom: 1px solid var(--phm-border);
+  transition: color var(--phm-transition), background var(--phm-transition);
 }
-.ws-back:hover { color: #fff; }
+.ws-back:hover { color: var(--phm-primary-700); background: var(--phm-primary-50); }
 
 .ws-aircraft-name {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 18px 20px 4px;
+  padding: 16px 16px 4px;
 }
-.ws-aircraft-icon { font-size: 20px; }
+.ws-aircraft-icon { width: 20px; height: 20px; object-fit: contain; }
 .ws-aircraft-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #e8f0fc;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--phm-text);
   word-break: break-all;
 }
 
 .ws-aircraft-meta {
-  padding: 4px 20px 14px;
+  padding: 4px 16px 14px;
   font-size: 12px;
-  color: #6888aa;
+  color: var(--phm-text-muted);
   line-height: 1.6;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  margin-bottom: 10px;
+  border-bottom: 1px solid var(--phm-border);
+  margin-bottom: 8px;
 }
 
 .ws-source {
-  color: #4d9fff;
+  color: var(--phm-primary);
   margin-top: 2px;
 }
 
 .ws-menu-list {
   list-style: none;
   margin: 0;
-  padding: 0 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -129,33 +136,40 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 11px 16px;
-  border-radius: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--phm-radius-control);
   cursor: pointer;
-  font-size: 14px;
-  transition: background 0.2s, color 0.2s;
+  font-size: 13px;
+  transition: background var(--phm-transition), color var(--phm-transition), border-color var(--phm-transition);
 }
-.ws-menu-item:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
-.ws-menu-item.active { background: #1a6cf0; color: #fff; font-weight: 600; }
+.ws-menu-item:hover { background: var(--phm-primary-50); color: var(--phm-primary-700); }
+.ws-menu-item.active {
+  background: var(--phm-primary-50);
+  border-color: #cfe5df;
+  color: var(--phm-primary-700);
+  font-weight: 600;
+}
 .ws-menu-icon { width: 18px; height: 18px; flex-shrink: 0; object-fit: contain; }
 .ws-menu-title { white-space: nowrap; }
 
 /* collapsed overrides */
 .ws-sidebar.collapsed .ws-back {
   justify-content: center;
-  padding: 18px 8px 14px;
+  padding: 0 8px;
   gap: 0;
 }
 
 .ws-sidebar.collapsed .ws-aircraft-name {
   justify-content: center;
-  padding: 12px 8px 16px;
+  padding: 16px 8px;
   gap: 0;
 }
 
 .ws-sidebar.collapsed .ws-menu-item {
   justify-content: center;
-  padding: 11px 8px;
+  padding: 0 8px;
   gap: 0;
 }
 
@@ -166,9 +180,9 @@ const emit = defineEmits<{
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  color: #6888aa;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  transition: color 0.2s;
+  color: var(--phm-text-muted);
+  border-top: 1px solid var(--phm-border);
+  transition: color var(--phm-transition), background var(--phm-transition);
 }
-.ws-toggle-area:hover { color: #fff; }
+.ws-toggle-area:hover { color: var(--phm-primary-700); background: var(--phm-primary-50); }
 </style>
