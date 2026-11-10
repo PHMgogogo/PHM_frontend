@@ -21,19 +21,15 @@ import HealthWorkspace from '@/components/HealthWorkspace.vue'
 import TrendWorkspace from '@/components/TrendWorkspace.vue'
 import PredictionWorkspace from '@/components/PredictionWorkspace.vue'
 import type { Sortie } from '@/types/entities'
-import DemoRealtimeView from '@/views/demo/DemoRealtimeView.vue'
-import DemoMaintenanceView from '@/views/demo/DemoMaintenanceView.vue'
 import PipelineWorkspace from '@/views/pipeline/PipelineWorkspace.vue'
 import taskIcon from '@/assets/task.svg'
 import dataIcon from '@/assets/data.svg'
 import sortieIcon from '@/assets/sortie.svg'
 import chatIcon from '@/assets/chat.svg'
-import monitorIcon from '@/assets/monitor.svg'
 import diagnosisIcon from '@/assets/diagnosis.svg'
 import healthIcon from '@/assets/health.svg'
 import trendIcon from '@/assets/trend.svg'
 import predictionIcon from '@/assets/predict.svg'
-import maintenanceIcon from '@/assets/maintenance.svg'
 import pipelineIcon from '@/assets/pipeline.svg'
 import modelIcon from '@/assets/model.svg'
 
@@ -79,12 +75,10 @@ const allWorkspaceMenus = [
   { key: 'timeseries', svg: sortieIcon, title: '时序数据查询' },
   { key: 'pipeline', svg: pipelineIcon, title: '逻辑编排' },
   { key: 'models', svg: modelIcon, title: '模型管理' },
-  { key: 'monitor-old', svg: monitorIcon, title: '实时监控' },
   { key: 'diagnosis', svg: diagnosisIcon, title: '增强诊断' },
   { key: 'health', svg: healthIcon, title: '健康评估' },
   { key: 'trend', svg: trendIcon, title: '趋势分析' },
   { key: 'prediction', svg: predictionIcon, title: '故障预测' },
-  { key: 'maintenance', svg: maintenanceIcon, title: '维修建议' },
 ]
 // 会话 / 对话是本地产物（算法实例 + OpenCode 会话），与单机来自哪个平台无关，两者都保留。
 // 但「数据管理」是本地 CSV 链路（架次 → config_data_mapping → csv_<表名>），三方单机的架次
@@ -330,9 +324,6 @@ async function onMenuChange(key: string) {
               <el-button type="primary" @click="activeMenu = 'sortie'">去架次查询</el-button>
             </template>
           </div>
-          <DemoRealtimeView
-            v-else-if="activeMenu === 'monitor-old'"
-          />
           <DiagnosisWorkspace
             v-else-if="activeMenu === 'diagnosis'"
             :aircraft-number="aircraftNumber"
@@ -360,9 +351,6 @@ async function onMenuChange(key: string) {
             :model-code="currentModelCode"
             @open-timeseries="onModelWorkspaceOpenTimeseries"
             @open-model-management="activeMenu = 'models'"
-          />
-          <DemoMaintenanceView
-            v-else-if="activeMenu === 'maintenance'"
           />
         </template>
       </div>
