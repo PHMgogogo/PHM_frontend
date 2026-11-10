@@ -271,10 +271,18 @@ export const useChatStore = defineStore('chat', () => {
     if (!state) return undefined
     const status = String(state.status || '')
     const content = (state.content as Array<{ type?: string; text?: string }>) || []
-    const output = content
+    const contentOutput = content
       .filter((c) => c.type === 'text' && c.text)
       .map((c) => c.text)
       .join('\n')
+    const structuredOutput = state.output ?? state.structuredContent
+    const output =
+      contentOutput ||
+      (typeof structuredOutput === 'string'
+        ? structuredOutput
+        : structuredOutput
+          ? JSON.stringify(structuredOutput)
+          : '')
     const err = state.error as { message?: string } | undefined
     return {
       status,

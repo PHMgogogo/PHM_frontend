@@ -16,6 +16,7 @@ declare module 'vue' {
     AircraftCard: typeof import('./src/components/AircraftCard.vue')['default']
     AircraftLifePanel: typeof import('./src/components/AircraftLifePanel.vue')['default']
     ChartWidget: typeof import('./src/components/dashboard/ChartWidget.vue')['default']
+    ChatMetricChart: typeof import('./src/components/ChatMetricChart.vue')['default']
     ChatPanel: typeof import('./src/components/ChatPanel.vue')['default']
     ConfigForceGraph: typeof import('./src/components/ConfigForceGraph.vue')['default']
     CsvPreview: typeof import('./src/components/CsvPreview.vue')['default']

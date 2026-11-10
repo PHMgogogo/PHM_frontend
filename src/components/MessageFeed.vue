@@ -3,6 +3,8 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import type { ChatMessage, MessagePart } from '@/stores/chat'
 import { ArrowDown, ArrowUp, SetUp, Warning, QuestionFilled, MagicStick } from '@element-plus/icons-vue'
 import { renderMarkdown, renderMarkdownStreaming } from '@/utils/useMarkdown'
+import { parseMetricChartPayload } from '@/utils/chat-chart'
+import ChatMetricChart from '@/components/ChatMetricChart.vue'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -237,6 +239,11 @@ function formatJson(obj: unknown) {
   try { return JSON.stringify(obj, null, 2) } catch { return String(obj) }
 }
 
+function metricChart(part: MessagePart) {
+  if (part.type !== 'tool') return null
+  return parseMetricChartPayload(part.state?.output)
+}
+
 </script>
 
 <template>
@@ -302,7 +309,7 @@ function formatJson(obj: unknown) {
                     <span class="tool-label">输入</span>
                     <pre class="tool-code">{{ formatJson(part.state?.input) }}</pre>
                   </div>
-                  <div v-if="part.state?.output" class="tool-section">
+                  <div v-if="part.state?.output && !metricChart(part)" class="tool-section">
                     <span class="tool-label">输出</span>
                     <pre class="tool-code output">{{ part.state.output }}</pre>
                   </div>
@@ -312,6 +319,10 @@ function formatJson(obj: unknown) {
                   </div>
                 </div>
               </div>
+              <ChatMetricChart
+                v-if="part.type === 'tool' && metricChart(part)"
+                :payload="metricChart(part)!"
+              />
             </template>
 
             <!-- 等待流式输出开始：三点式 loading -->
