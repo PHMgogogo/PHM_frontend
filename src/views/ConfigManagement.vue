@@ -5,6 +5,7 @@ import { useConfigItemStore } from '@/stores/configItem'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ConfigItem, ConfigItemType } from '@/types/entities'
 import ConfigForceGraph from '@/components/ConfigForceGraph.vue'
+import { updateEquipmentLife } from '@/api/aircraft'
 
 const aircraftStore = useAircraftStore()
 const configItemStore = useConfigItemStore()
@@ -60,6 +61,7 @@ const configForm = ref({
   gjbChapter: '',
   partNumber: '' as string | null,
   itemType: 'SYSTEM' as ConfigItemType,
+  defaultLifeHours: null as number | null,
 })
 
 function openCreateConfig(parentId?: number, parentType?: ConfigItemType, parentSystemName?: string) {
@@ -80,6 +82,7 @@ function openCreateConfig(parentId?: number, parentType?: ConfigItemType, parent
   itemName.value = ''
   configForm.value.gjbChapter = ''
   configForm.value.partNumber = null
+  configForm.value.defaultLifeHours = null
   configDialogVisible.value = true
 }
 
@@ -111,6 +114,13 @@ async function submitConfig() {
     ElMessage.warning('请输入 GJB 章节号')
     return
   }
+  if (
+    configForm.value.itemType === 'EQUIPMENT' &&
+    (!configForm.value.defaultLifeHours || configForm.value.defaultLifeHours <= 0)
+  ) {
+    ElMessage.warning('请输入大于 0 的初始寿命')
+    return
+  }
 
   const type = configForm.value.itemType
   const base = {
@@ -119,27 +129,63 @@ async function submitConfig() {
     parentItemId: configForm.value.parentItemId,
   }
 
-  if (type === 'SYSTEM') {
-    await configItemStore.createItem({
-      ...base,
-      systemName: itemName.value.trim(),
-    })
-  } else if (type === 'SUBSYSTEM') {
-    await configItemStore.createItem({
-      ...base,
-      subSystemName: itemName.value.trim(),
-    })
-  } else {
-    // EQUIPMENT / LRU
-    await configItemStore.createItem({
-      ...base,
-      equipmentName: itemName.value.trim(),
-      partNumber: configForm.value.partNumber?.trim() || null,
-    })
-  }
+  try {
+    if (type === 'SYSTEM') {
+      await configItemStore.createItem({
+        ...base,
+        systemName: itemName.value.trim(),
+      })
+    } else if (type === 'SUBSYSTEM') {
+      await configItemStore.createItem({
+        ...base,
+        subSystemName: itemName.value.trim(),
+      })
+    } else {
+      // EQUIPMENT / LRU
+      await configItemStore.createItem({
+        ...base,
+        equipmentName: itemName.value.trim(),
+        partNumber: configForm.value.partNumber?.trim() || null,
+        defaultLifeHours:
+          type === 'EQUIPMENT' ? configForm.value.defaultLifeHours : null,
+      })
+    }
 
-  ElMessage.success('构型项目已创建')
-  configDialogVisible.value = false
+    ElMessage.success('构型项目已创建')
+    configDialogVisible.value = false
+  } catch (e) {
+    ElMessage.error('创建构型项目失败: ' + (e as Error).message)
+  }
+}
+
+async function handleEditLife(item: ConfigItem) {
+  if (!item.itemId || item.itemType !== 'EQUIPMENT') return
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `请输入“${treeNodeName(item)}”的初始寿命（小时）`,
+      '设置初始寿命',
+      {
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        inputValue:
+          item.defaultLifeHours == null ? '' : String(item.defaultLifeHours),
+        inputPattern: /^\d+(\.\d{1,4})?$/,
+        inputErrorMessage: '请输入大于 0 的数字，最多 4 位小数',
+      },
+    )
+    const hours = Number(value)
+    if (!Number.isFinite(hours) || hours <= 0) {
+      ElMessage.warning('初始寿命必须大于 0')
+      return
+    }
+    await updateEquipmentLife(item.itemId, hours)
+    await configItemStore.fetchAll(selectedCode.value)
+    ElMessage.success('初始寿命已更新')
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('设置初始寿命失败: ' + (e as Error).message)
+    }
+  }
 }
 
 async function handleDeleteCurrentModel() {
@@ -158,7 +204,11 @@ async function handleDeleteCurrentModel() {
       selectedModelCode.value = next
       applySelection(next)
     }
-  } catch { /* cancelled */ }
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('删除构型失败: ' + (e as Error).message)
+    }
+  }
 }
 
 async function handleDeleteConfigItem(itemId: number, label: string) {
@@ -170,7 +220,11 @@ async function handleDeleteConfigItem(itemId: number, label: string) {
     )
     await configItemStore.deleteItem(itemId)
     ElMessage.success('构型项目已删除')
-  } catch { /* cancelled */ }
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('删除构型项目失败: ' + (e as Error).message)
+    }
+  }
 }
 
 // ---- 力导向图事件 → 复用既有增删逻辑 ----
@@ -302,6 +356,10 @@ function treeNodeName(data: ConfigItem): string {
                   {{ configItemStore.itemTypeLabel[data.itemType as ConfigItemType] }}
                 </el-tag>
                 <span v-if="data.partNumber" class="tree-pn">{{ data.partNumber }}</span>
+                <span v-if="data.itemType === 'EQUIPMENT'" class="tree-life">
+                  初始寿命
+                  {{ data.defaultLifeHours == null ? '未设置' : `${data.defaultLifeHours} h` }}
+                </span>
 
                 <span class="tree-actions">
                   <el-button
@@ -312,6 +370,15 @@ function treeNodeName(data: ConfigItem): string {
                     @click.stop="openCreateConfig(data.itemId, data.itemType, data.systemName)"
                   >
                     添加子项
+                  </el-button>
+                  <el-button
+                    v-if="data.itemType === 'EQUIPMENT'"
+                    type="primary"
+                    text
+                    size="small"
+                    @click.stop="handleEditLife(data)"
+                  >
+                    设置寿命
                   </el-button>
                   <el-button
                     type="danger"
@@ -376,6 +443,18 @@ function treeNodeName(data: ConfigItem): string {
           label="件号"
         >
           <el-input v-model="configForm.partNumber" placeholder="例：PN-7200-01" />
+        </el-form-item>
+
+        <el-form-item v-if="configForm.itemType === 'EQUIPMENT'" label="初始寿命" required>
+          <el-input-number
+            v-model="configForm.defaultLifeHours"
+            :min="0.0001"
+            :precision="4"
+            :step="100"
+            controls-position="right"
+            style="width: 100%"
+          />
+          <span class="life-unit">小时</span>
         </el-form-item>
       </el-form>
 
@@ -552,12 +631,27 @@ function treeNodeName(data: ConfigItem): string {
   white-space: nowrap;
 }
 
+.tree-life {
+  font-size: 12px;
+  color: #17685a;
+  background: #e9f5f2;
+  padding: 1px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.life-unit {
+  margin-left: 8px;
+  color: #8c9ab0;
+  font-size: 12px;
+}
+
 .tree-actions {
   margin-left: auto;
   display: flex;
   gap: 4px;
   flex-shrink: 0;
-  opacity: 0;
+  opacity: 0.65;
   transition: opacity 0.15s;
 }
 

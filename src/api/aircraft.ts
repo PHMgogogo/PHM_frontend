@@ -4,7 +4,16 @@
 
 import { createClient } from './client'
 import { API_PREFIX } from '@/config/endpoints'
-import type { AircraftModel, Aircraft, Sortie, ConfigItem, ConfigDataMapping, ApiResponse } from '@/types/entities'
+import type {
+  AircraftModel,
+  Aircraft,
+  Sortie,
+  ConfigItem,
+  ConfigDataMapping,
+  AircraftConfigItemLife,
+  FleetLifeOverview,
+  ApiResponse,
+} from '@/types/entities'
 
 const client = createClient({ baseURL: API_PREFIX.CORE })
 
@@ -104,6 +113,27 @@ export function createConfigItem(
 
 export function deleteConfigItem(itemId: number) {
   return client.del<ApiResponse>(`/aircraft/config-items/${itemId}`)
+}
+
+/** 修改 EQUIPMENT 模板的初始寿命；不会追溯修改已绑定单机实例。 */
+export function updateEquipmentLife(itemId: number, defaultLifeHours: number) {
+  return client.put<ApiResponse>(`/aircraft/config-items/${itemId}/life`, {
+    defaultLifeHours,
+  })
+}
+
+/** 查询某单机所有 EQUIPMENT 的初始、已用和剩余寿命。 */
+export function getAircraftConfigItemLives(aircraftNumber: string) {
+  return client.get<AircraftConfigItemLife[]>('/aircraft/config-item-lives', {
+    aircraftNumber,
+  })
+}
+
+/** 查询机群寿命分布；不传机型时统计全部本地单机。 */
+export function getFleetLifeOverview(modelCode?: string) {
+  return client.get<FleetLifeOverview>('/aircraft/config-item-life-overview', {
+    ...(modelCode ? { modelCode } : {}),
+  })
 }
 
 // ---- 构型数据映射 ----

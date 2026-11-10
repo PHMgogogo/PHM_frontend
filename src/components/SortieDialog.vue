@@ -30,6 +30,9 @@ const form = reactive({
 
 const rules: FormRules = {
   sortieNumber: [{ required: true, message: '请输入架次号', trigger: 'blur' }],
+  flightDate: [{ required: true, message: '请选择飞行日期', trigger: 'change' }],
+  startTime: [{ required: true, message: '请选择开始时间', trigger: 'change' }],
+  endTime: [{ required: true, message: '请选择结束时间', trigger: 'change' }],
 }
 
 function handleClose() {
@@ -70,7 +73,7 @@ async function handleSubmit() {
         <el-input v-model="form.sortieNumber" placeholder="如 CA1234-20260723" clearable />
       </el-form-item>
 
-      <el-form-item label="飞行日期">
+      <el-form-item label="飞行日期" prop="flightDate">
         <el-date-picker
           v-model="form.flightDate"
           type="date"
@@ -80,7 +83,7 @@ async function handleSubmit() {
         />
       </el-form-item>
 
-      <el-form-item label="开始时间">
+      <el-form-item label="开始时间" prop="startTime">
         <el-time-picker
           v-model="form.startTime"
           placeholder="选择开始时间"
@@ -89,7 +92,7 @@ async function handleSubmit() {
         />
       </el-form-item>
 
-      <el-form-item label="结束时间">
+      <el-form-item label="结束时间" prop="endTime">
         <el-time-picker
           v-model="form.endTime"
           placeholder="选择结束时间"

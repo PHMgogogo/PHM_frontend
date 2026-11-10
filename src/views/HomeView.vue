@@ -10,6 +10,7 @@ import MonitorView from '@/views/MonitorView.vue'
 import InterfaceManagement from '@/views/InterfaceManagement.vue'
 import ExternalPlatformManagement from '@/views/ExternalPlatformManagement.vue'
 import ModelManagement from '@/views/ModelManagement.vue'
+import FleetLifeOverview from '@/components/FleetLifeOverview.vue'
 import { useAircraftStore } from '@/stores/aircraft'
 import { baseModelCode } from '@/utils/aircraft-source'
 import { Expand, Fold, HomeFilled, Plus, Search } from '@element-plus/icons-vue'
@@ -24,6 +25,7 @@ const sidebarCollapsed = ref(
 const dialogVisible = ref(false)
 const searchQuery = ref('')
 const selectedModel = ref('')
+const aircraftViewTab = ref<'fleet' | 'life'>('fleet')
 
 const pageMeta: Record<string, { section: string; title: string; description: string }> = {
   aircraft: {
@@ -283,58 +285,65 @@ watch(
             </div>
           </div>
 
-          <div class="filter-bar">
-            <div class="filter-fields">
-              <el-select
-                v-model="selectedModel"
-                placeholder="全部机型"
-                clearable
-                class="model-filter"
-              >
-                <el-option
-                  v-for="opt in modelOptions"
-                  :key="opt.value"
-                  :label="opt.label"
-                  :value="opt.value"
-                />
-              </el-select>
-              <el-input
-                v-model="searchQuery"
-                placeholder="搜索机号、机型或所属单位"
-                clearable
-                class="search-input"
-              >
-                <template #prefix>
-                  <el-icon><Search /></el-icon>
-                </template>
-              </el-input>
-            </div>
-            <el-button
-              type="primary"
-              :icon="Plus"
-              class="add-btn"
-              @click="dialogVisible = true"
-            >
-              添加飞行器
-            </el-button>
-          </div>
+          <el-tabs v-model="aircraftViewTab" class="aircraft-view-tabs">
+            <el-tab-pane label="机群概览" name="fleet">
+              <div class="filter-bar">
+                <div class="filter-fields">
+                  <el-select
+                    v-model="selectedModel"
+                    placeholder="全部机型"
+                    clearable
+                    class="model-filter"
+                  >
+                    <el-option
+                      v-for="opt in modelOptions"
+                      :key="opt.value"
+                      :label="opt.label"
+                      :value="opt.value"
+                    />
+                  </el-select>
+                  <el-input
+                    v-model="searchQuery"
+                    placeholder="搜索机号、机型或所属单位"
+                    clearable
+                    class="search-input"
+                  >
+                    <template #prefix>
+                      <el-icon><Search /></el-icon>
+                    </template>
+                  </el-input>
+                </div>
+                <el-button
+                  type="primary"
+                  :icon="Plus"
+                  class="add-btn"
+                  @click="dialogVisible = true"
+                >
+                  添加飞行器
+                </el-button>
+              </div>
 
-          <div
-            class="card-grid"
-            ref="gridEl"
-            :style="cardRowHeight ? { gridAutoRows: cardRowHeight + 'px' } : undefined"
-          >
-            <AircraftCard
-              v-for="(aircraft, idx) in filteredAircrafts"
-              :key="`${aircraft.aircraftNumber}-${idx}`"
-              :aircraft="aircraft"
-              @deleted="onAircraftDeleted"
-            />
-            <div v-if="filteredAircrafts.length === 0" class="empty-state">
-              <span class="empty-icon">✈️</span>
-              <p>暂无匹配的飞行器</p>
-            </div>
-          </div>
+              <div
+                class="card-grid"
+                ref="gridEl"
+                :style="cardRowHeight ? { gridAutoRows: cardRowHeight + 'px' } : undefined"
+              >
+                <AircraftCard
+                  v-for="(aircraft, idx) in filteredAircrafts"
+                  :key="`${aircraft.aircraftNumber}-${idx}`"
+                  :aircraft="aircraft"
+                  @deleted="onAircraftDeleted"
+                />
+                <div v-if="filteredAircrafts.length === 0" class="empty-state">
+                  <span class="empty-icon">✈️</span>
+                  <p>暂无匹配的飞行器</p>
+                </div>
+              </div>
+            </el-tab-pane>
+            <el-tab-pane label="机群寿命分布" name="life" lazy>
+              <FleetLifeOverview :model-code="selectedModel" />
+            </el-tab-pane>
+          </el-tabs>
         </section>
 
         <section v-else class="view-stage">
@@ -606,6 +615,32 @@ watch(
   color: var(--phm-primary-700);
   font-size: 18px;
   font-weight: 650;
+}
+
+.aircraft-view-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.aircraft-view-tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 22px;
+}
+
+.aircraft-view-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.aircraft-view-tabs :deep(.el-tab-pane) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .filter-bar {

@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">{{ pageTitle }}</h2>
-        <p class="page-subtitle">{{ pageSubtitle }}</p>
+        <p v-if="pageSubtitle" class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
       <el-button :icon="Refresh" :loading="sortiesLoading" @click="loadSorties">
         刷新架次
@@ -91,7 +91,16 @@
               <span class="algorithm-line">
                 {{ model.algorithm_name || model.algorithm_id || '未知算法' }}
               </span>
-              <span v-if="model.description" class="model-note">{{ model.description }}</span>
+              <span
+                v-if="algorithmDescription(model)"
+                class="algorithm-description"
+                :title="algorithmDescription(model)"
+              >
+                {{ algorithmDescription(model) }}
+              </span>
+              <span v-if="model.description" class="model-note">
+                <span class="model-note-label">模型备注</span>{{ model.description }}
+              </span>
               <span class="model-foot">
                 <span>{{ formatSavedAt(model.time) }}</span>
                 <span>v{{ model.version }}</span>
@@ -196,6 +205,7 @@ import { ArrowRight, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getSorties } from '@/api/aircraft'
 import { trainedModelApi } from '@/api/trainedModel'
+import { algorithmApi } from '@/api/algorithm'
 import { baseModelCode, hasLocalSortieId } from '@/utils/aircraft-source'
 import InstanceInferencePanel from '@/components/inference/InstanceInferencePanel.vue'
 import type { Sortie, TrainedModel } from '@/types/entities'
@@ -204,7 +214,7 @@ const props = defineProps<{
   aircraftNumber: string
   modelCode: string
   pageTitle: string
-  pageSubtitle: string
+  pageSubtitle?: string
   modelColumnTitle: string
   resultColumnTitle: string
   instanceResultTitle: string
@@ -225,6 +235,8 @@ const selectedModel = ref<TrainedModel | null>(null)
 const sortieKeyword = ref('')
 const sortiesLoading = ref(false)
 const modelsLoading = ref(false)
+const algorithmDescriptions = ref<Record<string, string>>({})
+const algorithmDescriptionCache = new Map<string, string>()
 
 let sortiesRequest = 0
 let modelsRequest = 0
@@ -279,6 +291,7 @@ async function loadModels() {
     if (request !== modelsRequest) return
     models.value = rows
     selectedModel.value = rows[0] ?? null
+    void loadAlgorithmDescriptions(rows, request)
   } catch (error) {
     if (request !== modelsRequest) return
     models.value = []
@@ -286,6 +299,34 @@ async function loadModels() {
   } finally {
     if (request === modelsRequest) modelsLoading.value = false
   }
+}
+
+async function loadAlgorithmDescriptions(rows: TrainedModel[], request: number) {
+  const ids = [
+    ...new Set(rows.map((model) => model.algorithm_id).filter((id): id is string => !!id)),
+  ]
+  const missingIds = ids.filter((id) => !algorithmDescriptionCache.has(id))
+  if (!missingIds.length) return
+
+  const results = await Promise.allSettled(
+    missingIds.map(async (id) => ({
+      id,
+      description: (await algorithmApi.getAlgorithm(id)).description?.trim() ?? '',
+    })),
+  )
+  if (request !== modelsRequest) return
+
+  const next = { ...algorithmDescriptions.value }
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue
+    algorithmDescriptionCache.set(result.value.id, result.value.description)
+    next[result.value.id] = result.value.description
+  }
+  algorithmDescriptions.value = next
+}
+
+function algorithmDescription(model: TrainedModel) {
+  return algorithmDescriptions.value[model.algorithm_id] ?? ''
 }
 
 function selectSortie(sortie: Sortie) {
@@ -524,6 +565,16 @@ onMounted(loadSorties)
   white-space: nowrap;
 }
 
+.algorithm-description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #5f7088;
+  font-size: 11px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .model-note {
   display: -webkit-box;
   overflow: hidden;
@@ -532,6 +583,12 @@ onMounted(loadSorties)
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.model-note-label {
+  margin-right: 4px;
+  color: #96a3b4;
+  font-weight: 600;
 }
 
 .model-foot {

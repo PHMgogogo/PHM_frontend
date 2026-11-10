@@ -686,9 +686,6 @@ onMounted(async () => {
 
 <template>
   <div class="app-layout">
-    <div class="page-head">
-      <div class="page-title">逻辑编排</div>
-    </div>
     <div class="main-area">
       <!-- 左列：流水线 + 定时任务 -->
       <div class="left-col">
@@ -768,21 +765,6 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: clamp(12px, 1.5vw, 16px) clamp(12px, 1.5vw, 20px) clamp(8px, 1vw, 12px);
-  flex-shrink: 0;
-}
-
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--phm-text);
-  margin: 0;
 }
 
 .main-area {

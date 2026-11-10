@@ -116,12 +116,11 @@ export const useAircraftStore = defineStore('aircraft', () => {
 
   async function createAircraft(data: Omit<Aircraft, 'createdAt'>) {
     await aircraftApi.createPlane(data)
-    await fetchAircrafts(data.modelCode)
   }
 
-  async function deleteAircraft(aircraftNumber: string, modelCode: string) {
+  // 列表刷新由 HomeView 按当前筛选条件统一执行，避免用单机型结果覆盖全量列表。
+  async function deleteAircraft(aircraftNumber: string, _modelCode: string) {
     await aircraftApi.deletePlane(aircraftNumber)
-    await fetchAircrafts(modelCode)
   }
 
   async function fetchaircraftNumbers(modelCode: string) {

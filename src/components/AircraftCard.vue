@@ -29,14 +29,18 @@ async function handleDelete(e: Event) {
   e.stopPropagation()
   try {
     await ElMessageBox.confirm(
-      `确定要删除飞机"${props.aircraft.aircraftNumber}"吗？此操作不可撤销。`,
+      `确定要删除飞机"${props.aircraft.aircraftNumber}"吗？其全部架次、CSV数据表和构型寿命数据也会一并删除，此操作不可撤销。`,
       '删除飞机确认',
       { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' },
     )
     await aircraftStore.deleteAircraft(props.aircraft.aircraftNumber, props.aircraft.modelCode)
     ElMessage.success('飞机已删除')
     emit('deleted')
-  } catch { /* cancelled */ }
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('删除飞机失败: ' + (e as Error).message)
+    }
+  }
 }
 
 </script>

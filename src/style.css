@@ -117,6 +117,18 @@ select {
   --el-button-active-border-color: var(--phm-primary-700);
 }
 
+#app .el-button--primary.is-plain {
+  --el-button-text-color: var(--phm-primary);
+  --el-button-bg-color: var(--phm-primary-50);
+  --el-button-border-color: var(--phm-primary-200);
+  --el-button-hover-text-color: #ffffff;
+  --el-button-hover-bg-color: var(--phm-primary);
+  --el-button-hover-border-color: var(--phm-primary);
+  --el-button-active-text-color: #ffffff;
+  --el-button-active-bg-color: var(--phm-primary-700);
+  --el-button-active-border-color: var(--phm-primary-700);
+}
+
 #app .el-button--warning {
   --el-button-bg-color: var(--phm-accent);
   --el-button-border-color: var(--phm-accent);

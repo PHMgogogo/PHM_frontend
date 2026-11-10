@@ -55,6 +55,12 @@ export interface Sortie {
   flightDate: string // "YYYY-MM-DD"
   startTime: string // "HH:mm:ss"
   endTime: string // "HH:mm:ss"
+  /** 后端根据飞行日期与起止时间生成的完整开始时间 */
+  startAt?: string | null
+  /** 后端根据飞行日期与起止时间生成的完整结束时间 */
+  endAt?: string | null
+  /** 架次时长（小时） */
+  durationHours?: number | null
   /** 参数组ID：仅航新（三方）行下发，用于查该架次的参数字段名；本地行为 null */
   parameterGroupId?: string | null
   /**
@@ -83,8 +89,59 @@ export interface ConfigItem {
   equipmentName: string | null
   partNumber: string | null
   itemType: ConfigItemType
+  /** 仅 EQUIPMENT 使用：机型模板上的初始寿命（小时） */
+  defaultLifeHours?: number | null
   label?: string
   children?: ConfigItem[]
+}
+
+/** GET /aircraft/config-item-lives：单机构型零件的实际寿命 */
+export interface AircraftConfigItemLife {
+  lifeId: number
+  aircraftNumber: string
+  itemId: number
+  configVersion?: string | null
+  equipmentName?: string | null
+  partNumber?: string | null
+  systemName?: string | null
+  subSystemName?: string | null
+  initialLifeHours: number
+  usedLifeHours: number
+  remainingLifeHours: number
+  boundAt?: string | null
+  updatedAt?: string | null
+}
+
+export type FleetLifeStatus = 'normal' | 'warning' | 'critical' | 'missing'
+
+export interface FleetLifeAircraft {
+  aircraftNumber: string
+  modelCode: string
+  configVersion?: string | null
+  equipmentCount: number
+  criticalEquipmentCount: number
+  initialLifeHours: number
+  usedLifeHours: number
+  remainingLifeHours: number
+  remainingRatio: number
+  status: FleetLifeStatus
+}
+
+export interface FleetLifeOverview {
+  summary: {
+    aircraftCount: number
+    configuredAircraftCount: number
+    normalAircraftCount: number
+    warningAircraftCount: number
+    criticalAircraftCount: number
+    missingAircraftCount: number
+    equipmentCount: number
+    initialLifeHours: number
+    usedLifeHours: number
+    remainingLifeHours: number
+    remainingRatio: number
+  }
+  aircraft: FleetLifeAircraft[]
 }
 
 // ---- 外来平台配置 ----
