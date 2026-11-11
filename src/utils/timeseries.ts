@@ -16,11 +16,6 @@ import type {
 } from '@/types/entities'
 import { hasLocalSortieId } from './aircraft-source'
 
-/** 归一化比较用的键：后端列名大小写混用（overview 下发数据库实际列名、时序查询返回的参数名一律小写），比较一律折叠大小写与空白 */
-function normalizeKey(v: string): string {
-  return v.trim().toLowerCase()
-}
-
 /**
  * 「deviceName」= 映射的 csvTableName 去掉 `csv_` 前缀（如 `csv_0805` → `0805`）。
  * 实测带前缀不带前缀后端都认，这里统一成不带前缀的形态。
