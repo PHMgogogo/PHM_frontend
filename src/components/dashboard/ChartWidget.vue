@@ -1,6 +1,6 @@
 <!-- 图表组件 -->
 <script setup>
-import { onMounted, ref, watch, onUnmounted, nextTick } from 'vue'
+import { onMounted, ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { init, use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts'
@@ -84,7 +84,60 @@ const chartRef = ref(null)
 let myChart = null
 let resizeObserver = null
 
+// ---- 参数表模式（PARAM_TABLE）----
+// option 为 buildParamTableOption 产出的 { __table, columns, rows }，非 ECharts 配置：
+// 跳过 ECharts 初始化，由模板渲染 el-table；数据经 computed 直接绑定 option。
+const isTableMode = computed(() => !!props.option?.__table)
+const tableColumns = computed(() => (Array.isArray(props.option?.columns) ? props.option.columns : []))
+const tableRows = computed(() => (Array.isArray(props.option?.rows) ? props.option.rows : []))
+
+// 列排序（sortable="custom"）：全量数据排序后再分页，避免只排当前页
+const sortProp = ref('')
+const sortOrder = ref('') // '' | 'ascending' | 'descending'
+function handleSortChange({ prop, order }) {
+  sortProp.value = prop || ''
+  sortOrder.value = order || ''
+  currentPage.value = 1
+}
+
+/** 数值优先比较：两值均可解析为数字时按数值比，否则按本地化字符串比（数字感知） */
+function numericAwareCompare(a, b) {
+  const sa = a === null || a === undefined ? '' : String(a).trim()
+  const sb = b === null || b === undefined ? '' : String(b).trim()
+  const na = sa === '' ? NaN : Number(sa)
+  const nb = sb === '' ? NaN : Number(sb)
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb
+  return sa.localeCompare(sb, 'zh-Hans-CN', { numeric: true })
+}
+
+const sortedRows = computed(() => {
+  if (!sortProp.value || !sortOrder.value) return tableRows.value
+  const dir = sortOrder.value === 'descending' ? -1 : 1
+  const p = sortProp.value
+  return [...tableRows.value].sort((a, b) => dir * numericAwareCompare(a[p], b[p]))
+})
+
+// 前端分页：行量已由 SQL LIMIT 侧约束，这里只做展示分页
+const pageSize = ref(50)
+const currentPage = ref(1)
+const pagedRows = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return sortedRows.value.slice(start, start + pageSize.value)
+})
+// 换页大小 / 数据更新（编辑重查、别名重建）后页码越界回落首页
+watch(pageSize, () => {
+  currentPage.value = 1
+})
+watch(
+  () => [props.option?.rows, props.option?.columns],
+  () => {
+    const maxPage = Math.max(1, Math.ceil(tableRows.value.length / pageSize.value))
+    if (currentPage.value > maxPage) currentPage.value = 1
+  },
+)
+
 const initChart = async () => {
+  if (isTableMode.value) return // 表格模式不初始化 ECharts
   try {
     if (chartRef.value) {
       if (myChart) {
@@ -223,8 +276,42 @@ defineExpose({
       <button @click="initChart" class="retry-btn">重试</button>
     </div>
     
+    <!-- 参数表：SQL 直接结果渲染为表格（表头=列名，列排序 + 前端分页） -->
+    <div v-if="isTableMode && !error" class="table-area" v-loading="loading">
+      <div class="table-scroll">
+        <el-table
+          :data="pagedRows"
+          size="small"
+          height="100%"
+          style="width: 100%"
+          @sort-change="handleSortChange"
+        >
+          <el-table-column
+            v-for="col in tableColumns"
+            :key="col.prop"
+            :prop="col.prop"
+            :label="col.label"
+            sortable="custom"
+            min-width="110"
+            show-overflow-tooltip
+          />
+        </el-table>
+      </div>
+      <div class="table-pagination">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :total="tableRows.length"
+          :page-sizes="[20, 50, 100]"
+          :pager-count="5"
+          layout="total, sizes, prev, pager, next"
+          size="small"
+        />
+      </div>
+    </div>
+
     <!-- ECharts图表容器：外层 chart-area 提供留白，内层 chart-container 承载画布 -->
-    <div v-show="!error" class="chart-area">
+    <div v-show="!error && !isTableMode" class="chart-area">
       <div
         class="chart-container"
         ref="chartRef"
@@ -301,6 +388,27 @@ defineExpose({
   height: 100%;
   background: var(--dashboard-card-bg, white);
   border-radius: var(--dashboard-border-radius, 8px);
+}
+
+/* 参数表：与 chart-area 同等留白，表格占满剩余高度，分页条固定底部 */
+.table-area {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.table-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
 }
 
 .chart-error-state {

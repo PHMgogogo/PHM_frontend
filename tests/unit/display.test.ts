@@ -113,6 +113,68 @@ describe('queryDisplay：列数校验', () => {
   })
 })
 
+describe('queryDisplay：参数表（PARAM_TABLE）', () => {
+  it('行式结果原样返回：列序固定按请求列（多选顺序），rows 不做序列式转换', async () => {
+    // 上游返回故意乱序（data/health 反转），锁定「列序以请求为准」行为
+    const m = mockCsvSql([
+      { n1_speed: '85.2', flight_date: '2026-04-15' },
+      { n1_speed: '92.5', flight_date: '2026-04-16' },
+    ])
+    const res = await queryDisplay({
+      data: 't',
+      columns: ['flight_date', 'n1_speed'],
+      limit: 1000,
+      type: DISPLAY_TYPE.PARAM_TABLE,
+    })
+    expect(res.columns).toEqual(['flight_date', 'n1_speed'])
+    expect(res.rows).toEqual([
+      { n1_speed: '85.2', flight_date: '2026-04-15' },
+      { n1_speed: '92.5', flight_date: '2026-04-16' },
+    ])
+    // SQL 仍按请求列序编排
+    expect(sentSql(m)).toBe('SELECT "flight_date", "n1_speed" FROM csv_t LIMIT 1000')
+  })
+
+  it('单列合法（≥1 列即可）', async () => {
+    mockCsvSql([{ n1_speed: '85.2' }])
+    await expect(
+      queryDisplay({ data: 't', columns: ['n1_speed'], limit: 1000, type: DISPLAY_TYPE.PARAM_TABLE }),
+    ).resolves.toBeTruthy()
+  })
+
+  it('空列拒绝并前置拦截（不发请求）', async () => {
+    const m = mockCsvSql([])
+    await expect(
+      queryDisplay({ data: 't', columns: [], limit: 1000, type: DISPLAY_TYPE.PARAM_TABLE }),
+    ).rejects.toThrow(/requires/)
+    expect(m).not.toHaveBeenCalled()
+  })
+})
+
+describe('buildDisplayOption：参数表 option', () => {
+  it('产出 __table 标记的表格 option，表头优先别名、prop 恒为原始列名', async () => {
+    // @ts-ignore – JS 模块，运行时正常
+    const { buildDisplayOption } = await import('@/components/dashboard/DisplayOptionBuilder.js')
+    mockCsvSql([{ n1_speed: '85.2', phase: 'TAKEOFF' }])
+    const res = await queryDisplay({
+      data: 't',
+      columns: ['n1_speed', 'phase'],
+      limit: 1000,
+      type: DISPLAY_TYPE.PARAM_TABLE,
+    })
+    const option = buildDisplayOption(DISPLAY_TYPE.PARAM_TABLE, res, 'medium', null, {
+      n1_speed: '低压转速',
+    })
+    expect(option.__table).toBe(true)
+    expect(option.columns).toEqual([
+      { prop: 'n1_speed', label: '低压转速' },
+      { prop: 'phase', label: 'phase' },
+    ])
+    expect(option.rows).toEqual([{ n1_speed: '85.2', phase: 'TAKEOFF' }])
+    expect(option.total).toBe(1)
+  })
+})
+
 describe('queryDisplay：行式→序列式转换', () => {
   it('MAPPING_2D：单系列，点=[x, y]，数值字符串转数值', async () => {
     mockCsvSql([

@@ -7,7 +7,7 @@ import { ApiError } from '@/api/client'
 import DashboardContainer from '@/components/dashboard/DashboardContainer.vue'
 // @ts-ignore – JS Vue 组件，运行时正常
 import DataSourcePanel from '@/components/dashboard/DataSourcePanel.vue'
-import { queryDisplay, saveDisplay, loadDisplay, type DisplayRequest, type DisplayResponse, type DisplayCanvas } from '@/api/display'
+import { queryDisplay, saveDisplay, loadDisplay, type DisplayRequest, type DisplayResponse, type DisplayTableResponse, type DisplayCanvas } from '@/api/display'
 // @ts-ignore – JS 模块，运行时正常
 // 补充一点(非本次必须):@ts-ignore 会连带丢掉 buildDisplayOption 的入参/返回类型提示。如果后续你想要保留类型提示,更优解是给 DisplayOptionBuilder.js 配一个 DisplayOptionBuilder.d.ts(声明 buildDisplayOption(displayType: DisplayType, response: DisplayResponse, size?: 'small'|'medium'|'large'): Record<string, unknown>),这样既不用改 tsconfig,也能拿到完整类型。现在先用 @ts-ignore 与现状对齐,等仪表盘配置那块稳定了再统一处理 .d.ts 也不迟。
 import { buildDisplayOption, buildTitle } from '@/components/dashboard/DisplayOptionBuilder.js'
@@ -46,10 +46,10 @@ const isYOverflow = computed(() => dashboardRef.value?.isYOverflow() ?? false)
 const dashboardConfig = {
   dataSource: [],
   chartTypes: [
-    { value: 'SINGLE_TIMESERIES_2D', label: '单参数时序' },
-    { value: 'MULTI_TIMESERIES_2D', label: '多参数时序' },
-    { value: 'MAPPING_2D', label: '二维映射' },
-    { value: 'POINT_CLOUD_3D', label: '三维点云' },
+    { value: 'SINGLE_TIMESERIES_2D', label: '单参数时序图' },
+    { value: 'MULTI_TIMESERIES_2D', label: '多参数时序图' },
+    { value: 'MAPPING_2D', label: '二维映射图' },
+    { value: 'POINT_CLOUD_3D', label: '三维点云图' },
   ],
   sizes: [
     { value: 'small', label: '小', w: 3, h: 10 },
@@ -82,7 +82,7 @@ async function resolveDisplay(payload: {
     type: payload.type,
   }
   displayLoading.value = true
-  let response: DisplayResponse | null = null
+  let response: DisplayResponse | DisplayTableResponse | null = null
   try {
     response = await queryDisplay(req)
   } catch (e) {
@@ -92,14 +92,26 @@ async function resolveDisplay(payload: {
     displayLoading.value = false
   }
 
-  if (!response || !Array.isArray(response.data) || response.data.length === 0) {
+  // 空结果判断：序列式看 data，参数表（行式）看 rows
+  const rowsOf = (r: DisplayResponse | DisplayTableResponse | null) =>
+    !r
+      ? []
+      : 'data' in r && Array.isArray(r.data)
+        ? r.data
+        : 'rows' in r && Array.isArray(r.rows)
+          ? r.rows
+          : []
+  if (!response || rowsOf(response).length === 0) {
     ElMessage.warning('查询结果为空')
     return null
   }
 
   const option = buildDisplayOption(payload.type, response, payload.size, payload.style, aliasStore.aliasMap)
-  // 用户自定义标题优先；留空则按参数名自动命名（优先中文别名；buildTitle 兜底返回“数据展示”）
-  const title = payload.title?.trim() || buildTitle(response.parameter, aliasStore.aliasMap)
+  // 默认标题取展示参数名：序列式取 parameter，参数表取 columns（优先中文别名）
+  const titleParams = Array.isArray((response as DisplayTableResponse).columns)
+    ? (response as DisplayTableResponse).columns
+    : (response as DisplayResponse).parameter ?? []
+  const title = payload.title?.trim() || buildTitle(titleParams, aliasStore.aliasMap)
   // response 随图表缓存进 item.config，供别名变更时免查询重建展示层
   return { option, title, response }
 }
@@ -154,8 +166,11 @@ watch(() => aliasStore.aliasMap, () => {
     const cfg = item.config
     if (!cfg?.response) continue
     const option = buildDisplayOption(cfg.type, cfg.response, cfg.size, cfg.style, aliasStore.aliasMap)
-    // 与 resolveDisplay 同语义：自定义标题优先，仅默认标题跟随别名
-    const title = cfg.title?.trim() || buildTitle(cfg.response.parameter, aliasStore.aliasMap)
+    // 与 resolveDisplay 同语义：自定义标题优先，仅默认标题跟随别名（参数表标题源为列名）
+    const titleParams = Array.isArray(cfg.response.columns)
+      ? cfg.response.columns
+      : cfg.response.parameter ?? []
+    const title = cfg.title?.trim() || buildTitle(titleParams, aliasStore.aliasMap)
     // 只换 option/title：不传 size（不缩放）、不传 config（不覆盖含 response 的快照）
     dashboardRef.value?.updateItemOption?.(item.i, option, title)
   }

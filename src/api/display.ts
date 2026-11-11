@@ -32,6 +32,8 @@ export const DISPLAY_TYPE = {
   MAPPING_2D: 'MAPPING_2D',
   /** 3D 点云：恰好 3 列（x + y + z） */
   POINT_CLOUD_3D: 'POINT_CLOUD_3D',
+  /** 参数表：≥1 列的 SQL 直接结果表格（列名即表头，不做序列式转换） */
+  PARAM_TABLE: 'PARAM_TABLE',
 } as const
 
 export type DisplayType = (typeof DISPLAY_TYPE)[keyof typeof DISPLAY_TYPE]
@@ -93,6 +95,14 @@ export interface DisplayResponse {
   data: DisplaySeries[]
 }
 
+/** PARAM_TABLE 直查响应：/csv/sql 行式结果原样返回，表头即数据列名 */
+export interface DisplayTableResponse {
+  /** 列名（取上游返回，反映实际查询结果） */
+  columns: string[]
+  /** 行记录；键为列名，值均为字符串 */
+  rows: Record<string, string>[]
+}
+
 // ============================================================
 // 图表数据查询：直调 data_module /csv/sql + 本地行式→序列式转换
 // ============================================================
@@ -103,6 +113,7 @@ const EXPECTED_COLUMNS: Record<DisplayType, [number, number | null]> = {
   MULTI_TIMESERIES_2D: [3, null], // 至少 3 列：时间 + 多参数
   MAPPING_2D: [2, 2], // 恰好 2 列：x + y
   POINT_CLOUD_3D: [3, 3], // 恰好 3 列：x + y + z
+  PARAM_TABLE: [1, null], // 至少 1 列：任意数据列组合
 }
 
 /** 按 type 校验列数，不符抛错（对齐 entity 的 422 前置校验，省一次 round-trip） */
@@ -181,12 +192,21 @@ function transformRowsToDisplay(
 /**
  * 图表数据查询 —— 直调 data_module POST /csv/sql，本地编排 SQL 并转换为序列式。
  * （原走 entity /display/raw-data 代理；线上旧版代理的列名大写化 bug 见文件头注释。）
+ * PARAM_TABLE 例外：行式结果即展示结构，跳过序列式转换原样返回。
  */
-export async function queryDisplay(req: DisplayRequest): Promise<DisplayResponse> {
+export async function queryDisplay(
+  req: DisplayRequest,
+): Promise<DisplayResponse | DisplayTableResponse> {
   validateColumnCount(req.type, req.columns.length)
   const result = await csvClient.post<CsvSqlResult>('/csv/sql', { sql: buildDisplaySql(req) })
   if (!result || result.success === false) {
     throw new Error(result?.error || 'SQL 查询失败')
+  }
+  if (req.type === DISPLAY_TYPE.PARAM_TABLE) {
+    // 列序固定按请求列（=用户多选顺序）：上游 /csv/sql 返回的列序与 SELECT
+    // 顺序不保证一致（data_module 行式结果列序不稳定）；行记录按键取值，
+    // 用请求列重排不影响数据正确性。
+    return { columns: req.columns, rows: result.data ?? [] }
   }
   return transformRowsToDisplay(req.type, req.columns, result.data ?? [])
 }

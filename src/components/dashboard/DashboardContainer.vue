@@ -82,6 +82,8 @@ const itemToDelete = ref(null)
 
 const canvasRef = ref(null)
 const rowHeight = ref(30)
+// 画布内容宽度（px）：与 rowHeight 同步刷新，供表格组件最小列数换算
+const canvasWidth = ref(0)
 
 watch(
   () => props.initialLayout,
@@ -120,6 +122,7 @@ const updateRowHeight = () => {
       dashboardConfig.value.layout.containerPadding
     )
     rowHeight.value = newRowHeight
+    canvasWidth.value = canvasRef.value.clientWidth
   }
 }
 
@@ -132,6 +135,42 @@ const isYOverflow = computed(() => {
   const maxBottom = layout.value.reduce((max, item) => Math.max(max, item.y + item.h), 0)
   return maxBottom > totalRows
 })
+
+// ---- 表格组件（参数表）最小尺寸约束：分页栏必须完整容纳在组件内 ----
+// 实测常量（el-pagination small / pager-count=5，布局 total,sizes,prev,pager,next）：
+// 分页栏单行宽度 383px；纵向最小需求 136px = 标题34 + 上下留白24 + 表头36 + 分页栏40 + 边框2。
+// 行高/列宽随窗口尺寸变化，故最小栅格数按当前画布几何动态换算。
+const TABLE_PAGER_WIDTH = 383
+const TABLE_MIN_CONTENT_HEIGHT = 136
+
+/** 表格组件最小列数（非表格返回 undefined = 不约束） */
+const tableMinW = (item) => {
+  if (!item?.option?.__table) return undefined
+  const { cols, margin, containerPadding } = dashboardConfig.value.layout
+  const [mx] = margin
+  const [px] = containerPadding
+  const cw = canvasWidth.value || 1200
+  const colW = (cw - px * 2 - (cols - 1) * mx) / cols
+  // 组件宽 = w*colW + (w-1)*mx；需容纳分页栏宽 + 左右留白 24 + 边框 2
+  return Math.max(1, Math.ceil((TABLE_PAGER_WIDTH + 26 + mx) / (colW + mx)))
+}
+
+/** 表格组件最小行数（非表格返回 undefined = 不约束） */
+const tableMinH = (item) => {
+  if (!item?.option?.__table) return undefined
+  const [my] = dashboardConfig.value.layout.margin
+  // 组件高 = h*rowHeight + (h-1)*my，需 ≥ 纵向最小内容高度
+  return Math.max(1, Math.ceil((TABLE_MIN_CONTENT_HEIGHT + my) / (rowHeight.value + my)))
+}
+
+/** 把 item 的 w/h 抬到表格最小约束之上（原地修改）；返回入参 item 便于链式使用 */
+const clampTableMinSize = (item) => {
+  const mw = tableMinW(item)
+  const mh = tableMinH(item)
+  if (mw && item.w < mw) item.w = mw
+  if (mh && item.h < mh) item.h = mh
+  return item
+}
 
 /**
  * 用外部构造好的 ECharts option 直接添加图表项。
@@ -147,10 +186,15 @@ const addItemWithOption = (option, title, sizeValue = 'medium', config = null) =
     dashboardConfig.value.sizes.find((s) => s.value === sizeValue) || dashboardConfig.value.sizes[0]
   if (!sizeConfig) return null
 
+  // 预设尺寸先抬到表格最小约束之上，再找空位（避免占位偏小导致重叠）
+  const probe = { option }
+  const w = Math.max(sizeConfig.w, tableMinW(probe) ?? sizeConfig.w)
+  const h = Math.max(sizeConfig.h, tableMinH(probe) ?? sizeConfig.h)
+
   const emptySpace = findEmptySpace(
     layout.value,
-    sizeConfig.w,
-    sizeConfig.h,
+    w,
+    h,
     dashboardConfig.value.layout.cols,
     dashboardConfig.value.layout.totalRows,
   )
@@ -159,8 +203,8 @@ const addItemWithOption = (option, title, sizeValue = 'medium', config = null) =
     i: generateId(),
     x: emptySpace.x,
     y: emptySpace.y,
-    w: sizeConfig.w,
-    h: sizeConfig.h,
+    w,
+    h,
     option,
     type: 'display',
     category: '',
@@ -198,13 +242,15 @@ const updateItemOption = (id, option, title, sizeValue, config) => {
   if (title !== undefined && title !== null) item.title = title
   if (config !== undefined && config !== null) item.config = config
 
-  // 尺寸变更：未锁定布局时原位缩放（与手动拖拽缩放行为一致）
+  // 尺寸变更：未锁定布局时原位缩放（与手动拖拽缩放行为一致）；
+  // 表格组件抬到最小约束之上（如「小」预设 3 列放不下分页栏，按最小列数放大）
   if (sizeValue && !props.readonly) {
     const sizeConfig =
       dashboardConfig.value.sizes.find((s) => s.value === sizeValue) || null
     if (sizeConfig && (sizeConfig.w !== item.w || sizeConfig.h !== item.h)) {
       item.w = sizeConfig.w
       item.h = sizeConfig.h
+      clampTableMinSize(item)
     }
   }
 
@@ -345,6 +391,8 @@ defineExpose({
           :w="item.w"
           :h="item.h"
           :i="item.i"
+          :min-w="tableMinW(item)"
+          :min-h="tableMinH(item)"
           :static="item.static || readonly"
           class="dashboard-grid-item"
           @click.stop="handleChartClick(item)"

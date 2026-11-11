@@ -125,11 +125,15 @@ const selectedTitle = ref('')
 const submitting = ref(false)
 
 const typeOptions = [
-  { value: DISPLAY_TYPE.SINGLE_TIMESERIES_2D, label: '单参数时序（2D）' },
-  { value: DISPLAY_TYPE.MULTI_TIMESERIES_2D, label: '多参数时序（2D）' },
-  { value: DISPLAY_TYPE.MAPPING_2D, label: '二维映射（2D）' },
-  { value: DISPLAY_TYPE.POINT_CLOUD_3D, label: '三维点云（3D）' },
+  { value: DISPLAY_TYPE.SINGLE_TIMESERIES_2D, label: '单参数时序图（2D）' },
+  { value: DISPLAY_TYPE.MULTI_TIMESERIES_2D, label: '多参数时序图（2D）' },
+  { value: DISPLAY_TYPE.MAPPING_2D, label: '二维映射图（2D）' },
+  { value: DISPLAY_TYPE.POINT_CLOUD_3D, label: '三维点云图（3D）' },
+  { value: DISPLAY_TYPE.PARAM_TABLE, label: '参数表' },
 ]
+
+// 参数表：SQL 直接结果表格，无轴语义（列顺序即多选顺序）
+const isTableType = computed(() => selectedType.value === DISPLAY_TYPE.PARAM_TABLE)
 
 // 窗口大小选项：编辑态始终前置「保持当前尺寸」——选中即保持图表实际 w/h 不变，
 // 不关心具体栅格数；下方预设用于「改成」目标尺寸。
@@ -182,8 +186,12 @@ function defaultStyleFor(type) {
   }
 }
 
-// 3D 点云无可换样式：隐藏样式选择器
-const styleEnabled = computed(() => selectedType.value !== DISPLAY_TYPE.POINT_CLOUD_3D)
+// 3D 点云无可换样式：隐藏样式选择器；参数表非 ECharts 渲染，同样隐藏
+const styleEnabled = computed(
+  () =>
+    selectedType.value !== DISPLAY_TYPE.POINT_CLOUD_3D &&
+    selectedType.value !== DISPLAY_TYPE.PARAM_TABLE,
+)
 
 // 当前选中的 mapping 对象（用于取 csvTableName）
 const selectedMapping = computed(() =>
@@ -217,6 +225,8 @@ const takenAll = computed(() => {
 
 // 各轴是否满足要求
 const columnsValid = computed(() => {
+  // 参数表：无轴语义，多选 ≥1 列即可
+  if (isTableType.value) return selectedYMulti.value.length >= 1
   if (!selectedX.value) return false
   const s = axisSpec.value
   if (s.y === 'multi') {
@@ -231,6 +241,9 @@ const columnsValid = computed(() => {
 
 const columnHint = computed(() => {
   const t = selectedType.value
+  if (t === DISPLAY_TYPE.PARAM_TABLE) {
+    return `选择要展示的数据列（至少 1 列，已选 ${selectedYMulti.value.length}；选择顺序即列顺序）`
+  }
   if (t === DISPLAY_TYPE.MULTI_TIMESERIES_2D) {
     const yMin = Math.max(columnConstraint.value.min - 1, 1)
     return `X 轴选 1 列（时间），Y 轴至少 ${yMin} 列（已选 ${selectedYMulti.value.length}）`
@@ -498,6 +511,8 @@ watch(selectedType, (t) => {
   if (restoring.value) return
   resetAxisSelection()
   selectedStyle.value = defaultStyleFor(t)
+  // 参数表面向全量数据浏览，默认限 1000 行防止大表拖垮前端；其余类型维持 0（不限）
+  limit.value = t === DISPLAY_TYPE.PARAM_TABLE ? 1000 : 0
 })
 
 // ---- 提交查询（新建 / 编辑两态共用）----
@@ -506,17 +521,19 @@ function handleSubmit() {
     ElMessage.warning(columnHint.value)
     return
   }
-  // 按既定顺序组装请求用列：[X, Y, ...] / [X, Y, Z]，与后端位置契约一致
-  // （columns[0] 恒为主轴：时序=时间列，映射/点云=X 轴）
+  // 按既定顺序组装请求用列：参数表按多选顺序；其余 [X, Y, ...] / [X, Y, Z]，
+  // 与后端位置契约一致（columns[0] 恒为主轴：时序=时间列，映射/点云=X 轴）
   // 注意：这里命名为 reqColumns，避免与外层 columns ref（列候选列表）重名——
   // 否则下方 columnCandidates: [...columns.value] 会取到本局部数组（无 .value）而报错。
   const t = selectedType.value
   const reqColumns =
-    t === DISPLAY_TYPE.MULTI_TIMESERIES_2D
-      ? [selectedX.value, ...selectedYMulti.value]
-      : t === DISPLAY_TYPE.POINT_CLOUD_3D
-        ? [selectedX.value, selectedY.value, selectedZ.value]
-        : /* SINGLE_TIMESERIES_2D / MAPPING_2D */ [selectedX.value, selectedY.value]
+    t === DISPLAY_TYPE.PARAM_TABLE
+      ? [...selectedYMulti.value]
+      : t === DISPLAY_TYPE.MULTI_TIMESERIES_2D
+        ? [selectedX.value, ...selectedYMulti.value]
+        : t === DISPLAY_TYPE.POINT_CLOUD_3D
+          ? [selectedX.value, selectedY.value, selectedZ.value]
+          : /* SINGLE_TIMESERIES_2D / MAPPING_2D */ [selectedX.value, selectedY.value]
   const csvTableName = selectedMapping.value.csvTableName
   // 统一 payload：既含后端请求字段，也含回填专用字段（供选中后回填本面板）
   const payload = {
@@ -699,8 +716,46 @@ function handleSubmit() {
             </el-select>
           </div>
 
-          <!-- X 轴（所有类型都有；时序类型即时间列） -->
-          <div class="form-group">
+          <!-- 数据列（仅参数表）：多选任意列，选择顺序即表格列顺序 -->
+          <div class="form-group" v-if="isTableType">
+            <label>数据列（可多选）</label>
+            <el-select
+              v-model="selectedYMulti"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="选择要展示的数据列"
+              :loading="columnsLoading"
+              :disabled="columns.length === 0"
+              style="width: 100%"
+              size="default"
+            >
+              <el-option
+                v-for="c in columns"
+                :key="c"
+                :value="c"
+                :label="aliasStore.aliasOf(c)"
+              >
+                <div class="alias-option-row">
+                  <div class="alias-option-text">
+                    <span class="alias-main">{{ aliasStore.aliasOf(c) }}</span>
+                    <span v-if="aliasStore.hasAlias(c)" class="alias-origin" :title="c">{{ c }}</span>
+                  </div>
+                  <el-icon
+                    class="alias-edit-icon"
+                    :class="{ configured: aliasStore.hasAlias(c) }"
+                    :title="aliasStore.hasAlias(c) ? '修改别名' : '设置中文别名'"
+                    @click.stop="openAliasPrompt(c)"
+                  >
+                    <EditPen />
+                  </el-icon>
+                </div>
+              </el-option>
+            </el-select>
+          </div>
+
+          <!-- X 轴（图表类型；时序类型即时间列） -->
+          <div class="form-group" v-if="!isTableType">
             <label>X 轴数据</label>
             <el-select
               v-model="selectedX"
@@ -735,8 +790,8 @@ function handleSubmit() {
             </el-select>
           </div>
 
-          <!-- Y 轴：多参数时序为多选，其余类型为单选 -->
-          <div class="form-group" v-if="axisSpec.y === 'multi'">
+          <!-- Y 轴：多参数时序为多选，其余类型为单选（参数表无轴语义，不渲染） -->
+          <div class="form-group" v-if="!isTableType && axisSpec.y === 'multi'">
             <label>Y 轴数据（多参数）</label>
             <el-select
               v-model="selectedYMulti"
@@ -773,7 +828,7 @@ function handleSubmit() {
               </el-option>
             </el-select>
           </div>
-          <div class="form-group" v-else>
+          <div class="form-group" v-else-if="!isTableType">
             <label>Y 轴数据</label>
             <el-select
               v-model="selectedY"

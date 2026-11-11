@@ -35,6 +35,8 @@ export function getRequiredColumnCount(type) {
       return { exact: 2, min: 2 }
     case DISPLAY_TYPE.POINT_CLOUD_3D:
       return { exact: 3, min: 3 }
+    case DISPLAY_TYPE.PARAM_TABLE:
+      return { exact: 0, min: 1 } // 至少 1 列：任意数据列组合
     default:
       return { exact: 0, min: 1 }
   }
@@ -87,6 +89,10 @@ export function buildTitle(parameters, aliasMap = {}) {
  * @returns {object} ECharts option
  */
 export function buildDisplayOption(displayType, response, size = 'medium', style = null, aliasMap = {}) {
+  // 参数表：response 是行式结果（无 dimensions/data），须在通用守卫前分流
+  if (displayType === DISPLAY_TYPE.PARAM_TABLE) {
+    return buildParamTableOption(response, aliasMap)
+  }
   if (!response || !Array.isArray(response.dimensions) || !Array.isArray(response.data)) {
     return emptyOption('无数据')
   }
@@ -103,6 +109,26 @@ export function buildDisplayOption(displayType, response, size = 'medium', style
       return buildPointCloud3DOption(response, size, aliasMap) // 3D 忽略 style
     default:
       return emptyOption(`不支持的类型: ${displayType}`)
+  }
+}
+
+/**
+ * 参数表 option：SQL 行式结果直出，非 ECharts 配置。
+ * 以 __table 标记区分，ChartWidget 据此切换为 el-table 渲染。
+ * 列顺序 = 查询列顺序（即用户多选顺序）；表头优先中文别名，prop 恒为原始列名，
+ * 别名变更时由 MonitorView 的 aliasMap watch 重建本 option 实现表头热更新。
+ * @param {import('../../api/display').DisplayTableResponse} response
+ * @param {Record<string, string>} [aliasMap] 原始字段名 → 中文别名
+ * @returns {object} 表格 option（{ __table, columns: [{prop,label}], rows, total }）
+ */
+function buildParamTableOption(response, aliasMap = {}) {
+  const columns = Array.isArray(response?.columns) ? response.columns : []
+  const rows = Array.isArray(response?.rows) ? response.rows : []
+  return {
+    __table: true,
+    columns: columns.map((name) => ({ prop: name, label: labelWithAlias(name, aliasMap) })),
+    rows,
+    total: rows.length,
   }
 }
 
